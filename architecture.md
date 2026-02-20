@@ -167,11 +167,11 @@ CREATE TABLE api_keys (
 worker:{id}:status        → "ready" | "draining"
 worker:{id}:connections   → 142
 
-# User sessions (for WS routing)
-user:{uid}:server         → "worker-3"
-user:{uid}:pending        → [cmd7, cmd8, ...]
-user:{uid}:last_ack       → 6
-user:{uid}:cmd_counter    → 13
+# Device sessions (for WS routing)
+device:{device_id}:server         → "worker-3"
+device:{device_id}:pending        → [cmd7, cmd8, ...]
+device:{device_id}:last_ack       → 6
+device:{device_id}:cmd_counter    → 13
 
 # Session tokens
 session:{token}           → { user_id, device_id }  TTL 24h

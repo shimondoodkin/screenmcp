@@ -18,7 +18,7 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Verify a token against the API server, returning the resolved UID.
+/// Verify a token against the API server, returning the resolved device_id.
 async fn verify_token(token: &str, api_url: &str) -> Result<String, String> {
     let client = reqwest::Client::new();
     let res = client
@@ -37,10 +37,10 @@ async fn verify_token(token: &str, api_url: &str) -> Result<String, String> {
         .await
         .map_err(|e| format!("verify parse failed: {e}"))?;
 
-    body.get("uid")
+    body.get("device_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| "verify response missing uid".to_string())
+        .ok_or_else(|| "verify response missing device_id".to_string())
 }
 
 /// Handle a new connection: if it's a WebSocket upgrade, proceed; otherwise return HTTP 200.
@@ -134,8 +134,8 @@ pub async fn handle_connection(
     };
 
     // Verify token via API server
-    let uid = match verify_token(&auth.token, &api_url).await {
-        Ok(uid) => uid,
+    let device_id = match verify_token(&auth.token, &api_url).await {
+        Ok(device_id) => device_id,
         Err(e) => {
             warn!(%addr, "auth verification failed: {e}");
             let err = ServerMessage::auth_fail("invalid token");
@@ -147,12 +147,12 @@ pub async fn handle_connection(
     };
     let role = auth.role.clone();
 
-    info!(%addr, %uid, %role, "authenticated");
+    info!(%addr, %device_id, %role, "authenticated");
 
     match role.as_str() {
         "controller" => {
-            let target_uid = auth.target_uid.unwrap_or_else(|| uid.clone());
-            handle_controller_connection(ws_tx, ws_rx, addr, &uid, &target_uid, state, connections)
+            let target_device_id = auth.target_device_id.unwrap_or_else(|| device_id.clone());
+            handle_controller_connection(ws_tx, ws_rx, addr, &device_id, &target_device_id, state, connections)
                 .await;
         }
         _ => {
@@ -161,7 +161,7 @@ pub async fn handle_connection(
                 ws_tx,
                 ws_rx,
                 addr,
-                &uid,
+                &device_id,
                 auth.last_ack,
                 state,
                 connections,
@@ -179,43 +179,43 @@ async fn handle_phone_connection(
     >,
     mut ws_rx: futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<TcpStream>>,
     addr: SocketAddr,
-    uid: &str,
+    device_id: &str,
     last_ack: i64,
     state: Arc<State>,
     connections: Arc<Connections>,
 ) {
-    // Register in Connections (in-memory) — replaces any existing connection for this uid
-    let mut cmd_rx = connections.register_phone(uid).await;
+    // Register in Connections (in-memory) — replaces any existing connection for this device_id
+    let mut cmd_rx = connections.register_phone(device_id).await;
 
     // Register in Redis
-    if let Err(e) = state.register_connection(uid).await {
-        error!(uid, "failed to register connection: {e}");
+    if let Err(e) = state.register_connection(device_id).await {
+        error!(device_id, "failed to register connection: {e}");
     }
 
     // Send auth_ok
-    let server_ack = state.get_last_ack(uid).await.unwrap_or(0);
+    let server_ack = state.get_last_ack(device_id).await.unwrap_or(0);
     let resume_from = last_ack.max(server_ack);
     let auth_ok = ServerMessage::auth_ok(resume_from);
     let json = serde_json::to_string(&auth_ok).unwrap();
     if ws_tx.send(Message::Text(json.into())).await.is_err() {
-        connections.unregister_phone(uid).await;
+        connections.unregister_phone(device_id).await;
         return;
     }
 
     // Replay pending commands
-    match state.get_pending_commands(uid, last_ack).await {
+    match state.get_pending_commands(device_id, last_ack).await {
         Ok(commands) => {
             for cmd in commands {
                 let json = serde_json::to_string(&cmd).unwrap();
                 if ws_tx.send(Message::Text(json.into())).await.is_err() {
-                    error!(uid, "failed to replay command");
-                    connections.unregister_phone(uid).await;
+                    error!(device_id, "failed to replay command");
+                    connections.unregister_phone(device_id).await;
                     return;
                 }
             }
         }
         Err(e) => {
-            warn!(uid, "failed to get pending commands: {e}");
+            warn!(device_id, "failed to get pending commands: {e}");
         }
     }
 
@@ -231,32 +231,32 @@ async fn handle_phone_connection(
                     Some(Ok(Message::Text(text))) => {
                         match parse_phone_message(&text) {
                             Ok(PhoneMessage::Ack(ack)) => {
-                                if let Err(e) = state.process_ack(uid, ack.ack).await {
-                                    warn!(uid, "failed to process ack: {e}");
+                                if let Err(e) = state.process_ack(device_id, ack.ack).await {
+                                    warn!(device_id, "failed to process ack: {e}");
                                 }
                             }
                             Ok(PhoneMessage::Response(resp)) => {
-                                info!(uid, id = resp.id, status = %resp.status, "command response");
+                                info!(device_id, id = resp.id, status = %resp.status, "command response");
                                 let resp_json = serde_json::to_string(&resp).unwrap_or_default();
                                 // Store in Redis
-                                if let Err(e) = state.store_response(uid, resp.id, &resp_json).await {
-                                    warn!(uid, "failed to store response: {e}");
+                                if let Err(e) = state.store_response(device_id, resp.id, &resp_json).await {
+                                    warn!(device_id, "failed to store response: {e}");
                                 }
                                 // Notify controllers via broadcast
-                                connections.notify_response(uid, resp.id, &resp_json);
+                                connections.notify_response(device_id, resp.id, &resp_json);
                                 // Also process as an ack
-                                if let Err(e) = state.process_ack(uid, resp.id).await {
-                                    warn!(uid, "failed to process response ack: {e}");
+                                if let Err(e) = state.process_ack(device_id, resp.id).await {
+                                    warn!(device_id, "failed to process response ack: {e}");
                                 }
                             }
                             Ok(PhoneMessage::Pong(_)) => {
                                 last_pong = tokio::time::Instant::now();
                             }
                             Ok(PhoneMessage::Auth(_)) => {
-                                warn!(uid, "unexpected auth message after authentication");
+                                warn!(device_id, "unexpected auth message after authentication");
                             }
                             Err(e) => {
-                                warn!(uid, "failed to parse message: {e}");
+                                warn!(device_id, "failed to parse message: {e}");
                             }
                         }
                     }
@@ -264,11 +264,11 @@ async fn handle_phone_connection(
                         last_pong = tokio::time::Instant::now();
                     }
                     Some(Ok(Message::Close(_))) | None => {
-                        info!(uid, "phone connection closed");
+                        info!(device_id, "phone connection closed");
                         break;
                     }
                     Some(Err(e)) => {
-                        warn!(uid, "websocket error: {e}");
+                        warn!(device_id, "websocket error: {e}");
                         break;
                     }
                     _ => {}
@@ -278,7 +278,7 @@ async fn handle_phone_connection(
             // External command to send to phone (from controllers via Connections)
             Some(cmd_json) = cmd_rx.recv() => {
                 if ws_tx.send(Message::Text(cmd_json.into())).await.is_err() {
-                    error!(uid, "failed to send command to phone");
+                    error!(device_id, "failed to send command to phone");
                     break;
                 }
             }
@@ -286,7 +286,7 @@ async fn handle_phone_connection(
             // Heartbeat tick
             _ = heartbeat.tick() => {
                 if last_pong.elapsed() > HEARTBEAT_TIMEOUT {
-                    warn!(uid, "heartbeat timeout, disconnecting phone");
+                    warn!(device_id, "heartbeat timeout, disconnecting phone");
                     break;
                 }
                 let ping = ServerMessage::ping();
@@ -299,12 +299,12 @@ async fn handle_phone_connection(
     }
 
     // Cleanup
-    connections.unregister_phone(uid).await;
-    if let Err(e) = state.unregister_connection(uid).await {
-        error!(uid, "failed to unregister: {e}");
+    connections.unregister_phone(device_id).await;
+    if let Err(e) = state.unregister_connection(device_id).await {
+        error!(device_id, "failed to unregister: {e}");
     }
     let _ = ws_tx.close().await;
-    info!(%addr, uid, "phone disconnected");
+    info!(%addr, device_id, "phone disconnected");
 }
 
 /// Handle a controller connection: auth with phone status, relay commands, stream responses.
@@ -315,16 +315,16 @@ async fn handle_controller_connection(
     >,
     mut ws_rx: futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<TcpStream>>,
     addr: SocketAddr,
-    uid: &str,
-    target_uid: &str,
+    device_id: &str,
+    target_device_id: &str,
     state: Arc<State>,
     connections: Arc<Connections>,
 ) {
     // Check if phone is connected
-    let phone_connected = connections.is_phone_connected(target_uid).await;
+    let phone_connected = connections.is_phone_connected(target_device_id).await;
 
     // Register controller
-    let mut event_rx = connections.register_controller(target_uid).await;
+    let mut event_rx = connections.register_controller(target_device_id).await;
 
     // Subscribe to response broadcast
     let mut response_rx = connections.subscribe_responses();
@@ -336,12 +336,12 @@ async fn handle_controller_connection(
         return;
     }
 
-    info!(%addr, uid, target_uid, phone_connected, "controller connected");
+    info!(%addr, device_id, target_device_id, phone_connected, "controller connected");
 
     // Main connection loop
     let mut heartbeat = interval(HEARTBEAT_INTERVAL);
     let mut last_pong = tokio::time::Instant::now();
-    let target_uid_owned = target_uid.to_string();
+    let target_device_id_owned = target_device_id.to_string();
 
     loop {
         tokio::select! {
@@ -353,15 +353,15 @@ async fn handle_controller_connection(
                         match parse_controller_message(&text) {
                             Ok(ctrl_cmd) => {
                                 // Enqueue command in Redis
-                                match state.enqueue_command(&target_uid_owned, ctrl_cmd.cmd, ctrl_cmd.params).await {
+                                match state.enqueue_command(&target_device_id_owned, ctrl_cmd.cmd, ctrl_cmd.params).await {
                                     Ok(command) => {
                                         // Send command to phone via Connections
                                         let cmd_json = serde_json::to_string(&command).unwrap();
-                                        let sent = connections.send_to_phone(&target_uid_owned, &cmd_json).await;
+                                        let sent = connections.send_to_phone(&target_device_id_owned, &cmd_json).await;
 
                                         if !sent {
                                             // Phone not connected — command is queued in Redis
-                                            warn!(uid, target_uid = %target_uid_owned, "phone not connected, command queued");
+                                            warn!(device_id, target_device_id = %target_device_id_owned, "phone not connected, command queued");
                                         }
 
                                         // Send cmd_accepted to controller
@@ -372,7 +372,7 @@ async fn handle_controller_connection(
                                         }
                                     }
                                     Err(e) => {
-                                        error!(uid, "failed to enqueue command: {e}");
+                                        error!(device_id, "failed to enqueue command: {e}");
                                         let err = ServerMessage::error(format!("failed to enqueue: {e}"));
                                         let json = serde_json::to_string(&err).unwrap();
                                         let _ = ws_tx.send(Message::Text(json.into())).await;
@@ -387,7 +387,7 @@ async fn handle_controller_connection(
                                         continue;
                                     }
                                 }
-                                warn!(uid, "failed to parse controller message");
+                                warn!(device_id, "failed to parse controller message");
                             }
                         }
                     }
@@ -395,11 +395,11 @@ async fn handle_controller_connection(
                         last_pong = tokio::time::Instant::now();
                     }
                     Some(Ok(Message::Close(_))) | None => {
-                        info!(uid, "controller connection closed");
+                        info!(device_id, "controller connection closed");
                         break;
                     }
                     Some(Err(e)) => {
-                        warn!(uid, "controller websocket error: {e}");
+                        warn!(device_id, "controller websocket error: {e}");
                         break;
                     }
                     _ => {}
@@ -414,8 +414,8 @@ async fn handle_controller_connection(
             }
 
             // Response broadcast — relay matching responses to this controller
-            Ok((resp_uid, _cmd_id, resp_json)) = response_rx.recv() => {
-                if resp_uid == target_uid_owned {
+            Ok((resp_device_id, _cmd_id, resp_json)) = response_rx.recv() => {
+                if resp_device_id == target_device_id_owned {
                     if ws_tx.send(Message::Text(resp_json.into())).await.is_err() {
                         break;
                     }
@@ -425,7 +425,7 @@ async fn handle_controller_connection(
             // Heartbeat tick
             _ = heartbeat.tick() => {
                 if last_pong.elapsed() > HEARTBEAT_TIMEOUT {
-                    warn!(uid, "controller heartbeat timeout");
+                    warn!(device_id, "controller heartbeat timeout");
                     break;
                 }
                 let ping = ServerMessage::ping();
@@ -440,5 +440,5 @@ async fn handle_controller_connection(
     // Cleanup — note: we can't easily get the pointer to unregister a specific controller,
     // but the channel will be dropped which effectively removes it
     let _ = ws_tx.close().await;
-    info!(%addr, uid, "controller disconnected");
+    info!(%addr, device_id, "controller disconnected");
 }

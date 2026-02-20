@@ -72,7 +72,7 @@ Worker verifies tokens by calling `POST /api/auth/verify` on the web API.
 
 - **Connection generation counter** in Android WebSocket client prevents stale callbacks from triggering reconnect loops
 - **Worker replaces** (not rejects) duplicate phone connections — drops old channel seamlessly
-- **3-second cooldown** between disconnect/reconnect for same UID
+- **3-second cooldown** between disconnect/reconnect for same device_id
 - **Heartbeat**: server pings every 30s, drops after 60s no pong
 
 ## Deployment

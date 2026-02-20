@@ -20,7 +20,7 @@ pub struct AuthMessage {
     #[serde(default = "default_role")]
     pub role: String, // "phone" or "controller"
     #[serde(default)]
-    pub target_uid: Option<String>, // for controllers: which phone to control
+    pub target_device_id: Option<String>, // for controllers: which phone to control
 }
 
 fn default_role() -> String {

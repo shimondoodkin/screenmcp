@@ -174,7 +174,7 @@ These are accepted but return unsupported flag (for cross-platform CLI compatibi
 
 ### WS Auth — Controller (CLI)
 ```json
-{ "type": "auth", "token": "firebase-id-token-or-api-key", "role": "controller", "target_uid": "phone-user-uid", "last_ack": 0 }
+{ "type": "auth", "token": "firebase-id-token-or-api-key", "role": "controller", "target_device_id": "device-id", "last_ack": 0 }
 → { "type": "auth_ok", "phone_connected": true }
 ```
 
@@ -187,10 +187,10 @@ Phone disconnects (network drop, server drain, deploy). Must not lose commands.
 
 ### State in Redis
 ```
-user:{uid}:server       → "worker-uuid"       # which server holds connection
-user:{uid}:pending      → [cmd7, cmd8]        # unacked commands (list)
-user:{uid}:last_ack     → 6                   # last command phone confirmed
-user:{uid}:cmd_counter  → 13                  # next command ID to assign
+device:{device_id}:server       → "worker-uuid"       # which server holds connection
+device:{device_id}:pending      → [cmd7, cmd8]        # unacked commands (list)
+device:{device_id}:last_ack     → 6                   # last command phone confirmed
+device:{device_id}:cmd_counter  → 13                  # next command ID to assign
 ```
 
 ### Reconnect Sequence
@@ -205,7 +205,7 @@ user:{uid}:cmd_counter  → 13                  # next command ID to assign
 ### Command Lifecycle
 ```
 Controller sends command
-    → Worker assigns ID, appends to user:{uid}:pending in Redis
+    → Worker assigns ID, appends to device:{device_id}:pending in Redis
     → Worker forwards to phone over WS
     → Phone executes, sends response + ack
     → Worker removes from pending, updates last_ack

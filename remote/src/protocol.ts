@@ -3,7 +3,7 @@ export interface AuthMessage {
   type: "auth";
   token: string;
   role: "controller";
-  target_uid: string;
+  target_device_id: string;
   last_ack: number;
 }
 

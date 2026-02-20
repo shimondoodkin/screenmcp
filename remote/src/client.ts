@@ -10,10 +10,10 @@ import type {
 export interface PhoneClientOptions {
   /** API server URL for discovery (e.g. https://phonemcp-api.ngrok-free.app) */
   apiUrl: string;
-  /** Auth token (Firebase ID token or dev UID) */
+  /** Auth token (Firebase ID token or API key) */
   token: string;
-  /** Target phone UID to control */
-  targetUid: string;
+  /** Target device ID to control */
+  targetDeviceId: string;
   /** Timeout for individual commands (ms) */
   commandTimeout?: number;
   /** Auto-reconnect on worker disconnect */
@@ -92,7 +92,7 @@ export class PhoneClient extends EventEmitter {
           type: "auth",
           token: this.options.token,
           role: "controller",
-          target_uid: this.options.targetUid,
+          target_device_id: this.options.targetDeviceId,
           last_ack: 0,
         };
         ws.send(JSON.stringify(auth));

@@ -13,14 +13,14 @@ program
   .description("PhoneMCP remote client CLI")
   .option("--api <url>", "API server URL for discovery", DEFAULT_API_URL)
   .requiredOption("--token <token>", "Auth token (API key or Firebase ID token)")
-  .requiredOption("--uid <uid>", "Target phone UID");
+  .requiredOption("--device-id <deviceId>", "Target device ID");
 
 function createClient(): PhoneClient {
-  const opts = program.opts<{ api: string; token: string; uid: string }>();
+  const opts = program.opts<{ api: string; token: string; deviceId: string }>();
   return new PhoneClient({
     apiUrl: opts.api,
     token: opts.token,
-    targetUid: opts.uid,
+    targetDeviceId: opts.deviceId,
   });
 }
 
