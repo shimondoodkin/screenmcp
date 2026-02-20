@@ -1,0 +1,25 @@
+{
+  "name": "phonemcp-remote",
+  "version": "0.1.0",
+  "description": "PhoneMCP remote client for controlling Android phones",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "phonemcp": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

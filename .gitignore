@@ -1,0 +1,33 @@
+data/
+
+# Android
+app/build/
+build/
+.gradle/
+local.properties
+
+# Node
+node_modules/
+remote/dist/
+web/.next/
+
+# Rust
+worker/target/
+
+# IDE
+.idea/
+*.iml
+
+# Secrets
+.env
+.env.local
+firebase-service-account.json
+web/secrets/
+app/google-services.json
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
