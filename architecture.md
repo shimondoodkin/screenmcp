@@ -4,47 +4,49 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        phonemcp.com                              │
+│                    server10.doodkin.com                          │
 │                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
-│  │   Website     │  │  Worker      │  │  Rust WS Server(s)     │ │
-│  │   (Next.js)   │  │  Service     │  │  (phone connections)   │ │
-│  │               │  │  (subdomain) │  │                        │ │
-│  │  - Landing    │  │              │  │  - Holds phone WS      │ │
-│  │  - Dashboard  │  │  - MCP/SSE   │  │  - Executes commands   │ │
-│  │  - Docs       │  │    endpoint  │  │  - Resumable sessions  │ │
-│  │  - Login      │  │  - Routes    │  │                        │ │
-│  │  - Account    │  │    commands  │  │  worker1.phonemcp.com  │ │
-│  │  - Payments   │  │    to phones │  │  worker2.phonemcp.com  │ │
-│  │  - API keys   │  │              │  │  ...                   │ │
-│  │  - Devices    │  │              │  │                        │ │
-│  │  - APK dl     │  │              │  │                        │ │
-│  └──────┬───────┘  └──────┬───────┘  └────────┬───────────────┘ │
-│         │                  │                    │                 │
-│         └──────────────────┼────────────────────┘                │
-│                            │                                     │
-│                     ┌──────┴──────┐                              │
-│                     │   Redis     │                              │
-│                     │  + Postgres │                              │
-│                     │             │                              │
-│                     │ - Sessions  │                              │
-│                     │ - Workers   │                              │
-│                     │ - Users     │                              │
-│                     │ - Devices   │                              │
-│                     │ - Cmd queue │                              │
-│                     └─────────────┘                              │
+│  ┌──────────────┐                 ┌────────────────────────────┐ │
+│  │   Web API     │                │  Rust WS Worker             │ │
+│  │   (Next.js)   │                │  (phone + controller conns) │ │
+│  │               │                │                              │ │
+│  │  - Landing    │   HTTP verify  │  - Holds phone WS            │ │
+│  │  - Dashboard  │◄──────────────►│  - Routes commands           │ │
+│  │  - Login      │                │  - Session resumption (Redis)│ │
+│  │  - API keys   │                │  - Self-registers on start   │ │
+│  │  - Discovery  │                │                              │ │
+│  │  - Devices    │                │  :8080 (internal)            │ │
+│  │  :3000 (int)  │                │  :8443 (WSS via socat)       │ │
+│  └──────┬───────┘                └────────┬──────────────────┘  │
+│         │                                  │                     │
+│         └──────────┬───────────────────────┘                     │
+│                    │                                              │
+│             ┌──────┴──────┐                                      │
+│             │  Redis      │                                      │
+│             │  + Postgres │                                      │
+│             │             │                                      │
+│             │ - Sessions  │                                      │
+│             │ - Workers   │                                      │
+│             │ - Users     │                                      │
+│             │ - Devices   │                                      │
+│             │ - Cmd queue │                                      │
+│             └─────────────┘                                      │
 │                                                                  │
-│                     ┌─────────────┐                              │
-│                     │  Firebase   │                              │
-│                     │  Auth       │                              │
-│                     │  (Google)   │                              │
-│                     └─────────────┘                              │
+│             ┌─────────────┐                                      │
+│             │  Firebase   │                                      │
+│             │  Auth       │                                      │
+│             │  (Google)   │                                      │
+│             └─────────────┘                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Auth Flow — Google Login via Firebase
 
 Firebase Auth handles Google Sign-In for both phone app and website. The server never sees Google credentials — it only verifies Firebase ID tokens.
+
+Dual auth system (resolved by `web/src/lib/resolve-auth.ts`):
+- **Firebase ID tokens**: verified via Firebase Admin SDK
+- **API keys**: `pk_` + 64 hex chars, stored as SHA-256 hash in `api_keys` table
 
 ### Website (Next.js)
 
@@ -54,7 +56,7 @@ Browser                    Firebase             Next.js API           Postgres
   ├── Google Sign-In popup ──►│                     │                    │
   │◄── Firebase ID token ────┤                     │                    │
   │                           │                     │                    │
-  ├── POST /api/auth/login ──────────────────────►│                    │
+  ├── POST /api/auth/login ─────────────────────►│                    │
   │   { idToken }             │                     │                    │
   │                           │     verify token ──►│                    │
   │                           │◄── uid, email ──────┤                    │
@@ -72,13 +74,14 @@ Phone App                  Firebase             Discovery API         Worker WS
   ├── Google Sign-In ────────►│                     │                    │
   │◄── Firebase ID token ────┤                     │                    │
   │                           │                     │                    │
-  ├── GET /api/discover ─────────────────────────►│                    │
-  │   Authorization: Bearer {idToken}              │                    │
+  ├── POST /api/discover ──────────────────────►│                    │
+  │   Authorization: Bearer {idToken|apiKey}      │                    │
   │                           │     verify token ──►│                    │
-  │◄── { wsUrl, sessionToken } ──────────────────┤                    │
+  │◄── { wsUrl } ─────────────────────────────────┤                    │
   │                           │                     │                    │
   ├── WS connect ───────────────────────────────────────────────────►│
-  │   { type: "auth", token: sessionToken }        │                    │
+  │   { type: "auth", token, role: "phone", last_ack: 5 }          │
+  │                           │                     │   verify via API──►│
   │◄── { type: "auth_ok" } ────────────────────────────────────────┤
   │                           │                     │                    │
 ```
@@ -87,8 +90,10 @@ Phone App                  Firebase             Discovery API         Worker WS
 ```
 Google credentials
     → Firebase ID token (short-lived, ~1hr)
-        → Session token (server-issued JWT, for WS auth)
-            → Redis session (maps to user + device)
+        → Used directly for WS auth (worker verifies via POST /api/auth/verify)
+
+Alternative:
+    API key (pk_...) → worker verifies via POST /api/auth/verify → resolves to user
 ```
 
 ## Firebase Setup Requirements
@@ -98,7 +103,7 @@ Google credentials
 3. Add Android app (package: com.phonemcp.app, SHA-1 fingerprint)
 4. Add Web app (for Next.js dashboard)
 5. Download `google-services.json` → Android app
-6. Copy web config → Next.js env vars
+6. Copy web config → `web/.env.local` (NEXT_PUBLIC_FIREBASE_* vars)
 
 ## Data Models (Postgres)
 
@@ -114,17 +119,31 @@ CREATE TABLE users (
 );
 ```
 
+### workers
+```sql
+CREATE TABLE workers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    domain TEXT UNIQUE NOT NULL,
+    active BOOLEAN DEFAULT true,
+    connection_count INT DEFAULT 0,
+    region TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
 ### devices
 ```sql
 CREATE TABLE devices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id),
-    device_name TEXT,
+    device_name TEXT NOT NULL DEFAULT 'default',
     device_model TEXT,
+    fcm_token TEXT,
     last_seen TIMESTAMPTZ,
     worker_id UUID REFERENCES workers(id),
     connected BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id, device_name)
 );
 ```
 
@@ -138,18 +157,6 @@ CREATE TABLE api_keys (
     name TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     last_used TIMESTAMPTZ
-);
-```
-
-### workers
-```sql
-CREATE TABLE workers (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    domain TEXT UNIQUE NOT NULL,
-    active BOOLEAN DEFAULT true,
-    connection_count INT DEFAULT 0,
-    region TEXT,
-    created_at TIMESTAMPTZ DEFAULT now()
 );
 ```
 
@@ -170,43 +177,45 @@ user:{uid}:cmd_counter    → 13
 session:{token}           → { user_id, device_id }  TTL 24h
 ```
 
-## Implementation Order
+## Implementation Status
 
-### Phase 1 — Done ✓
-- [x] Android accessibility service
-- [x] Screenshot, click, drag, type, clipboard, UI tree
+### Phase 1 — Android App ✓
+- [x] Accessibility service (PhoneMcpService)
+- [x] Screenshot, click, long_click, drag, scroll, type, clipboard, UI tree
+- [x] Camera capture (front/rear)
+- [x] Phone lock detection
+- [x] WebP screenshot format with quality/scaling params
 - [x] Test UI (MainActivity)
 
-### Phase 2 — Firebase Auth
-- [ ] Create Firebase project, enable Google Sign-In
-- [ ] Add Firebase to Android app (google-services.json)
-- [ ] Google Sign-In screen in phone app
-- [ ] Next.js project setup
-- [ ] Firebase web auth (Google Sign-In on website)
-- [ ] Server-side token verification
-- [ ] User table in Postgres
+### Phase 2 — Firebase Auth ✓
+- [x] Firebase project, Google Sign-In enabled
+- [x] Firebase in Android app (google-services.json)
+- [x] Google Sign-In screen in phone app
+- [x] Next.js project setup
+- [x] Firebase web auth (Google Sign-In on website)
+- [x] Server-side token verification
+- [x] User table in Postgres
+- [x] API key auth system (pk_ prefix, SHA-256 hash)
 
-### Phase 3 — Website Dashboard
-- [ ] Landing page
-- [ ] Login/signup flow
-- [ ] Dashboard (account, devices, API keys)
-- [ ] APK download page
-- [ ] Documentation pages
+### Phase 3 — Website Dashboard ✓
+- [x] Login/signup flow
+- [x] Dashboard (devices, API keys CRUD)
 
-### Phase 4 — WebSocket + Workers
-- [ ] Rust WS server (phone connections)
-- [ ] Discovery API
-- [ ] Protocol implementation (see protocol.md)
-- [ ] Session resumption
-- [ ] Phone app WS client + auto-reconnect
+### Phase 4 — WebSocket + Workers ✓
+- [x] Rust WS server (phone + controller connections)
+- [x] Discovery API (POST /api/discover, least-loaded worker)
+- [x] Protocol implementation (see protocol.md)
+- [x] Session resumption via Redis
+- [x] Phone app WS client + auto-reconnect
+- [x] Remote CLI client (TypeScript)
+- [x] Docker Compose deployment
 
 ### Phase 5 — MCP Integration
-- [ ] MCP endpoint on worker (SSE / streamable HTTP)
-- [ ] API key auth for MCP clients
+- [ ] MCP endpoint (SSE / streamable HTTP)
 - [ ] Route MCP commands → phone → results back
 
 ### Phase 6 — Payments & Polish
-- [ ] Stripe integration
+- [ ] PayPal subscription integration
 - [ ] Rate limiting per plan
 - [ ] Usage tracking
-- [ ] Audit logs
+- [ ] Landing page, docs, use cases

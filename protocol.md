@@ -7,14 +7,16 @@ Phone connects to a WebSocket server, receives commands, executes them, and send
 ## Connection Flow
 
 ```
-Phone                     Discovery API              WS Server             Redis
+Phone/CLI                 Discovery API              WS Server             Redis
   │                            │                        │                    │
-  ├── GET /discover ──────────►│                        │                    │
-  │   (auth token)             ├── find least-loaded ──►│                    │
-  │◄── wss://ws-4.example.com─┤                        │                    │
+  ├── POST /api/discover ─────►│                        │                    │
+  │   Authorization: Bearer ..  ├── find least-loaded ──►│                    │
+  │◄── { wsUrl } ─────────────┤                        │                    │
   │                            │                        │                    │
   ├── WS connect ─────────────────────────────────────►│                    │
-  ├── { "type":"auth", "token":"...", "last_ack": 5 }─►│                    │
+  ├── { "type":"auth", "token":"...",                  │                    │
+  │     "role":"phone", "last_ack": 5 } ─────────────►│                    │
+  │                            │                        ├── verify via API──►│
   │                            │                        ├── SET user:server──►│
   │                            │                        ├── GET pending cmds─►│
   │◄── replay commands id > 5 ─────────────────────────┤                    │
@@ -64,75 +66,119 @@ All messages are JSON over WebSocket.
 ### click
 ```json
 { "id": 1, "cmd": "click", "params": { "x": 540, "y": 1200 } }
+{ "id": 1, "cmd": "click", "params": { "x": 540, "y": 1200, "duration": 500 } }
 ```
+Optional `duration` in ms (default 100). Use higher values for long-press effects.
 
 ### long_click
 ```json
 { "id": 2, "cmd": "long_click", "params": { "x": 540, "y": 1200 } }
 ```
+Fixed 1000ms press duration.
 
 ### drag
 ```json
 { "id": 3, "cmd": "drag", "params": { "startX": 540, "startY": 1200, "endX": 540, "endY": 400, "duration": 300 } }
 ```
 
+### scroll
+```json
+{ "id": 4, "cmd": "scroll", "params": { "x": 540, "y": 1200, "dx": 0, "dy": -300 } }
+```
+Finger-drag gesture from (x,y) to (x+dx, y+dy). Use negative dy to scroll content up.
+
 ### type
 ```json
-{ "id": 4, "cmd": "type", "params": { "text": "hello world" } }
+{ "id": 5, "cmd": "type", "params": { "text": "hello world" } }
 ```
+Appends text to currently focused input field.
 
-### select_all
+### select_all / copy / paste
 ```json
-{ "id": 5, "cmd": "select_all" }
-```
-
-### copy
-```json
-{ "id": 6, "cmd": "copy" }
-```
-
-### paste
-```json
-{ "id": 7, "cmd": "paste" }
+{ "id": 6, "cmd": "select_all" }
+{ "id": 7, "cmd": "copy" }
+{ "id": 8, "cmd": "paste" }
 ```
 
 ### get_text
 ```json
-{ "id": 8, "cmd": "get_text" }
-→ { "id": 8, "status": "ok", "result": { "text": "field contents" } }
+{ "id": 9, "cmd": "get_text" }
+→ { "id": 9, "status": "ok", "result": { "text": "field contents" } }
 ```
 
 ### screenshot
 ```json
-{ "id": 9, "cmd": "screenshot" }
-→ { "id": 9, "status": "ok", "result": { "data": "<base64 png>" } }
+{ "id": 10, "cmd": "screenshot" }
+{ "id": 10, "cmd": "screenshot", "params": { "quality": 50, "max_width": 720, "max_height": 1280 } }
+→ { "id": 10, "status": "ok", "result": { "image": "<base64 webp>" } }
+→ { "id": 10, "status": "error", "error": "phone is locked" }
 ```
+Returns WebP image as base64. Default: lossless WebP (quality omitted or 100). Quality 1-99: lossy WebP. Optional `max_width`/`max_height` for scaling (aspect ratio preserved). Returns error if phone is locked (keyguard active).
 
-### get_ui_tree
+### ui_tree
 ```json
-{ "id": 10, "cmd": "get_ui_tree" }
-→ { "id": 10, "status": "ok", "result": { "tree": [ ...nodes ] } }
+{ "id": 11, "cmd": "ui_tree" }
+→ { "id": 11, "status": "ok", "result": { "tree": [ ...nodes ] } }
 ```
 
 ### UI Tree Node Format
 ```json
 {
-  "cls": "EditText",
-  "id": "search_input",
+  "className": "EditText",
+  "resourceId": "com.example:id/search_input",
   "text": "hello",
-  "desc": "Search",
-  "bounds": [0, 100, 1080, 200],
-  "flags": ["click", "edit", "focused"],
+  "contentDescription": "Search",
+  "bounds": { "left": 0, "top": 100, "right": 1080, "bottom": 200 },
+  "clickable": true,
+  "editable": true,
+  "focused": true,
+  "scrollable": false,
+  "checkable": false,
+  "checked": false,
   "children": [ ... ]
 }
 ```
 
 ### back / home / recents
 ```json
-{ "id": 11, "cmd": "back" }
-{ "id": 12, "cmd": "home" }
-{ "id": 13, "cmd": "recents" }
+{ "id": 12, "cmd": "back" }
+{ "id": 13, "cmd": "home" }
+{ "id": 14, "cmd": "recents" }
 ```
+
+### camera
+```json
+{ "id": 15, "cmd": "camera" }
+{ "id": 15, "cmd": "camera", "params": { "camera": "0", "quality": 80, "max_width": 1280, "max_height": 960 } }
+→ { "id": 15, "status": "ok", "result": { "image": "<base64 webp>" } }
+```
+Camera ID: "0" = rear (default), "1" = front. Returns empty image string if camera not available. Quality default: 80 (lossy). Optional `max_width`/`max_height` for scaling.
+
+### Unsupported PC commands
+These are accepted but return unsupported flag (for cross-platform CLI compatibility):
+```json
+{ "id": 16, "cmd": "right_click", "params": { "x": 540, "y": 1200 } }
+{ "id": 17, "cmd": "middle_click", "params": { "x": 540, "y": 1200 } }
+{ "id": 18, "cmd": "mouse_scroll", "params": { "x": 540, "y": 1200, "dx": 0, "dy": -120 } }
+→ { "id": 16, "status": "ok", "result": { "unsupported": true } }
+```
+
+## Authentication
+
+### WS Auth — Phone
+```json
+{ "type": "auth", "token": "firebase-id-token-or-api-key", "role": "phone", "last_ack": 5 }
+→ { "type": "auth_ok" }
+→ { "type": "auth_fail", "error": "invalid token" }
+```
+
+### WS Auth — Controller (CLI)
+```json
+{ "type": "auth", "token": "firebase-id-token-or-api-key", "role": "controller", "target_uid": "phone-user-uid", "last_ack": 0 }
+→ { "type": "auth_ok", "phone_connected": true }
+```
+
+Worker verifies tokens by calling `POST /api/auth/verify` on the web API server.
 
 ## Session Resumption
 
@@ -141,15 +187,15 @@ Phone disconnects (network drop, server drain, deploy). Must not lose commands.
 
 ### State in Redis
 ```
-user:{uid}:server       → "ws-4"           # which server holds connection
-user:{uid}:pending      → [cmd7, cmd8]     # unacked commands (list)
-user:{uid}:last_ack     → 6                # last command phone confirmed
-user:{uid}:cmd_counter  → 13               # next command ID to assign
+user:{uid}:server       → "worker-uuid"       # which server holds connection
+user:{uid}:pending      → [cmd7, cmd8]        # unacked commands (list)
+user:{uid}:last_ack     → 6                   # last command phone confirmed
+user:{uid}:cmd_counter  → 13                  # next command ID to assign
 ```
 
 ### Reconnect Sequence
 1. Phone detects disconnect
-2. Phone calls `GET /discover` with auth token
+2. Phone calls `POST /api/discover` with auth token
 3. Discovery returns a WS server URL (skips servers marked "draining")
 4. Phone opens WS, sends auth message with `last_ack`
 5. Server looks up pending commands in Redis where `id > last_ack`
@@ -158,11 +204,11 @@ user:{uid}:cmd_counter  → 13               # next command ID to assign
 
 ### Command Lifecycle
 ```
-Dashboard sends command
-    → Server assigns ID, appends to user:{uid}:pending in Redis
-    → Server forwards to phone over WS
+Controller sends command
+    → Worker assigns ID, appends to user:{uid}:pending in Redis
+    → Worker forwards to phone over WS
     → Phone executes, sends response + ack
-    → Server removes from pending, updates last_ack
+    → Worker removes from pending, updates last_ack
 ```
 
 ## Server Drain
@@ -187,27 +233,6 @@ No pong in 60s → server drops connection, cleans up
 No ping in 60s → phone reconnects via discovery
 ```
 
-## Authentication
-
-### Initial Auth (HTTP)
-```
-POST /auth/google
-{ "google_id_token": "..." }
-→ { "token": "jwt-session-token", "expires": 3600 }
-```
-
-### WS Auth (on connect)
-```json
-{ "type": "auth", "token": "jwt-session-token", "last_ack": 5 }
-→ { "type": "auth_ok", "resume_from": 6 }
-```
-
-```json
-{ "type": "auth", "token": "expired-token" }
-→ { "type": "auth_fail", "error": "token expired" }
-→ server closes connection
-```
-
 ## Error Codes
 
 | Code | Meaning |
@@ -217,22 +242,6 @@ POST /auth/google
 | `not_ready` | Accessibility service not enabled |
 | `no_focus` | No focused input field for text operations |
 | `timeout` | Command took too long to execute |
-
-## Binary Messages
-
-Screenshots can be large. Two options:
-
-### Option A: Base64 in JSON (simple, ~33% overhead)
-```json
-{ "id": 9, "status": "ok", "result": { "data": "<base64>" } }
-```
-
-### Option B: Binary frame (efficient)
-```
-[4 bytes: command ID][rest: raw PNG bytes]
-```
-
-Server decides based on negotiation at auth time. Default: base64.
 
 ## Rate Limits
 
