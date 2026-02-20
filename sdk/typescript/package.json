@@ -1,0 +1,32 @@
+{
+  "name": "@phonemcp/sdk",
+  "version": "1.0.0",
+  "description": "TypeScript SDK for controlling phones via PhoneMCP",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "phonemcp",
+    "phone",
+    "android",
+    "automation",
+    "remote-control",
+    "sdk"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.7.0"
+  }
+}
