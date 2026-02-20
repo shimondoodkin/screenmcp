@@ -19,7 +19,5 @@ sleep 1
 
 echo 'Starting Docker Compose...'
 cd /home/user/phonemcp
-export WORKER_WS_EXTERNAL_URL=wss://server10.doodkin.com:8443
-export WORKER_EXTERNAL_URL=wss://server10.doodkin.com:8443
-export REGISTER_WITH_SERVER=true
+# Env vars read from .env automatically by Docker Compose
 docker compose up --build
