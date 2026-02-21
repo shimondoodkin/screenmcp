@@ -1,4 +1,4 @@
-name: Release Desktop Clients
+name: Release
 
 on:
   push:
@@ -12,7 +12,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-desktop:
     strategy:
       fail-fast: false
       matrix:
@@ -114,8 +114,74 @@ jobs:
           name: ${{ steps.archive.outputs.name }}
           path: ${{ env.ASSET }}
 
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Decode google-services.json
+        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > app/google-services.json
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+
+      - name: Sign APK
+        if: env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+          # Find the unsigned APK
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          ALIGNED="app/build/outputs/apk/release/screenmcp-aligned.apk"
+          SIGNED="app/build/outputs/apk/release/screenmcp-signed.apk"
+          zipalign -v -p 4 "$APK" "$ALIGNED"
+          apksigner sign \
+            --ks keystore.jks \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --out "$SIGNED" \
+            "$ALIGNED"
+          rm keystore.jks
+
+      - name: Determine APK name
+        id: apk
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME}"
+          # Use signed APK if it exists, otherwise unsigned
+          if [ -f "app/build/outputs/apk/release/screenmcp-signed.apk" ]; then
+            APK_PATH="app/build/outputs/apk/release/screenmcp-signed.apk"
+          else
+            APK_PATH=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          fi
+          DEST="screenmcp-android-${version}.apk"
+          cp "$APK_PATH" "$DEST"
+          echo "path=${DEST}" >> "$GITHUB_OUTPUT"
+          echo "name=${DEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenmcp-android
+          path: ${{ steps.apk.outputs.path }}
+
   release:
-    needs: build
+    needs: [build-desktop, build-android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +194,7 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec mv {} release/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.apk' \) -exec mv {} release/ \;
           ls -lh release/
 
       - name: Generate checksums
