@@ -191,7 +191,7 @@ def main():
         run(["git", "push", "origin", tag], dry_run=args.dry_run)
         print(f"\nReleased {tag}!")
         print(f"GitHub Actions will now build and publish assets.")
-        print(f"Track progress: https://github.com/shimondoodkin/phonemcp/actions")
+        print(f"Track progress: https://github.com/shimondoodkin/screenmcp/actions")
 
     return 0
 
