@@ -9,10 +9,14 @@ local.properties
 # Node
 node_modules/
 remote/dist/
+sdk/typescript/dist/
 web/.next/
 
 # Rust
 worker/target/
+linux/target/
+mac/target/
+windows/target/
 
 # IDE
 .idea/
