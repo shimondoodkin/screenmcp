@@ -98,12 +98,12 @@ You can also open the config file from the tray icon by clicking **Open Config F
 | `press_key` | Press and release a key |
 | `camera` | Not supported (returns unsupported) |
 
-## Linux vs PC/Mac Differences
+## Linux vs Windows/Mac Differences
 
-- Keyboard shortcuts use **Ctrl** (same as Windows PC)
-- `back` uses **Alt+Left** (same as Windows PC)
+- Keyboard shortcuts use **Ctrl** (same as Windows)
+- `back` uses **Alt+Left** (same as Windows)
 - `home` uses **Super** key (shows activities on GNOME, start menu on KDE)
-- `recents` uses **Alt+Tab** (same as Windows PC)
+- `recents` uses **Alt+Tab** (same as Windows)
 - `ui_tree` uses **wmctrl** (preferred) or **xdotool** (fallback) for window listing
 - Config is stored in `~/.config/screenmcp/` (XDG standard)
 

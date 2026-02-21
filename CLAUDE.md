@@ -53,7 +53,7 @@ Phone (Android) ←──WSS──→ Worker (Rust) ←──HTTP──→ Web A
 **Remote** (`remote/`) — TypeScript CLI client + library. Discovers worker via API, connects via WebSocket, sends commands. Has interactive REPL shell mode.
 
 **Desktop Clients** — Rust system tray apps that connect as "phone" devices for desktop control:
-- `pc/` — Windows (uses Win32 APIs for ui_tree)
+- `windows/` — Windows (uses Win32 APIs for ui_tree)
 - `mac/` — macOS (uses CoreGraphics for ui_tree, Cmd shortcuts)
 - `linux/` — Linux (uses wmctrl/xdotool for ui_tree, Ctrl shortcuts)
 
@@ -95,4 +95,4 @@ Schema in `db/init.sql`. Tables: `users`, `workers`, `devices`, `api_keys`. All 
 
 ## Supported Phone Commands
 
-`screenshot`, `click`, `long_click`, `drag`, `scroll`, `type`, `get_text`, `select_all`, `copy`, `paste`, `back`, `home`, `recents`, `ui_tree`, `camera`. Desktop-only keyboard commands: `hold_key`, `release_key`, `press_key` (PC/Mac/Linux). Unsupported PC-style commands (`right_click`, `middle_click`, `mouse_scroll`) return `{status: "ok", unsupported: true}`.
+`screenshot`, `click`, `long_click`, `drag`, `scroll`, `type`, `get_text`, `select_all`, `copy`, `paste`, `back`, `home`, `recents`, `ui_tree`, `camera`. Desktop-only keyboard commands: `hold_key`, `release_key`, `press_key` (PC/Mac/Linux). Unsupported desktop-only commands (`right_click`, `middle_click`, `mouse_scroll`) return `{status: "ok", unsupported: true}`.

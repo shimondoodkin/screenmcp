@@ -13,11 +13,11 @@ fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "screenmcp_pc=info".into()),
+                .unwrap_or_else(|_| "screenmcp_windows=info".into()),
         )
         .init();
 
-    info!("ScreenMCP PC starting");
+    info!("ScreenMCP Windows starting");
 
     // Load config
     let config = Config::load();
@@ -58,5 +58,5 @@ fn main() {
     // Run the tray on the main thread (required by most OS windowing systems)
     tray::run_tray(ws_cmd_tx, status_rx);
 
-    info!("ScreenMCP PC shutting down");
+    info!("ScreenMCP Windows shutting down");
 }

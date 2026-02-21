@@ -162,7 +162,7 @@ Camera ID: "0" = rear (default), "1" = front. Returns empty image string if came
 ```
 Desktop keyboard control. `hold_key` presses and holds a key, `release_key` releases it, `press_key` does press+release in one action. Supported key names: `shift`, `ctrl`/`control`, `alt`, `meta`/`cmd`/`win`/`command`/`super`, `tab`, `enter`/`return`, `escape`/`esc`, `space`, `backspace`, `delete`/`del`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1`–`f12`, or any single character. On Android these return `{status: "error"}` (unsupported).
 
-### Unsupported PC commands
+### Unsupported desktop-only commands
 These are accepted but return unsupported flag (for cross-platform CLI compatibility):
 ```json
 { "id": 16, "cmd": "right_click", "params": { "x": 540, "y": 1200 } }

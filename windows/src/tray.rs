@@ -79,7 +79,7 @@ impl App {
             if let Ok(icon) = Icon::from_rgba(create_icon_rgba(connected), 32, 32) {
                 let _ = tray.set_icon(Some(icon));
             }
-            let _ = tray.set_tooltip(Some(&format!("ScreenMCP PC - {status}")));
+            let _ = tray.set_tooltip(Some(&format!("ScreenMCP Windows - {status}")));
         }
 
         if let Some(ref items) = self.menu_items {
@@ -163,7 +163,7 @@ impl ApplicationHandler<TrayEvent> for App {
 
         match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
-            .with_tooltip("ScreenMCP PC - Disconnected")
+            .with_tooltip("ScreenMCP Windows - Disconnected")
             .with_icon(icon)
             .with_title("ScreenMCP")
             .build()

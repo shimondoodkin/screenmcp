@@ -101,7 +101,7 @@ You can also open the config file from the menu bar icon by clicking **Open Conf
 | `mouse_scroll` | Scroll (alias for scroll) |
 | `camera` | Not supported (returns unsupported) |
 
-## macOS vs PC Differences
+## macOS vs Windows Differences
 
 - Keyboard shortcuts use **Cmd** (Meta) instead of Ctrl
 - `back` uses **Cmd+Left** instead of Alt+Left
