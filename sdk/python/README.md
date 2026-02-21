@@ -1,12 +1,12 @@
-# PhoneMCP Python SDK
+# ScreenMCP Python SDK
 
 A Python library for controlling Android phones programmatically through the
-PhoneMCP platform.  Fully async, built on `websockets` and `httpx`.
+ScreenMCP platform.  Fully async, built on `websockets` and `httpx`.
 
 ## Installation
 
 ```bash
-pip install phonemcp
+pip install screenmcp
 ```
 
 Or install from source:
@@ -20,10 +20,10 @@ pip install -e .
 
 ```python
 import asyncio
-from phonemcp import PhoneMCPClient
+from screenmcp import ScreenMCPClient
 
 async def main():
-    async with PhoneMCPClient(api_key="pk_your_key_here") as phone:
+    async with ScreenMCPClient(api_key="pk_your_key_here") as phone:
         # Take a screenshot
         result = await phone.screenshot()
         print(f"Got image: {len(result['image'])} bytes base64")
@@ -47,7 +47,7 @@ asyncio.run(main())
 ## Configuration
 
 ```python
-client = PhoneMCPClient(
+client = ScreenMCPClient(
     api_key="pk_...",                                # required
     api_url="https://server10.doodkin.com",          # default
     device_id="your-device-uuid",                    # optional; auto-selects if omitted
@@ -90,10 +90,10 @@ print(resp.result)
 ## Error Handling
 
 ```python
-from phonemcp import PhoneMCPClient, AuthError, CommandError, ConnectionError
+from screenmcp import ScreenMCPClient, AuthError, CommandError, ConnectionError
 
 try:
-    async with PhoneMCPClient(api_key="pk_...") as phone:
+    async with ScreenMCPClient(api_key="pk_...") as phone:
         await phone.click(100, 200)
 except AuthError:
     print("Invalid API key")
@@ -108,7 +108,7 @@ except CommandError as e:
 If you prefer not to use the context manager:
 
 ```python
-phone = PhoneMCPClient(api_key="pk_...")
+phone = ScreenMCPClient(api_key="pk_...")
 await phone.connect()
 try:
     await phone.screenshot()

@@ -13,11 +13,11 @@ fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "phonemcp_mac=info".into()),
+                .unwrap_or_else(|_| "screenmcp_mac=info".into()),
         )
         .init();
 
-    info!("PhoneMCP Mac starting");
+    info!("ScreenMCP Mac starting");
 
     // Load config
     let config = Config::load();
@@ -58,5 +58,5 @@ fn main() {
     // Run the tray on the main thread (required by macOS for AppKit/menu bar)
     tray::run_tray(ws_cmd_tx, status_rx);
 
-    info!("PhoneMCP Mac shutting down");
+    info!("ScreenMCP Mac shutting down");
 }

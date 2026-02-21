@@ -4,13 +4,13 @@ import { PhoneClient } from "./client.js";
 import * as fs from "fs";
 import * as readline from "readline";
 
-const DEFAULT_API_URL = "https://phonemcp-api.ngrok-free.app";
+const DEFAULT_API_URL = "https://screenmcp-api.ngrok-free.app";
 
 const program = new Command();
 
 program
-  .name("phonemcp")
-  .description("PhoneMCP remote client CLI")
+  .name("screenmcp")
+  .description("ScreenMCP remote client CLI")
   .option("--api <url>", "API server URL for discovery", DEFAULT_API_URL)
   .requiredOption("--token <token>", "Auth token (API key or Firebase ID token)")
   .requiredOption("--device-id <deviceId>", "Target device ID");
@@ -189,7 +189,7 @@ program
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: "phonemcp> ",
+        prompt: "screenmcp> ",
       });
 
       rl.prompt();

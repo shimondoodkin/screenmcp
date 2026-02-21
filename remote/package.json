@@ -1,11 +1,11 @@
 {
-  "name": "phonemcp-remote",
+  "name": "screenmcp-remote",
   "version": "0.1.0",
-  "description": "PhoneMCP remote client for controlling Android phones",
+  "description": "ScreenMCP remote client for controlling Android phones",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "phonemcp": "dist/cli.js"
+    "screenmcp": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

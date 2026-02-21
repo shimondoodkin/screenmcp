@@ -1,2 +1,2 @@
-phonemcp
+screenmcp
 anthropic

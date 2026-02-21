@@ -60,7 +60,7 @@ impl Default for Config {
 
 impl Config {
     /// Get the config file path.
-    /// On macOS: ~/Library/Application Support/phonemcp/config.toml
+    /// On macOS: ~/Library/Application Support/screenmcp/config.toml
     /// Falls back to dirs::config_dir() which returns the correct path per platform.
     pub fn config_path() -> PathBuf {
         // On macOS, dirs::config_dir() returns ~/Library/Application Support/
@@ -71,7 +71,7 @@ impl Config {
                 .map(|h| h.join("Library").join("Application Support"))
                 .unwrap_or_else(|| PathBuf::from("."))
         });
-        base.join("phonemcp").join("config.toml")
+        base.join("screenmcp").join("config.toml")
     }
 
     /// Load config from disk, or return default if not found.

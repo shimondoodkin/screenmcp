@@ -1,8 +1,8 @@
 [package]
-name = "phonemcp-mac"
+name = "screenmcp-mac"
 version = "0.1.0"
 edition = "2021"
-description = "PhoneMCP Mac client - desktop control via menu bar icon"
+description = "ScreenMCP Mac client - desktop control via menu bar icon"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

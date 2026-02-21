@@ -1,4 +1,4 @@
-# PhoneMCP — Architecture
+# ScreenMCP — Architecture
 
 ## Services Overview
 
@@ -100,7 +100,7 @@ Alternative:
 
 1. Create Firebase project
 2. Enable Google Sign-In provider in Firebase Console → Authentication
-3. Add Android app (package: com.phonemcp.app, SHA-1 fingerprint)
+3. Add Android app (package: com.doodkin.screenmcp, SHA-1 fingerprint)
 4. Add Web app (for Next.js dashboard)
 5. Download `google-services.json` → Android app
 6. Copy web config → `web/.env.local` (NEXT_PUBLIC_FIREBASE_* vars)
@@ -180,7 +180,7 @@ session:{token}           → { user_id, device_id }  TTL 24h
 ## Implementation Status
 
 ### Phase 1 — Android App ✓
-- [x] Accessibility service (PhoneMcpService)
+- [x] Accessibility service (ScreenMcpService)
 - [x] Screenshot, click, long_click, drag, scroll, type, clipboard, UI tree
 - [x] Camera capture (front/rear)
 - [x] Phone lock detection

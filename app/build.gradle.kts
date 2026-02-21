@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.phonemcp.app"
+    namespace = "com.doodkin.screenmcp"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.phonemcp.app"
+        applicationId = "com.doodkin.screenmcp"
         minSdk = 30
         targetSdk = 35
         versionCode = 1

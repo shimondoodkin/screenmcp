@@ -8,7 +8,7 @@ import type {
 } from "./protocol.js";
 
 export interface PhoneClientOptions {
-  /** API server URL for discovery (e.g. https://phonemcp-api.ngrok-free.app) */
+  /** API server URL for discovery (e.g. https://screenmcp-api.ngrok-free.app) */
   apiUrl: string;
   /** Auth token (Firebase ID token or API key) */
   token: string;

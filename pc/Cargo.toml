@@ -1,8 +1,8 @@
 [package]
-name = "phonemcp-pc"
+name = "screenmcp-pc"
 version = "0.1.0"
 edition = "2021"
-description = "PhoneMCP PC client - desktop control via system tray"
+description = "ScreenMCP PC client - desktop control via system tray"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

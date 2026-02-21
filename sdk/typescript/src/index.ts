@@ -1,7 +1,7 @@
-export { PhoneMCPClient } from "./client.js";
+export { ScreenMCPClient } from "./client.js";
 
 export type {
-  PhoneMCPClientOptions,
+  ScreenMCPClientOptions,
   ScreenshotResult,
   TextResult,
   UiTreeResult,
@@ -9,5 +9,5 @@ export type {
   ScrollDirection,
   CameraFacing,
   CommandResponse,
-  PhoneMCPEvents,
+  ScreenMCPEvents,
 } from "./types.js";

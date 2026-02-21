@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PhoneMCP"
+rootProject.name = "ScreenMCP"
 include(":app")

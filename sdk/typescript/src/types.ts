@@ -2,10 +2,10 @@
 // Client options
 // ---------------------------------------------------------------------------
 
-export interface PhoneMCPClientOptions {
+export interface ScreenMCPClientOptions {
   /** API key (pk_... format) for authentication */
   apiKey: string;
-  /** Base URL of the PhoneMCP API server. Defaults to https://server10.doodkin.com */
+  /** Base URL of the ScreenMCP API server. Defaults to https://server10.doodkin.com */
   apiUrl?: string;
   /** Target device ID. If omitted, the server will pick the first available device. */
   deviceId?: string;
@@ -111,7 +111,7 @@ export type ServerMessage =
 // Event map for typed event emitter
 // ---------------------------------------------------------------------------
 
-export interface PhoneMCPEvents {
+export interface ScreenMCPEvents {
   connected: [];
   disconnected: [];
   error: [error: Error];

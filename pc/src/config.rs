@@ -59,10 +59,10 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Get the config file path: ~/.phonemcp/config.toml
+    /// Get the config file path: ~/.screenmcp/config.toml
     pub fn config_path() -> PathBuf {
         let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        base.join("phonemcp").join("config.toml")
+        base.join("screenmcp").join("config.toml")
     }
 
     /// Load config from disk, or return default if not found.

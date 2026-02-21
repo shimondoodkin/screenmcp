@@ -1,6 +1,6 @@
-# PhoneMCP Mac
+# ScreenMCP Mac
 
-A macOS menu bar application that connects to the PhoneMCP worker as a "phone" device, allowing remote control of the Mac desktop (screenshots, mouse, keyboard, clipboard, window listing).
+A macOS menu bar application that connects to the ScreenMCP worker as a "phone" device, allowing remote control of the Mac desktop (screenshots, mouse, keyboard, clipboard, window listing).
 
 ## Build
 
@@ -9,11 +9,11 @@ cd mac
 cargo build --release
 ```
 
-The binary will be at `target/release/phonemcp-mac`.
+The binary will be at `target/release/screenmcp-mac`.
 
 ## Required macOS Permissions
 
-PhoneMCP Mac requires two system permissions to function properly. macOS will prompt you to grant these the first time the app tries to use the relevant functionality.
+ScreenMCP Mac requires two system permissions to function properly. macOS will prompt you to grant these the first time the app tries to use the relevant functionality.
 
 ### Screen Recording
 
@@ -21,7 +21,7 @@ Required for the `screenshot` command.
 
 1. Open **System Settings** (or System Preferences on older macOS)
 2. Go to **Privacy & Security > Screen Recording**
-3. Click the **+** button and add `phonemcp-mac` (or your terminal if running from terminal)
+3. Click the **+** button and add `screenmcp-mac` (or your terminal if running from terminal)
 4. Toggle the switch to enable it
 5. You may need to restart the app after granting permission
 
@@ -31,7 +31,7 @@ Required for mouse control (`click`, `drag`, `scroll`) and keyboard input (`type
 
 1. Open **System Settings** (or System Preferences on older macOS)
 2. Go to **Privacy & Security > Accessibility**
-3. Click the **+** button and add `phonemcp-mac` (or your terminal if running from terminal)
+3. Click the **+** button and add `screenmcp-mac` (or your terminal if running from terminal)
 4. Toggle the switch to enable it
 5. You may need to restart the app after granting permission
 
@@ -40,7 +40,7 @@ Required for mouse control (`click`, `drag`, `scroll`) and keyboard input (`type
 The config file is located at:
 
 ```
-~/Library/Application Support/phonemcp/config.toml
+~/Library/Application Support/screenmcp/config.toml
 ```
 
 A default config file is created automatically on first run. Edit it to add your API token:
@@ -68,7 +68,7 @@ You can also open the config file from the menu bar icon by clicking **Open Conf
 
 ## Usage
 
-1. Run the application: `./target/release/phonemcp-mac`
+1. Run the application: `./target/release/screenmcp-mac`
 2. A colored circle appears in the macOS menu bar:
    - **Red** = disconnected
    - **Green** = connected
@@ -112,5 +112,5 @@ You can also open the config file from the menu bar icon by clicking **Open Conf
 
 ## Environment Variables
 
-- `RUST_LOG=phonemcp_mac=debug` - enable debug logging
-- `RUST_LOG=phonemcp_mac=trace` - enable trace logging
+- `RUST_LOG=screenmcp_mac=debug` - enable debug logging
+- `RUST_LOG=screenmcp_mac=trace` - enable trace logging

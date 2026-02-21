@@ -1,19 +1,19 @@
-# @phonemcp/sdk
+# @screenmcp/sdk
 
-TypeScript SDK for controlling Android phones remotely via [PhoneMCP](https://phonemcp.com).
+TypeScript SDK for controlling Android phones remotely via [ScreenMCP](https://screenmcp.com).
 
 ## Installation
 
 ```bash
-npm install @phonemcp/sdk
+npm install @screenmcp/sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { PhoneMCPClient } from "@phonemcp/sdk";
+import { ScreenMCPClient } from "@screenmcp/sdk";
 
-const phone = new PhoneMCPClient({
+const phone = new ScreenMCPClient({
   apiKey: "pk_your_api_key_here",
   deviceId: "your-device-id", // optional
 });
@@ -38,7 +38,7 @@ await phone.disconnect();
 ### Constructor
 
 ```typescript
-new PhoneMCPClient(options: {
+new ScreenMCPClient(options: {
   apiKey: string;         // Required. Your API key (pk_... format).
   apiUrl?: string;        // API server URL. Defaults to https://server10.doodkin.com
   deviceId?: string;      // Target device ID. Optional.
@@ -97,10 +97,10 @@ phone.workerUrl       // string | null - current worker URL
 ## Example: Save a Screenshot to Disk
 
 ```typescript
-import { PhoneMCPClient } from "@phonemcp/sdk";
+import { ScreenMCPClient } from "@screenmcp/sdk";
 import { writeFileSync } from "fs";
 
-const phone = new PhoneMCPClient({ apiKey: "pk_..." });
+const phone = new ScreenMCPClient({ apiKey: "pk_..." });
 await phone.connect();
 
 const { image } = await phone.screenshot();
@@ -112,7 +112,7 @@ await phone.disconnect();
 ## Example: Monitor Phone Connection
 
 ```typescript
-const phone = new PhoneMCPClient({ apiKey: "pk_..." });
+const phone = new ScreenMCPClient({ apiKey: "pk_..." });
 
 phone.on("phone_status", (online) => {
   console.log(`Phone is ${online ? "online" : "offline"}`);

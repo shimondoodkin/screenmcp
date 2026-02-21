@@ -1,5 +1,5 @@
 #!/bin/bash
-# PhoneMCP server startup script
+# ScreenMCP server startup script
 # Starts socat SSL terminators + Docker Compose
 
 CERT=/etc/letsencrypt/live/server10.doodkin.com/fullchain.pem
@@ -18,6 +18,6 @@ nohup socat OPENSSL-LISTEN:8443,fork,reuseaddr,verify=0,cert=$CERT,key=$KEY TCP:
 sleep 1
 
 echo 'Starting Docker Compose...'
-cd /home/user/phonemcp
+cd /home/user/screenmcp
 # Env vars read from .env automatically by Docker Compose
 docker compose up --build

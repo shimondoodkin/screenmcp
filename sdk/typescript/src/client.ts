@@ -6,8 +6,8 @@ import type {
   CameraResult,
   CommandResponse,
   ControllerCommand,
-  PhoneMCPClientOptions,
-  PhoneMCPEvents,
+  ScreenMCPClientOptions,
+  ScreenMCPEvents,
   ScreenshotResult,
   ScrollDirection,
   ServerMessage,
@@ -24,20 +24,20 @@ interface PendingCommand {
 }
 
 /**
- * PhoneMCP SDK client.
+ * ScreenMCP SDK client.
  *
- * Connects to the PhoneMCP infrastructure (API server + worker relay) and
+ * Connects to the ScreenMCP infrastructure (API server + worker relay) and
  * provides typed methods for every supported phone command.
  *
  * ```ts
- * const phone = new PhoneMCPClient({ apiKey: "pk_..." });
+ * const phone = new ScreenMCPClient({ apiKey: "pk_..." });
  * await phone.connect();
  * const { image } = await phone.screenshot();
  * await phone.click(540, 1200);
  * await phone.disconnect();
  * ```
  */
-export class PhoneMCPClient extends EventEmitter {
+export class ScreenMCPClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private readonly apiKey: string;
   private readonly apiUrl: string;
@@ -51,7 +51,7 @@ export class PhoneMCPClient extends EventEmitter {
   private _workerUrl: string | null = null;
   private _connected = false;
 
-  constructor(options: PhoneMCPClientOptions) {
+  constructor(options: ScreenMCPClientOptions) {
     super();
     this.apiKey = options.apiKey;
     this.apiUrl = (options.apiUrl ?? DEFAULT_API_URL).replace(/\/+$/, "");
@@ -83,23 +83,23 @@ export class PhoneMCPClient extends EventEmitter {
   // Typed event emitter overrides
   // -----------------------------------------------------------------------
 
-  override on<K extends keyof PhoneMCPEvents>(
+  override on<K extends keyof ScreenMCPEvents>(
     event: K,
-    listener: (...args: PhoneMCPEvents[K]) => void,
+    listener: (...args: ScreenMCPEvents[K]) => void,
   ): this {
     return super.on(event, listener as (...args: unknown[]) => void);
   }
 
-  override once<K extends keyof PhoneMCPEvents>(
+  override once<K extends keyof ScreenMCPEvents>(
     event: K,
-    listener: (...args: PhoneMCPEvents[K]) => void,
+    listener: (...args: ScreenMCPEvents[K]) => void,
   ): this {
     return super.once(event, listener as (...args: unknown[]) => void);
   }
 
-  override emit<K extends keyof PhoneMCPEvents>(
+  override emit<K extends keyof ScreenMCPEvents>(
     event: K,
-    ...args: PhoneMCPEvents[K]
+    ...args: ScreenMCPEvents[K]
   ): boolean {
     return super.emit(event, ...args);
   }

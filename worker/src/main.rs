@@ -27,7 +27,7 @@ async fn main() {
 
     let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
     let database_url = env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://phonemcp:phonemcp@127.0.0.1:5432/phonemcp".into());
+        .unwrap_or_else(|_| "postgresql://screenmcp:screenmcp@127.0.0.1:5432/screenmcp".into());
 
     let worker_id = env::var("WORKER_ID").unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
 

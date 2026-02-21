@@ -1,6 +1,6 @@
-# PhoneMCP Agent Skill
+# ScreenMCP Agent Skill
 
-Control an Android phone remotely using natural language instructions. This skill connects to a real Android device via the PhoneMCP platform and executes UI automation tasks through a vision-based agent loop.
+Control an Android phone remotely using natural language instructions. This skill connects to a real Android device via the ScreenMCP platform and executes UI automation tasks through a vision-based agent loop.
 
 ## Configuration
 
@@ -8,10 +8,10 @@ Set these environment variables before using the skill:
 
 | Variable | Required | Description |
 |---|---|---|
-| `PHONEMCP_API_KEY` | Yes | Your PhoneMCP API key (starts with `pk_`) |
+| `SCREENMCP_API_KEY` | Yes | Your ScreenMCP API key (starts with `pk_`) |
 | `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key for Claude vision |
-| `PHONEMCP_API_URL` | No | PhoneMCP server URL (default: `https://server10.doodkin.com`) |
-| `PHONEMCP_DEVICE_ID` | No | Target device UUID (default: first registered device) |
+| `SCREENMCP_API_URL` | No | ScreenMCP server URL (default: `https://server10.doodkin.com`) |
+| `SCREENMCP_DEVICE_ID` | No | Target device UUID (default: first registered device) |
 
 ## Available Phone Commands
 
@@ -40,7 +40,7 @@ Run the agent with a natural language instruction:
 ```bash
 cd skill
 pip install -r requirements.txt
-python phonemcp_agent.py "Open the Settings app and turn on Wi-Fi"
+python screenmcp_agent.py "Open the Settings app and turn on Wi-Fi"
 ```
 
 ## Example Prompts
@@ -69,7 +69,7 @@ To use this as a Claude Code skill, add the following to your project's `.claude
 ```json
 {
   "permissions": {
-    "allow": ["Bash(python /path/to/skill/phonemcp_agent.py *)"]
+    "allow": ["Bash(python /path/to/skill/screenmcp_agent.py *)"]
   }
 }
 ```
@@ -77,5 +77,5 @@ To use this as a Claude Code skill, add the following to your project's `.claude
 Then invoke from Claude Code:
 
 ```
-/skill phonemcp-agent "Open Settings and enable dark mode"
+/skill screenmcp-agent "Open Settings and enable dark mode"
 ```

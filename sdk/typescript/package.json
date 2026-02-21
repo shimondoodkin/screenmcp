@@ -1,7 +1,7 @@
 {
-  "name": "@phonemcp/sdk",
+  "name": "@screenmcp/sdk",
   "version": "1.0.0",
-  "description": "TypeScript SDK for controlling phones via PhoneMCP",
+  "description": "TypeScript SDK for controlling phones via ScreenMCP",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -13,7 +13,7 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "phonemcp",
+    "screenmcp",
     "phone",
     "android",
     "automation",

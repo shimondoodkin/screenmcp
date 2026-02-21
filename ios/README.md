@@ -1,8 +1,8 @@
-# PhoneMCP iOS - Feasibility Analysis & Companion App
+# ScreenMCP iOS - Feasibility Analysis & Companion App
 
 ## Executive Summary
 
-iOS does **not** allow third-party apps to perform full UI automation the way Android does via AccessibilityService. The Android version of PhoneMCP relies on an AccessibilityService that can:
+iOS does **not** allow third-party apps to perform full UI automation the way Android does via AccessibilityService. The Android version of ScreenMCP relies on an AccessibilityService that can:
 - Take screenshots of any app
 - Perform arbitrary taps, drags, and gestures anywhere on screen
 - Read the full UI tree of any app
@@ -17,7 +17,7 @@ On iOS, **none of these capabilities are available to third-party apps** through
 
 | Capability | Status | Mechanism |
 |---|---|---|
-| WebSocket connection to PhoneMCP worker | YES | URLSessionWebSocketTask / Starscream |
+| WebSocket connection to ScreenMCP worker | YES | URLSessionWebSocketTask / Starscream |
 | Take screenshots of own app | YES | UIGraphicsImageRenderer |
 | Take screenshots of entire screen | NO | Prohibited by App Store / sandbox |
 | Read notifications | PARTIAL | UNUserNotificationCenter (own app only) |
@@ -61,7 +61,7 @@ This requires a Mac running Xcode with the device connected (USB or network), or
 
 ### Approach 1: Companion App (included in this directory)
 
-A lightweight iOS app that connects to the PhoneMCP worker via WebSocket. It can:
+A lightweight iOS app that connects to the ScreenMCP worker via WebSocket. It can:
 - Maintain a persistent WebSocket connection (with background keepalive)
 - Respond to commands within its own sandbox
 - Take screenshots of its own UI (limited usefulness)
@@ -77,8 +77,8 @@ Unsupported commands: `screenshot` (system-wide), `click`, `long_click`, `drag`,
 ### Approach 2: WebDriverAgent Bridge (recommended for full automation)
 
 Run WebDriverAgent on a Mac connected to the iOS device, and create a bridge service that:
-1. Connects to the PhoneMCP worker as a "phone" role
-2. Translates PhoneMCP commands into WDA HTTP requests
+1. Connects to the ScreenMCP worker as a "phone" role
+2. Translates ScreenMCP commands into WDA HTTP requests
 3. Forwards screenshots, UI trees, and gesture results back
 
 This gives feature parity with the Android app but requires a Mac host.
@@ -97,9 +97,9 @@ This provides full automation without a Mac but limits the user base.
 ## Companion App Structure (this directory)
 
 ```
-ios/PhoneMCP/
-  PhoneMCP/
-    PhoneMCPApp.swift          - App entry point (SwiftUI)
+ios/ScreenMCP/
+  ScreenMCP/
+    ScreenMCPApp.swift          - App entry point (SwiftUI)
     Models/
       Command.swift            - Command/response models matching worker protocol
       ConnectionState.swift    - Connection state enum
@@ -112,13 +112,13 @@ ios/PhoneMCP/
       SettingsView.swift       - Server URL and API key configuration
     Resources/
       Info.plist               - App configuration
-  PhoneMCP.xcodeproj/
+  ScreenMCP.xcodeproj/
     project.pbxproj            - Xcode project file
 ```
 
 ## Building
 
-1. Open `ios/PhoneMCP/PhoneMCP.xcodeproj` in Xcode
+1. Open `ios/ScreenMCP/ScreenMCP.xcodeproj` in Xcode
 2. Select your development team in Signing & Capabilities
 3. Build and run on a device or simulator
 
