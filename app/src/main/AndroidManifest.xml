@@ -54,6 +54,11 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".SseService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
     </application>
 
 </manifest>

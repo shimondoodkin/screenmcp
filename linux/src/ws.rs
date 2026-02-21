@@ -36,6 +36,8 @@ impl std::fmt::Display for ConnectionStatus {
 #[derive(Debug)]
 pub enum WsCommand {
     Connect,
+    /// Connect directly to a specific worker URL (used by SSE events).
+    ConnectToWorker(String),
     Disconnect,
     UpdateConfig(Config),
     Shutdown,
@@ -131,7 +133,30 @@ pub async fn run_ws_manager(
                 let internal_tx2 = internal_tx.clone();
 
                 connection_task = Some(tokio::spawn(async move {
-                    run_connection(cfg, status_tx2, disconnect_rx, internal_tx2).await;
+                    run_connection(cfg, status_tx2, disconnect_rx, internal_tx2, None).await;
+                }));
+            }
+            WsCommand::ConnectToWorker(ws_url) => {
+                // Cancel any existing connection
+                if let Some(handle) = connection_task.take() {
+                    handle.abort();
+                }
+
+                let cfg = config.read().await.clone();
+                if !cfg.is_ready() {
+                    let _ = status_tx.send(ConnectionStatus::Error(
+                        "No token configured.".to_string(),
+                    ));
+                    continue;
+                }
+
+                let status_tx2 = status_tx.clone();
+                let disconnect_rx = disconnect_tx.subscribe();
+                let internal_tx2 = internal_tx.clone();
+
+                info!("connecting to worker from SSE event: {ws_url}");
+                connection_task = Some(tokio::spawn(async move {
+                    run_connection(cfg, status_tx2, disconnect_rx, internal_tx2, Some(ws_url)).await;
                 }));
             }
             WsCommand::Disconnect => {
@@ -160,19 +185,26 @@ pub async fn run_ws_manager(
 }
 
 /// Run a single connection attempt with auto-reconnect.
+/// If `override_ws_url` is provided, skip discovery and connect directly.
 async fn run_connection(
     config: Config,
     status_tx: watch::Sender<ConnectionStatus>,
     mut disconnect_rx: tokio::sync::broadcast::Receiver<()>,
     reconnect_tx: mpsc::Sender<WsCommand>,
+    override_ws_url: Option<String>,
 ) {
     let _ = status_tx.send(ConnectionStatus::Connecting);
 
+    let token = config.effective_token().to_string();
+    let api_url = config.effective_api_url().to_string();
+
     // Discover worker URL
-    let ws_url = if let Some(ref direct_url) = config.worker_url {
+    let ws_url = if let Some(direct_url) = override_ws_url {
+        to_ws_url(&direct_url)
+    } else if let Some(ref direct_url) = config.worker_url {
         to_ws_url(direct_url)
     } else {
-        match discover_worker(&config.api_url, &config.token).await {
+        match discover_worker(&api_url, &token).await {
             Ok(url) => to_ws_url(&url),
             Err(e) => {
                 error!("worker discovery failed: {e}");
@@ -201,7 +233,7 @@ async fn run_connection(
     // Send auth message as a phone
     let auth_msg = json!({
         "type": "auth",
-        "user_id": config.token,
+        "user_id": token,
         "role": "phone",
         "device_id": config.device_id,
         "last_ack": 0

@@ -34,10 +34,24 @@ class FcmService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         Log.i(TAG, "FCM message received: ${message.data}")
 
+        // Skip FCM handling in open source mode — SSE handles events instead
+        val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+        if (prefs.getBoolean("opensource_server_enabled", false)) {
+            Log.i(TAG, "Open source mode enabled, ignoring FCM message")
+            return
+        }
+
         val type = message.data["type"]
         val wsUrl = message.data["wsUrl"]
+        val targetDeviceId = message.data["target_device_id"]
 
         if (type == "connect" && wsUrl != null) {
+            // If FCM specifies a target device, ignore if it's not us
+            if (targetDeviceId != null && targetDeviceId != getDeviceUUID()) {
+                Log.i(TAG, "FCM connect not for this device (target=$targetDeviceId), ignoring")
+                return
+            }
+
             Log.i(TAG, "FCM connect request: $wsUrl")
 
             // Get Firebase token for auth

@@ -47,6 +47,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun isOpenSourceMode(): Boolean {
+        val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+        return prefs.getBoolean("opensource_server_enabled", false)
+    }
+
+    private fun getOpenSourceUserId(): String {
+        val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+        return prefs.getString("opensource_user_id", "") ?: ""
+    }
+
+    private fun getOpenSourceApiUrl(): String {
+        val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+        return prefs.getString("opensource_api_url", "") ?: ""
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -73,8 +88,19 @@ class MainActivity : AppCompatActivity() {
         setupGlobalActionButtons()
         setupUiTreeButton()
 
-        // Check registration on load
-        checkRegistration()
+        if (isOpenSourceMode()) {
+            // In open source mode, hide registration section and pre-fill API URL
+            tvRegistrationStatus.visibility = View.GONE
+            layoutRegister.visibility = View.GONE
+            etApiUrl.setText(getOpenSourceApiUrl())
+            etApiUrl.isEnabled = false
+
+            // Start SSE service
+            SseService.start(this)
+        } else {
+            // Check registration on load (Firebase mode)
+            checkRegistration()
+        }
     }
 
     override fun onResume() {
@@ -88,6 +114,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getApiUrl(): String {
+        if (isOpenSourceMode()) {
+            return getOpenSourceApiUrl()
+        }
         val custom = etApiUrl.text.toString().trim()
         return custom.ifEmpty { "https://server10.doodkin.com" }
     }
@@ -132,14 +161,32 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupUserInfo() {
         val tvUser = findViewById<TextView>(R.id.tvUser)
-        val user = FirebaseAuth.getInstance().currentUser
-        tvUser.text = user?.email ?: user?.displayName ?: "Not signed in"
+        val btnSignOut = findViewById<Button>(R.id.btnSignOut)
 
-        findViewById<Button>(R.id.btnSignOut).setOnClickListener {
-            ConnectionService.instance?.disconnect()
-            FirebaseAuth.getInstance().signOut()
-            startActivity(Intent(this, LoginActivity::class.java))
-            finish()
+        if (isOpenSourceMode()) {
+            tvUser.text = "Open Source Mode (${getOpenSourceUserId()})"
+            btnSignOut.text = "Disable"
+            btnSignOut.setOnClickListener {
+                // Stop SSE service
+                SseService.stop(this)
+                // Disconnect worker
+                ConnectionService.instance?.disconnect()
+                // Disable open source mode
+                val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+                prefs.edit().putBoolean("opensource_server_enabled", false).apply()
+                // Go back to login
+                startActivity(Intent(this, LoginActivity::class.java))
+                finish()
+            }
+        } else {
+            val user = FirebaseAuth.getInstance().currentUser
+            tvUser.text = user?.email ?: user?.displayName ?: "Not signed in"
+            btnSignOut.setOnClickListener {
+                ConnectionService.instance?.disconnect()
+                FirebaseAuth.getInstance().signOut()
+                startActivity(Intent(this, LoginActivity::class.java))
+                finish()
+            }
         }
     }
 
@@ -160,6 +207,13 @@ class MainActivity : AppCompatActivity() {
     // --- Registration ---
 
     private fun checkRegistration() {
+        if (isOpenSourceMode()) {
+            // No registration check needed in open source mode
+            tvRegistrationStatus.visibility = View.GONE
+            layoutRegister.visibility = View.GONE
+            return
+        }
+
         val user = FirebaseAuth.getInstance().currentUser
         if (user == null) {
             tvRegistrationStatus.text = "Not signed in"
@@ -216,6 +270,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun registerPhone() {
+        if (isOpenSourceMode()) {
+            log("Registration not needed in open source mode")
+            return
+        }
+
         val user = FirebaseAuth.getInstance().currentUser
         if (user == null) {
             log("Not signed in")
@@ -281,29 +340,49 @@ class MainActivity : AppCompatActivity() {
         val btnDisconnect = findViewById<Button>(R.id.btnDisconnect)
 
         btnConnect.setOnClickListener {
-            val user = FirebaseAuth.getInstance().currentUser
-            if (user == null) {
-                log("Not signed in")
-                return@setOnClickListener
-            }
+            if (isOpenSourceMode()) {
+                // Open source mode: use opensource_user_id as token
+                val token = getOpenSourceUserId()
+                val apiUrl = getOpenSourceApiUrl()
 
-            val apiUrl = getApiUrl()
-            log("Getting auth token...")
-
-            user.getIdToken(false).addOnSuccessListener { result ->
-                val token = result.token
-                if (token == null) {
-                    log("Failed to get token")
-                    return@addOnSuccessListener
+                if (token.isEmpty() || apiUrl.isEmpty()) {
+                    log("Open source settings not configured")
+                    return@setOnClickListener
                 }
 
-                log("Discovering worker via $apiUrl...")
+                log("Discovering worker via $apiUrl (open source mode)...")
                 val intent = Intent(this, ConnectionService::class.java).apply {
                     putExtra(ConnectionService.EXTRA_API_URL, apiUrl)
                     putExtra(ConnectionService.EXTRA_TOKEN, token)
                     putExtra(ConnectionService.EXTRA_DEVICE_ID, getDeviceUUID())
                 }
                 startForegroundService(intent)
+            } else {
+                // Firebase mode
+                val user = FirebaseAuth.getInstance().currentUser
+                if (user == null) {
+                    log("Not signed in")
+                    return@setOnClickListener
+                }
+
+                val apiUrl = getApiUrl()
+                log("Getting auth token...")
+
+                user.getIdToken(false).addOnSuccessListener { result ->
+                    val token = result.token
+                    if (token == null) {
+                        log("Failed to get token")
+                        return@addOnSuccessListener
+                    }
+
+                    log("Discovering worker via $apiUrl...")
+                    val intent = Intent(this, ConnectionService::class.java).apply {
+                        putExtra(ConnectionService.EXTRA_API_URL, apiUrl)
+                        putExtra(ConnectionService.EXTRA_TOKEN, token)
+                        putExtra(ConnectionService.EXTRA_DEVICE_ID, getDeviceUUID())
+                    }
+                    startForegroundService(intent)
+                }
             }
         }
 

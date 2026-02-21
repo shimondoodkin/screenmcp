@@ -1,5 +1,5 @@
 use tokio::sync::{mpsc, watch};
-use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 use tracing::{error, info};
 use winit::application::ApplicationHandler;
@@ -14,6 +14,8 @@ use crate::ws::{ConnectionStatus, WsCommand};
 #[derive(Debug)]
 pub enum TrayEvent {
     StatusChanged(ConnectionStatus),
+    /// Update opensource menu labels after a config change (enabled, user_id, api_url)
+    UpdateOpensourceMenu(bool, String, String),
     Quit,
 }
 
@@ -22,7 +24,12 @@ struct MenuItems {
     connect: MenuItem,
     disconnect: MenuItem,
     status: MenuItem,
+    #[allow(dead_code)]
     settings: MenuItem,
+    opensource_toggle: MenuItem,
+    opensource_user_id: MenuItem,
+    opensource_api_url: MenuItem,
+    #[allow(dead_code)]
     quit: MenuItem,
 }
 
@@ -103,6 +110,31 @@ impl App {
             }
         }
     }
+
+    fn update_opensource_menu(&mut self, enabled: bool, user_id: &str, api_url: &str) {
+        if let Some(ref items) = self.menu_items {
+            if enabled {
+                let _ = items.opensource_toggle.set_text("Open Source Server [ON]");
+            } else {
+                let _ = items.opensource_toggle.set_text("Open Source Server [OFF]");
+            }
+            items.opensource_user_id.set_enabled(enabled);
+            items.opensource_api_url.set_enabled(enabled);
+
+            let user_label = if user_id.is_empty() {
+                "  User ID: (not set)".to_string()
+            } else {
+                format!("  User ID: {user_id}")
+            };
+            let url_label = if api_url.is_empty() {
+                "  API URL: (not set)".to_string()
+            } else {
+                format!("  API URL: {api_url}")
+            };
+            let _ = items.opensource_user_id.set_text(&user_label);
+            let _ = items.opensource_api_url.set_text(&url_label);
+        }
+    }
 }
 
 impl ApplicationHandler<TrayEvent> for App {
@@ -116,7 +148,36 @@ impl ApplicationHandler<TrayEvent> for App {
         let disconnect = MenuItem::new("Disconnect", false, None);
         let status = MenuItem::new("Status: Disconnected", false, None);
         let settings = MenuItem::new("Open Config File", true, None);
+
+        // Load current config to display opensource settings state
+        let current_config = Config::load();
+        let os_enabled = current_config.opensource_server_enabled;
+        let os_toggle_label = if os_enabled {
+            "Open Source Server [ON]"
+        } else {
+            "Open Source Server [OFF]"
+        };
+        let opensource_toggle = MenuItem::new(os_toggle_label, true, None);
+
+        let os_user_label = if current_config.opensource_user_id.is_empty() {
+            "  User ID: (not set)".to_string()
+        } else {
+            format!("  User ID: {}", current_config.opensource_user_id)
+        };
+        let os_url_label = if current_config.opensource_api_url.is_empty() {
+            "  API URL: (not set)".to_string()
+        } else {
+            format!("  API URL: {}", current_config.opensource_api_url)
+        };
+        let opensource_user_id = MenuItem::new(&os_user_label, os_enabled, None);
+        let opensource_api_url = MenuItem::new(&os_url_label, os_enabled, None);
+
         let quit = MenuItem::new("Quit", true, None);
+
+        let opensource_submenu = Submenu::new("Open Source Server", true);
+        let _ = opensource_submenu.append(&opensource_toggle);
+        let _ = opensource_submenu.append(&opensource_user_id);
+        let _ = opensource_submenu.append(&opensource_api_url);
 
         let menu = Menu::new();
         let _ = menu.append(&connect);
@@ -125,6 +186,7 @@ impl ApplicationHandler<TrayEvent> for App {
         let _ = menu.append(&status);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&settings);
+        let _ = menu.append(&opensource_submenu);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&quit);
 
@@ -152,6 +214,9 @@ impl ApplicationHandler<TrayEvent> for App {
             disconnect,
             status,
             settings,
+            opensource_toggle,
+            opensource_user_id,
+            opensource_api_url,
             quit,
         };
         self.menu_items = Some(menu_items);
@@ -178,10 +243,14 @@ impl ApplicationHandler<TrayEvent> for App {
         // Spawn a thread to handle menu events
         let ws_tx = self.ws_cmd_tx.clone();
         let proxy2 = self.proxy.clone();
-        let connect_id = self.menu_items.as_ref().unwrap().connect.id().clone();
-        let disconnect_id = self.menu_items.as_ref().unwrap().disconnect.id().clone();
-        let settings_id = self.menu_items.as_ref().unwrap().settings.id().clone();
-        let quit_id = self.menu_items.as_ref().unwrap().quit.id().clone();
+        let menu_ref = self.menu_items.as_ref().unwrap();
+        let connect_id = menu_ref.connect.id().clone();
+        let disconnect_id = menu_ref.disconnect.id().clone();
+        let settings_id = menu_ref.settings.id().clone();
+        let opensource_toggle_id = menu_ref.opensource_toggle.id().clone();
+        let opensource_user_id_id = menu_ref.opensource_user_id.id().clone();
+        let opensource_api_url_id = menu_ref.opensource_api_url.id().clone();
+        let quit_id = menu_ref.quit.id().clone();
 
         std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -213,6 +282,120 @@ impl ApplicationHandler<TrayEvent> for App {
                         if let Err(e) = open::that(&config_path) {
                             error!("failed to open config: {e}");
                         }
+                    } else if event.id() == &opensource_toggle_id {
+                        info!("menu: opensource toggle clicked");
+                        let mut config = Config::load();
+                        config.opensource_server_enabled = !config.opensource_server_enabled;
+                        let enabled = config.opensource_server_enabled;
+                        if let Err(e) = config.save() {
+                            error!("failed to save config: {e}");
+                        }
+
+                        // Send update to main thread to update menu items
+                        let config = Config::load();
+                        let _ = proxy2.send_event(TrayEvent::UpdateOpensourceMenu(
+                            config.opensource_server_enabled,
+                            config.opensource_user_id.clone(),
+                            config.opensource_api_url.clone(),
+                        ));
+
+                        // Update WS manager config
+                        let _ = rt.block_on(ws_tx.send(WsCommand::UpdateConfig(config)));
+
+                        info!(
+                            "opensource server mode: {}",
+                            if enabled { "enabled" } else { "disabled" }
+                        );
+                    } else if event.id() == &opensource_user_id_id {
+                        info!("menu: opensource user_id clicked");
+                        // Use zenity for text input on Linux
+                        let config = Config::load();
+                        let current = config.opensource_user_id.clone();
+                        let result = std::process::Command::new("zenity")
+                            .args([
+                                "--entry",
+                                "--title=Open Source Server - User ID",
+                                "--text=Enter User ID (used as Bearer token):",
+                                &format!("--entry-text={current}"),
+                            ])
+                            .output();
+
+                        match result {
+                            Ok(output) if output.status.success() => {
+                                let new_value =
+                                    String::from_utf8_lossy(&output.stdout).trim().to_string();
+                                let mut config = Config::load();
+                                config.opensource_user_id = new_value;
+                                if let Err(e) = config.save() {
+                                    error!("failed to save config: {e}");
+                                }
+
+                                // Send update to main thread
+                                let config = Config::load();
+                                let _ = proxy2.send_event(TrayEvent::UpdateOpensourceMenu(
+                                    config.opensource_server_enabled,
+                                    config.opensource_user_id.clone(),
+                                    config.opensource_api_url.clone(),
+                                ));
+
+                                // Update WS manager config
+                                let _ = rt.block_on(ws_tx.send(WsCommand::UpdateConfig(config)));
+                            }
+                            Ok(_) => {
+                                info!("user cancelled user_id input");
+                            }
+                            Err(e) => {
+                                error!("failed to run zenity for user_id input: {e}");
+                                // Fallback: open the config file
+                                let config_path = Config::config_path();
+                                let _ = open::that(&config_path);
+                            }
+                        }
+                    } else if event.id() == &opensource_api_url_id {
+                        info!("menu: opensource api_url clicked");
+                        // Use zenity for text input on Linux
+                        let config = Config::load();
+                        let current = config.opensource_api_url.clone();
+                        let result = std::process::Command::new("zenity")
+                            .args([
+                                "--entry",
+                                "--title=Open Source Server - API URL",
+                                "--text=Enter API Server URL:",
+                                &format!("--entry-text={current}"),
+                            ])
+                            .output();
+
+                        match result {
+                            Ok(output) if output.status.success() => {
+                                let new_value =
+                                    String::from_utf8_lossy(&output.stdout).trim().to_string();
+                                let mut config = Config::load();
+                                config.opensource_api_url = new_value;
+                                if let Err(e) = config.save() {
+                                    error!("failed to save config: {e}");
+                                }
+
+                                // Send update to main thread
+                                let config = Config::load();
+                                let _ = proxy2.send_event(TrayEvent::UpdateOpensourceMenu(
+                                    config.opensource_server_enabled,
+                                    config.opensource_user_id.clone(),
+                                    config.opensource_api_url.clone(),
+                                ));
+
+                                // Update WS manager config
+                                let _ = rt.block_on(ws_tx.send(WsCommand::UpdateConfig(config)));
+                            }
+                            Ok(_) => {
+                                info!("user cancelled api_url input");
+                            }
+                            Err(e) => {
+                                error!("failed to run zenity for api_url input: {e}");
+                                // Fallback: open the config file
+                                let config_path = Config::config_path();
+                                let _ = open::that(&config_path);
+                            }
+                        }
                     } else if event.id() == &quit_id {
                         info!("menu: quit clicked");
                         let _ = rt.block_on(ws_tx.send(WsCommand::Shutdown));
@@ -231,6 +414,9 @@ impl ApplicationHandler<TrayEvent> for App {
                     self.update_tray_for_status(&status);
                     self.last_status = status;
                 }
+            }
+            TrayEvent::UpdateOpensourceMenu(enabled, user_id, api_url) => {
+                self.update_opensource_menu(enabled, &user_id, &api_url);
             }
             TrayEvent::Quit => {
                 info!("quitting application");

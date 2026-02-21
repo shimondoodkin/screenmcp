@@ -52,6 +52,7 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0-rc01")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
-    // OkHttp for WebSocket
+    // OkHttp for WebSocket and SSE
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
 }

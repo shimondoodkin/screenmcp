@@ -3,7 +3,10 @@ package com.doodkin.screenmcp
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.credentials.CredentialManager
@@ -21,11 +24,16 @@ class LoginActivity : AppCompatActivity() {
 
     private lateinit var auth: FirebaseAuth
     private lateinit var tvStatus: TextView
+    private lateinit var cbOpenSourceServer: CheckBox
+    private lateinit var etOpenSourceUserId: EditText
+    private lateinit var etOpenSourceApiUrl: EditText
+    private lateinit var btnOpenSourceContinue: Button
 
     companion object {
         private const val TAG = "LoginActivity"
         // Web client ID (client_type 3) from google-services.json
         private const val WEB_CLIENT_ID = "979546518393-hrqgk3ebc510pobo6po8eb08qv809gce.apps.googleusercontent.com"
+        private const val PREFS_NAME = "screenmcp"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,7 +41,16 @@ class LoginActivity : AppCompatActivity() {
 
         auth = FirebaseAuth.getInstance()
 
-        // If already signed in, skip to main
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val opensourceEnabled = prefs.getBoolean("opensource_server_enabled", false)
+
+        // If open source mode is enabled, skip Firebase check and go straight to main
+        if (opensourceEnabled) {
+            goToMain()
+            return
+        }
+
+        // If already signed in via Firebase, skip to main
         if (auth.currentUser != null) {
             goToMain()
             return
@@ -41,10 +58,54 @@ class LoginActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_login)
         tvStatus = findViewById(R.id.tvLoginStatus)
+        cbOpenSourceServer = findViewById(R.id.cbOpenSourceServer)
+        etOpenSourceUserId = findViewById(R.id.etOpenSourceUserId)
+        etOpenSourceApiUrl = findViewById(R.id.etOpenSourceApiUrl)
+        btnOpenSourceContinue = findViewById(R.id.btnOpenSourceContinue)
+
+        // Restore saved open source settings
+        cbOpenSourceServer.isChecked = prefs.getBoolean("opensource_server_enabled", false)
+        etOpenSourceUserId.setText(prefs.getString("opensource_user_id", ""))
+        etOpenSourceApiUrl.setText(prefs.getString("opensource_api_url", ""))
+        updateOpenSourceFieldsEnabled(cbOpenSourceServer.isChecked)
 
         findViewById<Button>(R.id.btnGoogleSignIn).setOnClickListener {
             signInWithGoogle()
         }
+
+        cbOpenSourceServer.setOnCheckedChangeListener { _, isChecked ->
+            updateOpenSourceFieldsEnabled(isChecked)
+            prefs.edit().putBoolean("opensource_server_enabled", isChecked).apply()
+        }
+
+        btnOpenSourceContinue.setOnClickListener {
+            val userId = etOpenSourceUserId.text.toString().trim()
+            val apiUrl = etOpenSourceApiUrl.text.toString().trim()
+
+            if (userId.isEmpty()) {
+                tvStatus.text = "Please enter a User ID"
+                return@setOnClickListener
+            }
+            if (apiUrl.isEmpty()) {
+                tvStatus.text = "Please enter an API Server URL"
+                return@setOnClickListener
+            }
+
+            // Save settings
+            prefs.edit()
+                .putBoolean("opensource_server_enabled", true)
+                .putString("opensource_user_id", userId)
+                .putString("opensource_api_url", apiUrl)
+                .apply()
+
+            goToMain()
+        }
+    }
+
+    private fun updateOpenSourceFieldsEnabled(enabled: Boolean) {
+        etOpenSourceUserId.isEnabled = enabled
+        etOpenSourceApiUrl.isEnabled = enabled
+        btnOpenSourceContinue.visibility = if (enabled) View.VISIBLE else View.GONE
     }
 
     private fun signInWithGoogle() {

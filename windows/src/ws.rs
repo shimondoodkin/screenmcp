@@ -36,6 +36,8 @@ impl std::fmt::Display for ConnectionStatus {
 #[derive(Debug)]
 pub enum WsCommand {
     Connect,
+    /// Connect directly to a specific worker URL (used by SSE).
+    ConnectToWorker(String),
     Disconnect,
     UpdateConfig(Config),
     Shutdown,
@@ -91,8 +93,9 @@ pub async fn run_ws_manager(
 ) {
     let config = Arc::new(tokio::sync::RwLock::new(initial_config.clone()));
 
-    // Auto-connect on startup if configured
-    let should_auto_connect = initial_config.auto_connect && initial_config.is_ready();
+    // Auto-connect on startup if configured (not in opensource mode -- SSE handles it)
+    let should_auto_connect =
+        initial_config.auto_connect && initial_config.is_ready() && !initial_config.opensource_server_enabled;
 
     let (internal_tx, mut internal_rx) = mpsc::channel::<WsCommand>(16);
 
@@ -131,7 +134,23 @@ pub async fn run_ws_manager(
                 let internal_tx2 = internal_tx.clone();
 
                 connection_task = Some(tokio::spawn(async move {
-                    run_connection(cfg, status_tx2, disconnect_rx, internal_tx2).await;
+                    run_connection(cfg, None, true, status_tx2, disconnect_rx, Some(internal_tx2)).await;
+                }));
+            }
+            WsCommand::ConnectToWorker(ws_url) => {
+                // Cancel any existing connection
+                if let Some(handle) = connection_task.take() {
+                    handle.abort();
+                }
+
+                let cfg = config.read().await.clone();
+                let status_tx2 = status_tx.clone();
+                let disconnect_rx = disconnect_tx.subscribe();
+
+                // When connecting via SSE (ConnectToWorker), don't auto-reconnect
+                // on disconnect -- the SSE listener will send a new ConnectToWorker.
+                connection_task = Some(tokio::spawn(async move {
+                    run_connection(cfg, Some(ws_url), false, status_tx2, disconnect_rx, None).await;
                 }));
             }
             WsCommand::Disconnect => {
@@ -159,25 +178,33 @@ pub async fn run_ws_manager(
     info!("ws manager shutting down");
 }
 
-/// Run a single connection attempt with auto-reconnect.
+/// Run a single connection attempt.
+/// If `direct_ws_url` is Some, skip discovery and connect directly to that URL.
+/// If `auto_reconnect` is true and `reconnect_tx` is Some, schedule reconnect on disconnect.
 async fn run_connection(
     config: Config,
+    direct_ws_url: Option<String>,
+    auto_reconnect: bool,
     status_tx: watch::Sender<ConnectionStatus>,
     mut disconnect_rx: tokio::sync::broadcast::Receiver<()>,
-    reconnect_tx: mpsc::Sender<WsCommand>,
+    reconnect_tx: Option<mpsc::Sender<WsCommand>>,
 ) {
     let _ = status_tx.send(ConnectionStatus::Connecting);
 
     // Discover worker URL
-    let ws_url = if let Some(ref direct_url) = config.worker_url {
+    let ws_url = if let Some(direct_url) = direct_ws_url {
+        to_ws_url(&direct_url)
+    } else if let Some(ref direct_url) = config.worker_url {
         to_ws_url(direct_url)
     } else {
-        match discover_worker(&config.api_url, &config.token).await {
+        let api_url = config.effective_api_url();
+        let token = config.effective_token();
+        match discover_worker(api_url, token).await {
             Ok(url) => to_ws_url(&url),
             Err(e) => {
                 error!("worker discovery failed: {e}");
                 let _ = status_tx.send(ConnectionStatus::Error(e));
-                schedule_reconnect(reconnect_tx, 5).await;
+                maybe_schedule_reconnect(reconnect_tx.clone(), 5).await;
                 return;
             }
         }
@@ -191,7 +218,7 @@ async fn run_connection(
         Err(e) => {
             error!("websocket connect failed: {e}");
             let _ = status_tx.send(ConnectionStatus::Error(format!("WS connect failed: {e}")));
-            schedule_reconnect(reconnect_tx, 5).await;
+            maybe_schedule_reconnect(reconnect_tx.clone(), 5).await;
             return;
         }
     };
@@ -201,7 +228,7 @@ async fn run_connection(
     // Send auth message as a phone
     let auth_msg = json!({
         "type": "auth",
-        "user_id": config.token,
+        "user_id": config.effective_token(),
         "role": "phone",
         "device_id": config.device_id,
         "last_ack": 0
@@ -213,7 +240,7 @@ async fn run_connection(
     {
         error!("failed to send auth: {e}");
         let _ = status_tx.send(ConnectionStatus::Error(format!("Auth send failed: {e}")));
-        schedule_reconnect(reconnect_tx, 5).await;
+        maybe_schedule_reconnect(reconnect_tx.clone(), 5).await;
         return;
     }
 
@@ -259,7 +286,7 @@ async fn run_connection(
     if let Err(e) = auth_result {
         error!("auth failed: {e}");
         let _ = status_tx.send(ConnectionStatus::Error(e));
-        schedule_reconnect(reconnect_tx, 10).await;
+        maybe_schedule_reconnect(reconnect_tx.clone(), 10).await;
         return;
     }
 
@@ -361,14 +388,20 @@ async fn run_connection(
         }
     }
 
-    // Connection lost, schedule reconnect
-    let _ = status_tx.send(ConnectionStatus::Reconnecting);
-    schedule_reconnect(reconnect_tx, 3).await;
+    // Connection lost, schedule reconnect if enabled
+    if auto_reconnect {
+        let _ = status_tx.send(ConnectionStatus::Reconnecting);
+        maybe_schedule_reconnect(reconnect_tx, 3).await;
+    } else {
+        let _ = status_tx.send(ConnectionStatus::Disconnected);
+    }
 }
 
-async fn schedule_reconnect(tx: mpsc::Sender<WsCommand>, delay_secs: u64) {
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-        let _ = tx.send(WsCommand::Connect).await;
-    });
+async fn maybe_schedule_reconnect(tx: Option<mpsc::Sender<WsCommand>>, delay_secs: u64) {
+    if let Some(tx) = tx {
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+            let _ = tx.send(WsCommand::Connect).await;
+        });
+    }
 }

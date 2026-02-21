@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod sse;
 mod tray;
 mod ws;
 
@@ -40,6 +41,7 @@ fn main() {
 
     // Start the tokio runtime for the WS manager in a background thread
     let config_clone = config.clone();
+    let ws_cmd_tx_for_sse = ws_cmd_tx.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -47,7 +49,26 @@ fn main() {
             .expect("failed to build tokio runtime");
 
         rt.block_on(async {
+            // If opensource server mode is enabled, start SSE listener
+            let sse_shutdown_tx = if config_clone.opensource_server_enabled {
+                info!("opensource server mode enabled, starting SSE listener");
+                let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+                let sse_config = config_clone.clone();
+                let sse_ws_tx = ws_cmd_tx_for_sse.clone();
+                tokio::spawn(async move {
+                    sse::run_sse_listener(sse_config, sse_ws_tx, shutdown_rx).await;
+                });
+                Some(shutdown_tx)
+            } else {
+                None
+            };
+
             ws::run_ws_manager(ws_cmd_rx, status_tx, config_clone).await;
+
+            // Shut down SSE listener when WS manager exits
+            if let Some(tx) = sse_shutdown_tx {
+                let _ = tx.send(());
+            }
         });
 
         info!("ws manager thread exiting");

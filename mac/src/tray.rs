@@ -1,5 +1,5 @@
 use tokio::sync::{mpsc, watch};
-use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 use tracing::{error, info};
 use winit::application::ApplicationHandler;
@@ -9,6 +9,15 @@ use winit::window::WindowId;
 
 use crate::config::Config;
 use crate::ws::{ConnectionStatus, WsCommand};
+
+/// Truncate a string for display, appending "..." if it exceeds max_len.
+fn truncate_display(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len])
+    }
+}
 
 /// Custom events sent to the winit event loop.
 #[derive(Debug)]
@@ -23,6 +32,9 @@ struct MenuItems {
     disconnect: MenuItem,
     status: MenuItem,
     settings: MenuItem,
+    opensource_enabled: CheckMenuItem,
+    opensource_user_id: MenuItem,
+    opensource_api_url: MenuItem,
     quit: MenuItem,
 }
 
@@ -111,11 +123,36 @@ impl ApplicationHandler<TrayEvent> for App {
             return; // Already initialized
         }
 
+        // Load current config to set initial state of opensource items
+        let current_config = Config::load();
+        let oss_enabled = current_config.opensource_server_enabled;
+
         // Build menu
         let connect = MenuItem::new("Connect", true, None);
         let disconnect = MenuItem::new("Disconnect", false, None);
         let status = MenuItem::new("Status: Disconnected", false, None);
         let settings = MenuItem::new("Open Config File", true, None);
+
+        // Open Source Server submenu items
+        let opensource_enabled = CheckMenuItem::new("Open Source Server", true, oss_enabled, None);
+        let user_id_label = if oss_enabled && !current_config.opensource_user_id.is_empty() {
+            format!("User ID: {}", truncate_display(&current_config.opensource_user_id, 30))
+        } else {
+            "User ID: (not set)".to_string()
+        };
+        let api_url_label = if oss_enabled && !current_config.opensource_api_url.is_empty() {
+            format!("API URL: {}", truncate_display(&current_config.opensource_api_url, 40))
+        } else {
+            "API URL: (not set)".to_string()
+        };
+        let opensource_user_id = MenuItem::new(&user_id_label, oss_enabled, None);
+        let opensource_api_url = MenuItem::new(&api_url_label, oss_enabled, None);
+
+        let opensource_submenu = Submenu::new("Open Source Server", true);
+        let _ = opensource_submenu.append(&opensource_enabled);
+        let _ = opensource_submenu.append(&opensource_user_id);
+        let _ = opensource_submenu.append(&opensource_api_url);
+
         let quit = MenuItem::new("Quit", true, None);
 
         let menu = Menu::new();
@@ -125,6 +162,7 @@ impl ApplicationHandler<TrayEvent> for App {
         let _ = menu.append(&status);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&settings);
+        let _ = menu.append(&opensource_submenu);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&quit);
 
@@ -152,6 +190,9 @@ impl ApplicationHandler<TrayEvent> for App {
             disconnect,
             status,
             settings,
+            opensource_enabled,
+            opensource_user_id,
+            opensource_api_url,
             quit,
         };
         self.menu_items = Some(menu_items);
@@ -181,7 +222,15 @@ impl ApplicationHandler<TrayEvent> for App {
         let connect_id = self.menu_items.as_ref().unwrap().connect.id().clone();
         let disconnect_id = self.menu_items.as_ref().unwrap().disconnect.id().clone();
         let settings_id = self.menu_items.as_ref().unwrap().settings.id().clone();
+        let opensource_enabled_id = self.menu_items.as_ref().unwrap().opensource_enabled.id().clone();
+        let opensource_user_id_id = self.menu_items.as_ref().unwrap().opensource_user_id.id().clone();
+        let opensource_api_url_id = self.menu_items.as_ref().unwrap().opensource_api_url.id().clone();
         let quit_id = self.menu_items.as_ref().unwrap().quit.id().clone();
+
+        // Clone the CheckMenuItem so the background thread can read its checked state
+        let oss_check_ref = self.menu_items.as_ref().unwrap().opensource_enabled.clone();
+        let oss_userid_ref = self.menu_items.as_ref().unwrap().opensource_user_id.clone();
+        let oss_apiurl_ref = self.menu_items.as_ref().unwrap().opensource_api_url.clone();
 
         std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -210,6 +259,56 @@ impl ApplicationHandler<TrayEvent> for App {
                             }
                         }
                         // Open config file in default editor (uses `open` on macOS)
+                        if let Err(e) = open::that(&config_path) {
+                            error!("failed to open config: {e}");
+                        }
+                    } else if event.id() == &opensource_enabled_id {
+                        // CheckMenuItem auto-toggles its checked state on click
+                        let is_checked = oss_check_ref.is_checked();
+                        info!("menu: open source server toggled to {is_checked}");
+
+                        // Update config and save
+                        let mut config = Config::load();
+                        config.opensource_server_enabled = is_checked;
+                        if let Err(e) = config.save() {
+                            error!("failed to save config: {e}");
+                        }
+
+                        // Enable/disable the User ID and API URL items
+                        oss_userid_ref.set_enabled(is_checked);
+                        oss_apiurl_ref.set_enabled(is_checked);
+
+                        // Update display labels
+                        if is_checked {
+                            let uid = if config.opensource_user_id.is_empty() {
+                                "(not set)".to_string()
+                            } else {
+                                truncate_display(&config.opensource_user_id, 30)
+                            };
+                            let aurl = if config.opensource_api_url.is_empty() {
+                                "(not set)".to_string()
+                            } else {
+                                truncate_display(&config.opensource_api_url, 40)
+                            };
+                            let _ = oss_userid_ref.set_text(&format!("User ID: {uid}"));
+                            let _ = oss_apiurl_ref.set_text(&format!("API URL: {aurl}"));
+                        } else {
+                            let _ = oss_userid_ref.set_text("User ID: (disabled)");
+                            let _ = oss_apiurl_ref.set_text("API URL: (disabled)");
+                        }
+
+                        // Notify WS manager of config change
+                        let _ = rt.block_on(ws_tx.send(WsCommand::UpdateConfig(config)));
+                    } else if event.id() == &opensource_user_id_id || event.id() == &opensource_api_url_id {
+                        // Clicking User ID or API URL opens config file for editing
+                        info!("menu: opensource setting clicked, opening config file");
+                        let config_path = Config::config_path();
+                        if !config_path.exists() {
+                            let config = Config::load();
+                            if let Err(e) = config.save() {
+                                error!("failed to save default config: {e}");
+                            }
+                        }
                         if let Err(e) = open::that(&config_path) {
                             error!("failed to open config: {e}");
                         }

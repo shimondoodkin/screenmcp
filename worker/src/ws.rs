@@ -8,48 +8,23 @@ use tokio::time::{interval, timeout};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
+use crate::backend::{AuthBackend, StateBackend};
 use crate::connections::Connections;
 use crate::protocol::{
-    parse_controller_message, parse_phone_message, Command, PhoneMessage, ServerMessage,
+    parse_controller_message, parse_phone_message, PhoneMessage, ServerMessage,
 };
-use crate::state::State;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Verify a token against the API server, returning the firebase_uid for authorization.
-async fn verify_token(token: &str, api_url: &str) -> Result<String, String> {
-    let client = reqwest::Client::new();
-    let res = client
-        .post(format!("{api_url}/api/auth/verify"))
-        .json(&serde_json::json!({ "token": token }))
-        .send()
-        .await
-        .map_err(|e| format!("verify request failed: {e}"))?;
-
-    if !res.status().is_success() {
-        return Err(format!("verify returned {}", res.status()));
-    }
-
-    let body: serde_json::Value = res
-        .json()
-        .await
-        .map_err(|e| format!("verify parse failed: {e}"))?;
-
-    body.get("firebase_uid")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "verify response missing firebase_uid".to_string())
-}
-
 /// Handle a new connection: if it's a WebSocket upgrade, proceed; otherwise return HTTP 200.
 pub async fn handle_connection(
     stream: TcpStream,
     addr: SocketAddr,
-    state: Arc<State>,
+    state: Arc<dyn StateBackend>,
     connections: Arc<Connections>,
-    api_url: String,
+    auth: Arc<dyn AuthBackend>,
 ) {
     // Peek at the first bytes to check if this is a WebSocket upgrade
     let mut buf = [0u8; 2048];
@@ -121,8 +96,8 @@ pub async fn handle_connection(
     })
     .await;
 
-    let auth = match auth_result {
-        Ok(Some(auth)) => auth,
+    let auth_msg = match auth_result {
+        Ok(Some(auth_msg)) => auth_msg,
         _ => {
             warn!(%addr, "auth timeout or failed");
             let err = ServerMessage::auth_fail("auth timeout");
@@ -134,9 +109,9 @@ pub async fn handle_connection(
     };
 
     // Extract token from role-specific field: phones send user_id, controllers send key
-    let token = match auth.role.as_str() {
-        "controller" => auth.key.clone(),
-        _ => auth.user_id.clone(),
+    let token = match auth_msg.role.as_str() {
+        "controller" => auth_msg.key.clone(),
+        _ => auth_msg.user_id.clone(),
     };
     let token = match token {
         Some(t) if !t.is_empty() => t,
@@ -150,8 +125,8 @@ pub async fn handle_connection(
         }
     };
 
-    // Verify token via API server (validates auth, returns firebase_uid)
-    let firebase_uid = match verify_token(&token, &api_url).await {
+    // Verify token via auth backend
+    let firebase_uid = match auth.verify_token(&token).await {
         Ok(uid) => uid,
         Err(e) => {
             warn!(%addr, "auth verification failed: {e}");
@@ -162,19 +137,29 @@ pub async fn handle_connection(
             return;
         }
     };
-    let role = auth.role.clone();
+    let role = auth_msg.role.clone();
 
     // Use client-provided device_id for routing (required for phones, optional for controllers)
-    let device_id = match auth.device_id {
+    let device_id = match auth_msg.device_id {
         Some(ref id) if !id.is_empty() => id.clone(),
         _ => firebase_uid.clone(), // fallback for backwards compat
     };
+
+    // Verify device is allowed (file backend checks against config)
+    if let Err(e) = auth.verify_device(&device_id).await {
+        warn!(%addr, %device_id, "device verification failed: {e}");
+        let err = ServerMessage::auth_fail("device not allowed");
+        let json = serde_json::to_string(&err).unwrap();
+        let _ = ws_tx.send(Message::Text(json.into())).await;
+        let _ = ws_tx.close().await;
+        return;
+    }
 
     info!(%addr, %firebase_uid, %device_id, %role, "authenticated");
 
     match role.as_str() {
         "controller" => {
-            let target_device_id = auth.target_device_id.unwrap_or_else(|| device_id.clone());
+            let target_device_id = auth_msg.target_device_id.unwrap_or_else(|| device_id.clone());
             handle_controller_connection(ws_tx, ws_rx, addr, &device_id, &target_device_id, state, connections)
                 .await;
         }
@@ -185,7 +170,7 @@ pub async fn handle_connection(
                 ws_rx,
                 addr,
                 &device_id,
-                auth.last_ack,
+                auth_msg.last_ack,
                 state,
                 connections,
             )
@@ -204,13 +189,13 @@ async fn handle_phone_connection(
     addr: SocketAddr,
     device_id: &str,
     last_ack: i64,
-    state: Arc<State>,
+    state: Arc<dyn StateBackend>,
     connections: Arc<Connections>,
 ) {
     // Register in Connections (in-memory) — replaces any existing connection for this device_id
     let mut cmd_rx = connections.register_phone(device_id).await;
 
-    // Register in Redis
+    // Register in state backend
     if let Err(e) = state.register_connection(device_id).await {
         error!(device_id, "failed to register connection: {e}");
     }
@@ -261,7 +246,7 @@ async fn handle_phone_connection(
                             Ok(PhoneMessage::Response(resp)) => {
                                 info!(device_id, id = resp.id, status = %resp.status, "command response");
                                 let resp_json = serde_json::to_string(&resp).unwrap_or_default();
-                                // Store in Redis
+                                // Store in state backend
                                 if let Err(e) = state.store_response(device_id, resp.id, &resp_json).await {
                                     warn!(device_id, "failed to store response: {e}");
                                 }
@@ -340,7 +325,7 @@ async fn handle_controller_connection(
     addr: SocketAddr,
     device_id: &str,
     target_device_id: &str,
-    state: Arc<State>,
+    state: Arc<dyn StateBackend>,
     connections: Arc<Connections>,
 ) {
     // Check if phone is connected
@@ -375,7 +360,7 @@ async fn handle_controller_connection(
                         // Try to parse as controller command
                         match parse_controller_message(&text) {
                             Ok(ctrl_cmd) => {
-                                // Enqueue command in Redis
+                                // Enqueue command in state backend
                                 match state.enqueue_command(&target_device_id_owned, ctrl_cmd.cmd, ctrl_cmd.params).await {
                                     Ok(command) => {
                                         // Send command to phone via Connections
@@ -383,7 +368,7 @@ async fn handle_controller_connection(
                                         let sent = connections.send_to_phone(&target_device_id_owned, &cmd_json).await;
 
                                         if !sent {
-                                            // Phone not connected — command is queued in Redis
+                                            // Phone not connected — command is queued
                                             warn!(device_id, target_device_id = %target_device_id_owned, "phone not connected, command queued");
                                         }
 

@@ -34,6 +34,18 @@ pub struct Config {
     /// Unique device ID (auto-generated cryptographically secure ID on first run)
     #[serde(default)]
     pub device_id: String,
+
+    /// Open source server mode enabled
+    #[serde(default)]
+    pub opensource_server_enabled: bool,
+
+    /// User ID for open source server mode (used as Bearer token)
+    #[serde(default)]
+    pub opensource_user_id: String,
+
+    /// API server URL for open source server mode
+    #[serde(default)]
+    pub opensource_api_url: String,
 }
 
 fn default_api_url() -> String {
@@ -59,6 +71,9 @@ impl Default for Config {
             max_screenshot_width: None,
             max_screenshot_height: None,
             device_id: String::new(),
+            opensource_server_enabled: false,
+            opensource_user_id: String::new(),
+            opensource_api_url: String::new(),
         }
     }
 }
@@ -115,6 +130,28 @@ impl Config {
 
     /// Check if the config has enough info to connect.
     pub fn is_ready(&self) -> bool {
-        !self.token.is_empty()
+        if self.opensource_server_enabled {
+            !self.opensource_user_id.is_empty() && !self.opensource_api_url.is_empty()
+        } else {
+            !self.token.is_empty()
+        }
+    }
+
+    /// Get the effective auth token (opensource user_id or normal token).
+    pub fn effective_token(&self) -> &str {
+        if self.opensource_server_enabled {
+            &self.opensource_user_id
+        } else {
+            &self.token
+        }
+    }
+
+    /// Get the effective API URL (opensource or normal).
+    pub fn effective_api_url(&self) -> &str {
+        if self.opensource_server_enabled {
+            &self.opensource_api_url
+        } else {
+            &self.api_url
+        }
     }
 }
