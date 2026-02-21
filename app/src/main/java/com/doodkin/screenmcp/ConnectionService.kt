@@ -23,6 +23,7 @@ class ConnectionService : Service() {
         const val EXTRA_WS_URL = "ws_url"
         const val EXTRA_API_URL = "api_url"
         const val EXTRA_TOKEN = "token"
+        const val EXTRA_DEVICE_ID = "device_id"
 
         var instance: ConnectionService? = null
             private set
@@ -40,6 +41,7 @@ class ConnectionService : Service() {
         val token = intent?.getStringExtra(EXTRA_TOKEN)
         val wsUrl = intent?.getStringExtra(EXTRA_WS_URL)
         val apiUrl = intent?.getStringExtra(EXTRA_API_URL)
+        val deviceId = intent?.getStringExtra(EXTRA_DEVICE_ID)
 
         startForeground(NOTIFICATION_ID, buildNotification("Connecting..."))
 
@@ -68,10 +70,10 @@ class ConnectionService : Service() {
 
             if (wsUrl != null) {
                 Log.i(TAG, "Direct connect to $wsUrl (fallback API: $apiUrl)")
-                service.connectDirect(wsUrl, token, fallbackApiUrl = apiUrl)
+                service.connectDirect(wsUrl, token, fallbackApiUrl = apiUrl, deviceId = deviceId)
             } else if (apiUrl != null) {
                 Log.i(TAG, "Discover via $apiUrl")
-                service.connectViaApi(apiUrl, token)
+                service.connectViaApi(apiUrl, token, deviceId = deviceId)
             }
         }
 

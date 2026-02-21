@@ -24,6 +24,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.security.SecureRandom
 
 class MainActivity : AppCompatActivity() {
 
@@ -89,6 +90,19 @@ class MainActivity : AppCompatActivity() {
     private fun getApiUrl(): String {
         val custom = etApiUrl.text.toString().trim()
         return custom.ifEmpty { "https://server10.doodkin.com" }
+    }
+
+    /** Get or create a persistent cryptographically secure device ID in SharedPreferences */
+    private fun getDeviceUUID(): String {
+        val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+        var deviceId = prefs.getString("device_id", null)
+        if (deviceId.isNullOrEmpty()) {
+            val bytes = ByteArray(16)
+            SecureRandom().nextBytes(bytes)
+            deviceId = bytes.joinToString("") { "%02x".format(it) }
+            prefs.edit().putString("device_id", deviceId).apply()
+        }
+        return deviceId
     }
 
     private fun updateServiceStatus() {
@@ -223,6 +237,7 @@ class MainActivity : AppCompatActivity() {
                             put("fcmToken", fcmToken)
                             put("deviceName", android.os.Build.MODEL)
                             put("deviceModel", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                            put("deviceId", getDeviceUUID())
                         }
 
                         val request = Request.Builder()
@@ -286,6 +301,7 @@ class MainActivity : AppCompatActivity() {
                 val intent = Intent(this, ConnectionService::class.java).apply {
                     putExtra(ConnectionService.EXTRA_API_URL, apiUrl)
                     putExtra(ConnectionService.EXTRA_TOKEN, token)
+                    putExtra(ConnectionService.EXTRA_DEVICE_ID, getDeviceUUID())
                 }
                 startForegroundService(intent)
             }

@@ -90,7 +90,7 @@ export class PhoneClient extends EventEmitter {
       ws.on("open", () => {
         const auth: AuthMessage = {
           type: "auth",
-          token: this.options.token,
+          key: this.options.token,
           role: "controller",
           target_device_id: this.options.targetDeviceId,
           last_ack: 0,

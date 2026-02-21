@@ -1,7 +1,7 @@
 // Auth message sent by controller to worker
 export interface AuthMessage {
   type: "auth";
-  token: string;
+  key: string;
   role: "controller";
   target_device_id: string;
   last_ack: number;

@@ -80,7 +80,7 @@ Phone App                  Firebase             Discovery API         Worker WS
   │◄── { wsUrl } ─────────────────────────────────┤                    │
   │                           │                     │                    │
   ├── WS connect ───────────────────────────────────────────────────►│
-  │   { type: "auth", token, role: "phone", last_ack: 5 }          │
+  │   { type: "auth", token, role: "phone", device_id, last_ack: 5 }│
   │                           │                     │   verify via API──►│
   │◄── { type: "auth_ok" } ────────────────────────────────────────┤
   │                           │                     │                    │
@@ -138,14 +138,17 @@ CREATE TABLE devices (
     user_id UUID REFERENCES users(id),
     device_name TEXT NOT NULL DEFAULT 'default',
     device_model TEXT,
+    device_number INT,
     fcm_token TEXT,
     last_seen TIMESTAMPTZ,
     worker_id UUID REFERENCES workers(id),
     connected BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(user_id, device_name)
+    UNIQUE(user_id, device_name),
+    UNIQUE(user_id, device_number)
 );
 ```
+The `id` is a client-generated cryptographic hex ID (128 bits). `device_number` is a user-facing integer (1, 2, 3...) auto-assigned on registration, used in MCP tool calls.
 
 ### api_keys
 ```sql
@@ -162,6 +165,7 @@ CREATE TABLE api_keys (
 
 ## Redis Keys
 
+`{device_id}` is the client-generated cryptographic hex ID (e.g. `a1b2c3d4e5f67890abcdef1234567890`).
 ```
 # Worker status (for discovery)
 worker:{id}:status        → "ready" | "draining"
@@ -174,7 +178,7 @@ device:{device_id}:last_ack       → 6
 device:{device_id}:cmd_counter    → 13
 
 # Session tokens
-session:{token}           → { user_id, device_id }  TTL 24h
+session:{token}           → { user_id, firebase_uid }  TTL 24h
 ```
 
 ## Implementation Status
@@ -210,12 +214,15 @@ session:{token}           → { user_id, device_id }  TTL 24h
 - [x] Remote CLI client (TypeScript)
 - [x] Docker Compose deployment
 
-### Phase 5 — MCP Integration
-- [ ] MCP endpoint (SSE / streamable HTTP)
-- [ ] Route MCP commands → phone → results back
+### Phase 5 — MCP Integration ✓
+- [x] MCP endpoint (Streamable HTTP at /api/mcp)
+- [x] Route MCP commands → phone → results back
+- [x] `list_devices` tool — discover registered devices
+- [x] All phone tools require explicit `device_id` (integer device_number)
+- [x] Per-device phone connections (Map keyed by device UUID)
 
 ### Phase 6 — Payments & Polish
 - [ ] PayPal subscription integration
-- [ ] Rate limiting per plan
-- [ ] Usage tracking
+- [x] Rate limiting per plan (usage tracking + daily limits)
+- [x] Usage tracking
 - [ ] Landing page, docs, use cases

@@ -15,7 +15,8 @@ Phone/CLI                 Discovery API              WS Server             Redis
   │                            │                        │                    │
   ├── WS connect ─────────────────────────────────────►│                    │
   ├── { "type":"auth", "token":"...",                  │                    │
-  │     "role":"phone", "last_ack": 5 } ─────────────►│                    │
+  │     "role":"phone", "device_id":"a1b2...",         │                    │
+  │     "last_ack": 5 } ─────────────────────────────►│                    │
   │                            │                        ├── verify via API──►│
   │                            │                        ├── SET user:server──►│
   │                            │                        ├── GET pending cmds─►│
@@ -175,16 +176,18 @@ These are accepted but return unsupported flag (for cross-platform CLI compatibi
 
 ### WS Auth — Phone
 ```json
-{ "type": "auth", "token": "firebase-id-token-or-api-key", "role": "phone", "last_ack": 5 }
+{ "type": "auth", "user_id": "firebase-id-token", "role": "phone", "device_id": "a1b2c3d4e5f67890...", "last_ack": 5 }
 → { "type": "auth_ok" }
 → { "type": "auth_fail", "error": "invalid token" }
 ```
+Phones authenticate with a Firebase ID token in `user_id`. The `device_id` is a cryptographically secure random hex string (32 chars / 128 bits), generated once per client and persisted. It uniquely identifies this device for routing.
 
-### WS Auth — Controller (CLI)
+### WS Auth — Controller
 ```json
-{ "type": "auth", "token": "firebase-id-token-or-api-key", "role": "controller", "target_device_id": "device-id", "last_ack": 0 }
+{ "type": "auth", "key": "pk_...", "role": "controller", "target_device_id": "a1b2c3d4e5f67890...", "last_ack": 0 }
 → { "type": "auth_ok", "phone_connected": true }
 ```
+Controllers authenticate with an API key (`pk_` prefix) in `key`. The `target_device_id` is the device's cryptographic ID (the same value the phone sent as `device_id` when it connected).
 
 Worker verifies tokens by calling `POST /api/auth/verify` on the web API server.
 
@@ -194,6 +197,7 @@ Worker verifies tokens by calling `POST /api/auth/verify` on the web API server.
 Phone disconnects (network drop, server drain, deploy). Must not lose commands.
 
 ### State in Redis
+`{device_id}` below is the client-generated cryptographic hex ID (e.g. `a1b2c3d4e5f67890abcdef1234567890`).
 ```
 device:{device_id}:server       → "worker-uuid"       # which server holds connection
 device:{device_id}:pending      → [cmd7, cmd8]        # unacked commands (list)

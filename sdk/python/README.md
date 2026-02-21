@@ -50,7 +50,7 @@ asyncio.run(main())
 client = ScreenMCPClient(
     api_key="pk_...",                                # required
     api_url="https://server10.doodkin.com",          # default
-    device_id="your-device-uuid",                    # optional; auto-selects if omitted
+    device_id="a1b2c3d4e5f67890abcdef1234567890",   # target device's crypto ID (from /api/devices/status)
     command_timeout=30.0,                            # seconds (default 30)
     auto_reconnect=True,                             # default True
 )

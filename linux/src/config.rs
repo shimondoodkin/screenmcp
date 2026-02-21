@@ -30,6 +30,10 @@ pub struct Config {
     /// Max screenshot height (resizes if larger)
     #[serde(default)]
     pub max_screenshot_height: Option<u32>,
+
+    /// Unique device ID (auto-generated cryptographically secure ID on first run)
+    #[serde(default)]
+    pub device_id: String,
 }
 
 fn default_api_url() -> String {
@@ -54,6 +58,7 @@ impl Default for Config {
             screenshot_quality: default_quality(),
             max_screenshot_width: None,
             max_screenshot_height: None,
+            device_id: String::new(),
         }
     }
 }
@@ -66,9 +71,10 @@ impl Config {
     }
 
     /// Load config from disk, or return default if not found.
+    /// Auto-generates a cryptographically secure device_id on first load if missing, and saves it.
     pub fn load() -> Self {
         let path = Self::config_path();
-        match std::fs::read_to_string(&path) {
+        let mut config = match std::fs::read_to_string(&path) {
             Ok(contents) => match toml::from_str(&contents) {
                 Ok(config) => config,
                 Err(e) => {
@@ -77,7 +83,19 @@ impl Config {
                 }
             },
             Err(_) => Self::default(),
+        };
+
+        if config.device_id.is_empty() {
+            let mut bytes = [0u8; 16];
+            getrandom::getrandom(&mut bytes).expect("failed to generate random device_id");
+            config.device_id = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+            tracing::info!("generated new device_id: {}", config.device_id);
+            if let Err(e) = config.save() {
+                tracing::warn!("failed to save config with new device_id: {e}");
+            }
         }
+
+        config
     }
 
     /// Save config to disk.

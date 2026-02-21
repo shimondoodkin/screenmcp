@@ -68,14 +68,14 @@ class ScreenMcpService : AccessibilityService() {
 
     fun isWorkerConnectedTo(url: String): Boolean = wsClient?.isConnectedTo(url) == true
 
-    fun connectViaApi(apiUrl: String, token: String) {
+    fun connectViaApi(apiUrl: String, token: String, deviceId: String? = null) {
         ensureClient()
-        wsClient?.connectViaApi(apiUrl, token)
+        wsClient?.connectViaApi(apiUrl, token, deviceId)
     }
 
-    fun connectDirect(workerUrl: String, token: String, fallbackApiUrl: String? = null) {
+    fun connectDirect(workerUrl: String, token: String, fallbackApiUrl: String? = null, deviceId: String? = null) {
         ensureClient()
-        wsClient?.connectDirect(workerUrl, token, fallbackApiUrl)
+        wsClient?.connectDirect(workerUrl, token, fallbackApiUrl, deviceId)
     }
 
     fun disconnectWorker() {

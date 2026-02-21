@@ -18,7 +18,7 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Verify a token against the API server, returning the resolved device_id.
+/// Verify a token against the API server, returning the firebase_uid for authorization.
 async fn verify_token(token: &str, api_url: &str) -> Result<String, String> {
     let client = reqwest::Client::new();
     let res = client
@@ -37,10 +37,10 @@ async fn verify_token(token: &str, api_url: &str) -> Result<String, String> {
         .await
         .map_err(|e| format!("verify parse failed: {e}"))?;
 
-    body.get("device_id")
+    body.get("firebase_uid")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| "verify response missing device_id".to_string())
+        .ok_or_else(|| "verify response missing firebase_uid".to_string())
 }
 
 /// Handle a new connection: if it's a WebSocket upgrade, proceed; otherwise return HTTP 200.
@@ -133,9 +133,26 @@ pub async fn handle_connection(
         }
     };
 
-    // Verify token via API server
-    let device_id = match verify_token(&auth.token, &api_url).await {
-        Ok(device_id) => device_id,
+    // Extract token from role-specific field: phones send user_id, controllers send key
+    let token = match auth.role.as_str() {
+        "controller" => auth.key.clone(),
+        _ => auth.user_id.clone(),
+    };
+    let token = match token {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            warn!(%addr, "missing auth credential");
+            let err = ServerMessage::auth_fail("missing auth credential");
+            let json = serde_json::to_string(&err).unwrap();
+            let _ = ws_tx.send(Message::Text(json.into())).await;
+            let _ = ws_tx.close().await;
+            return;
+        }
+    };
+
+    // Verify token via API server (validates auth, returns firebase_uid)
+    let firebase_uid = match verify_token(&token, &api_url).await {
+        Ok(uid) => uid,
         Err(e) => {
             warn!(%addr, "auth verification failed: {e}");
             let err = ServerMessage::auth_fail("invalid token");
@@ -147,7 +164,13 @@ pub async fn handle_connection(
     };
     let role = auth.role.clone();
 
-    info!(%addr, %device_id, %role, "authenticated");
+    // Use client-provided device_id for routing (required for phones, optional for controllers)
+    let device_id = match auth.device_id {
+        Some(ref id) if !id.is_empty() => id.clone(),
+        _ => firebase_uid.clone(), // fallback for backwards compat
+    };
+
+    info!(%addr, %firebase_uid, %device_id, %role, "authenticated");
 
     match role.as_str() {
         "controller" => {

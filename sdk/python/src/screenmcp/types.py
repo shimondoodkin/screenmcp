@@ -13,7 +13,7 @@ class AuthMessage:
     """Sent by the controller to the worker on WebSocket open."""
 
     type: Literal["auth"] = "auth"
-    token: str = ""
+    key: str = ""
     role: Literal["controller"] = "controller"
     target_device_id: str = ""
     last_ack: int = 0
@@ -21,7 +21,7 @@ class AuthMessage:
     def to_dict(self) -> dict[str, Any]:
         return {
             "type": self.type,
-            "token": self.token,
+            "key": self.key,
             "role": self.role,
             "target_device_id": self.target_device_id,
             "last_ack": self.last_ack,

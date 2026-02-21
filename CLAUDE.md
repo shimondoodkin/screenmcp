@@ -68,8 +68,8 @@ Worker verifies tokens by calling `POST /api/auth/verify` on the web API.
 ## Connection Flow
 
 1. Client calls `POST /api/discover` → gets least-loaded worker URL
-2. Client opens WebSocket to worker, sends `{type: "auth", token, role, last_ack}`
-3. Worker verifies token via web API, registers connection in memory
+2. Client opens WebSocket to worker, sends `{type: "auth", token, role, device_id, last_ack}`
+3. Worker verifies token via web API, uses client-provided `device_id` (crypto hex string) for routing
 4. Commands flow: controller → worker (Redis queue) → phone → response back
 5. On reconnect, phone sends `last_ack` and worker replays unacked commands from Redis
 
@@ -91,7 +91,7 @@ Worker verifies tokens by calling `POST /api/auth/verify` on the web API.
 
 ## Database
 
-Schema in `db/init.sql`. Tables: `users`, `workers`, `devices`, `api_keys`. All IDs are UUID v4. Auto-initialized on first Docker Compose run.
+Schema in `db/init.sql`. Tables: `users`, `workers`, `devices`, `api_keys`, `usage_logs`. Device IDs are client-generated cryptographic hex strings (128 bits). `devices` has a `device_number` column (integer, user-facing, used in MCP). Auto-initialized on first Docker Compose run.
 
 ## Supported Phone Commands
 

@@ -52,7 +52,7 @@ async fn discover_worker(api_url: &str, token: &str) -> Result<String, String> {
         .await
         .map_err(|e| format!("discovery request failed: {e}"))?;
 
-    if !resp.ok() {
+    if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("discovery failed ({status}): {body}"));
@@ -201,8 +201,9 @@ async fn run_connection(
     // Send auth message as a phone
     let auth_msg = json!({
         "type": "auth",
-        "token": config.token,
+        "user_id": config.token,
         "role": "phone",
+        "device_id": config.device_id,
         "last_ack": 0
     });
 
@@ -291,7 +292,7 @@ async fn run_connection(
                             // Check for command (has id + cmd fields)
                             if let (Some(id), Some(cmd)) = (
                                 v.get("id").and_then(|i| i.as_i64()),
-                                v.get("cmd").and_then(|c| c.as_str()),
+                                v.get("cmd").and_then(|c| c.as_str()).map(|s| s.to_string()),
                             ) {
                                 info!("received command id={id} cmd={cmd}");
 
@@ -308,7 +309,7 @@ async fn run_connection(
                                 let response = tokio::task::spawn_blocking(move || {
                                     commands::execute_command(
                                         id,
-                                        cmd,
+                                        &cmd,
                                         params.as_ref(),
                                         &config_clone,
                                     )

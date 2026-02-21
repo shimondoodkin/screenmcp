@@ -32,6 +32,7 @@ class WebSocketClient(
     private var lastWorkerUrl: String? = null
     private var apiUrl: String? = null
     private var token: String? = null
+    private var deviceId: String? = null
     private val httpClient = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(30, TimeUnit.SECONDS)
@@ -49,11 +50,12 @@ class WebSocketClient(
     /**
      * Connect via discovery API: call /api/discover to get a worker URL, then WS connect.
      */
-    fun connectViaApi(apiUrl: String, token: String) {
+    fun connectViaApi(apiUrl: String, token: String, deviceId: String? = null) {
         // Tear down any existing connection first
         closeQuietly()
         this.apiUrl = apiUrl
         this.token = token
+        this.deviceId = deviceId
         shouldReconnect.set(true)
         reconnectAttempt = 0
         connectionGeneration++
@@ -64,11 +66,12 @@ class WebSocketClient(
      * Connect directly to a known worker URL (for manual/FCM-provided URLs).
      * If fallbackApiUrl is provided, reconnection will use API discovery instead of retrying the same URL.
      */
-    fun connectDirect(workerUrl: String, token: String, fallbackApiUrl: String? = null) {
+    fun connectDirect(workerUrl: String, token: String, fallbackApiUrl: String? = null, deviceId: String? = null) {
         // Tear down any existing connection first
         closeQuietly()
         this.apiUrl = fallbackApiUrl
         this.token = token
+        this.deviceId = deviceId
         this.lastWorkerUrl = workerUrl
         shouldReconnect.set(true)
         reconnectAttempt = 0
@@ -171,9 +174,10 @@ class WebSocketClient(
                 Log.i(TAG, "WebSocket opened, sending auth")
                 val auth = JSONObject().apply {
                     put("type", "auth")
-                    put("token", wsToken)
+                    put("user_id", wsToken)
                     put("role", "phone")
                     put("last_ack", 0)
+                    deviceId?.let { put("device_id", it) }
                 }
                 ws.send(auth.toString())
             }

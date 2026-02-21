@@ -8,6 +8,7 @@ import com.google.firebase.messaging.RemoteMessage
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.SecureRandom
 
 class FcmService : FirebaseMessagingService() {
 
@@ -15,6 +16,19 @@ class FcmService : FirebaseMessagingService() {
         private const val TAG = "FcmService"
         // API base URL for device registration
         var apiBaseUrl: String = "https://server10.doodkin.com"
+    }
+
+    /** Get or create a persistent cryptographically secure device ID in SharedPreferences */
+    private fun getDeviceUUID(): String {
+        val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+        var deviceId = prefs.getString("device_id", null)
+        if (deviceId.isNullOrEmpty()) {
+            val bytes = ByteArray(16)
+            SecureRandom().nextBytes(bytes)
+            deviceId = bytes.joinToString("") { "%02x".format(it) }
+            prefs.edit().putString("device_id", deviceId).apply()
+        }
+        return deviceId
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
@@ -48,6 +62,7 @@ class FcmService : FirebaseMessagingService() {
                     putExtra(ConnectionService.EXTRA_WS_URL, wsUrl)
                     putExtra(ConnectionService.EXTRA_API_URL, apiBaseUrl)
                     putExtra(ConnectionService.EXTRA_TOKEN, idToken)
+                    putExtra(ConnectionService.EXTRA_DEVICE_ID, getDeviceUUID())
                 }
                 startForegroundService(intent)
             }
@@ -78,6 +93,7 @@ class FcmService : FirebaseMessagingService() {
                         put("fcmToken", fcmToken)
                         put("deviceName", android.os.Build.MODEL)
                         put("deviceModel", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                        put("deviceId", getDeviceUUID())
                     }
 
                     OutputStreamWriter(conn.outputStream).use {

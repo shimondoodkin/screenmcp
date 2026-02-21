@@ -14,13 +14,18 @@ pub enum PhoneMessage {
 pub struct AuthMessage {
     #[serde(rename = "type")]
     pub msg_type: String, // "auth"
-    pub token: String,
+    #[serde(default)]
+    pub user_id: Option<String>, // phone: Firebase ID token
+    #[serde(default)]
+    pub key: Option<String>, // controller: API key (pk_...)
     #[serde(default)]
     pub last_ack: i64,
     #[serde(default = "default_role")]
     pub role: String, // "phone" or "controller"
     #[serde(default)]
-    pub target_device_id: Option<String>, // for controllers: which phone to control
+    pub device_id: Option<String>, // phone: client-generated crypto ID for routing
+    #[serde(default)]
+    pub target_device_id: Option<String>, // controller: which phone to control
 }
 
 fn default_role() -> String {

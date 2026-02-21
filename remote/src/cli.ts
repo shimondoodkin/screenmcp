@@ -13,7 +13,7 @@ program
   .description("ScreenMCP remote client CLI")
   .option("--api <url>", "API server URL for discovery", DEFAULT_API_URL)
   .requiredOption("--token <token>", "Auth token (API key or Firebase ID token)")
-  .requiredOption("--device-id <deviceId>", "Target device ID");
+  .requiredOption("--device-id <deviceId>", "Target device's cryptographic ID (32 hex chars, from /api/devices/status)");
 
 function createClient(): PhoneClient {
   const opts = program.opts<{ api: string; token: string; deviceId: string }>();

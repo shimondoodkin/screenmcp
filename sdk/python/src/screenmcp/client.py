@@ -356,7 +356,7 @@ class ScreenMCPClient:
 
         # Send auth message
         auth = AuthMessage(
-            token=self._api_key,
+            key=self._api_key,
             target_device_id=self._device_id,
             last_ack=0,
         )

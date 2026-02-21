@@ -89,11 +89,10 @@ fn handle_screenshot(
         .capture()
         .map_err(|e| format!("screenshot failed (ensure Screen Recording permission is granted): {e}"))?;
 
-    let rgba_data = capture.rgba();
     let width = capture.width();
     let height = capture.height();
-
-    let img = image::RgbaImage::from_raw(width, height, rgba_data.to_vec())
+    let raw_pixels = capture.into_raw();
+    let img = image::RgbaImage::from_raw(width, height, raw_pixels)
         .ok_or_else(|| "failed to create image from capture".to_string())?;
 
     // Determine max dimensions from params or config

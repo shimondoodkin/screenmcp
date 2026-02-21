@@ -15,7 +15,7 @@ import { ScreenMCPClient } from "@screenmcp/sdk";
 
 const phone = new ScreenMCPClient({
   apiKey: "pk_your_api_key_here",
-  deviceId: "your-device-id", // optional
+  deviceId: "a1b2c3d4e5f67890abcdef1234567890", // target device's crypto ID
 });
 
 await phone.connect();
@@ -41,7 +41,7 @@ await phone.disconnect();
 new ScreenMCPClient(options: {
   apiKey: string;         // Required. Your API key (pk_... format).
   apiUrl?: string;        // API server URL. Defaults to https://server10.doodkin.com
-  deviceId?: string;      // Target device ID. Optional.
+  deviceId?: string;      // Target device's cryptographic ID (32 hex chars). Get from /api/devices/status.
   commandTimeout?: number; // Per-command timeout in ms. Defaults to 30000.
   autoReconnect?: boolean; // Auto-reconnect on disconnect. Defaults to true.
 })

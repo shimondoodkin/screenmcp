@@ -303,7 +303,7 @@ export class ScreenMCPClient extends EventEmitter {
       ws.on("open", () => {
         const auth: AuthMessage = {
           type: "auth",
-          token: this.apiKey,
+          key: this.apiKey,
           role: "controller",
           last_ack: 0,
         };
