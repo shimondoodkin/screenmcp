@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>ScreenMCP</string>
+    <key>CFBundleDisplayName</key>
+    <string>ScreenMCP</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.screenmcp.mac</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleExecutable</key>
+    <string>screenmcp-mac</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.13</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>ScreenMCP needs accessibility access to simulate keyboard and mouse input.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>ScreenMCP needs screen recording access to capture screenshots.</string>
+</dict>
+</plist>

@@ -1,26 +1,28 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { PhoneClient } from "./client.js";
+import { ScreenMCPClient } from "@screenmcp/sdk";
 import * as fs from "fs";
 import * as readline from "readline";
-
-const DEFAULT_API_URL = "https://screenmcp-api.ngrok-free.app";
 
 const program = new Command();
 
 program
   .name("screenmcp")
-  .description("ScreenMCP remote client CLI")
-  .option("--api <url>", "API server URL for discovery", DEFAULT_API_URL)
-  .requiredOption("--token <token>", "Auth token (API key or Firebase ID token)")
-  .requiredOption("--device-id <deviceId>", "Target device's cryptographic ID (32 hex chars, from /api/devices/status)");
+  .description("CLI example using @screenmcp/sdk")
+  .option("--api-url <url>", "API server URL")
+  .option("--api-key <key>", "API key (pk_... format)")
+  .option("--device-id <id>", "Target device ID (32 hex chars)");
 
-function createClient(): PhoneClient {
-  const opts = program.opts<{ api: string; token: string; deviceId: string }>();
-  return new PhoneClient({
-    apiUrl: opts.api,
-    token: opts.token,
-    targetDeviceId: opts.deviceId,
+function createClient(): ScreenMCPClient {
+  const opts = program.opts<{ apiUrl?: string; apiKey?: string; deviceId?: string }>();
+  if (!opts.apiKey) {
+    console.error("Error: --api-key is required");
+    process.exit(1);
+  }
+  return new ScreenMCPClient({
+    apiKey: opts.apiKey,
+    apiUrl: opts.apiUrl,
+    deviceId: opts.deviceId,
   });
 }
 
@@ -34,16 +36,18 @@ program
     const client = createClient();
     try {
       await client.connect();
-      console.log(
-        `Connected to ${client.workerUrl}. Phone: ${client.phoneConnected ? "online" : "offline"}`
-      );
+      console.log(`Connected to ${client.workerUrl}. Phone: ${client.phoneConnected ? "online" : "offline"}`);
 
-      const base64 = await client.screenshot({
-        quality: opts.quality,
-        max_width: opts.maxWidth,
-        max_height: opts.maxHeight,
-      });
-      const buf = Buffer.from(base64, "base64");
+      const params: Record<string, unknown> = {};
+      if (opts.quality !== undefined) params.quality = opts.quality;
+      if (opts.maxWidth !== undefined) params.max_width = opts.maxWidth;
+      if (opts.maxHeight !== undefined) params.max_height = opts.maxHeight;
+
+      const resp = Object.keys(params).length > 0
+        ? await client.sendCommand("screenshot", params)
+        : await client.sendCommand("screenshot");
+      const image = (resp.result as { image?: string })?.image ?? "";
+      const buf = Buffer.from(image, "base64");
       const filename = outfile || `screenshot_${Date.now()}.webp`;
       fs.writeFileSync(filename, buf);
       console.log(`Saved ${filename} (${buf.length} bytes)`);
@@ -62,9 +66,10 @@ program
     const client = createClient();
     try {
       await client.connect();
-      const dur = duration ? parseInt(duration) : undefined;
-      await client.click(parseFloat(x), parseFloat(y), dur);
-      console.log(`Clicked at (${x}, ${y})${dur ? ` for ${dur}ms` : ""}`);
+      const params: Record<string, unknown> = { x: parseFloat(x), y: parseFloat(y) };
+      if (duration) params.duration = parseInt(duration);
+      await client.sendCommand("click", params);
+      console.log(`Clicked at (${x}, ${y})${duration ? ` for ${duration}ms` : ""}`);
     } catch (e) {
       console.error("Error:", (e as Error).message);
       process.exit(1);
@@ -97,7 +102,7 @@ program
     const client = createClient();
     try {
       await client.connect();
-      const tree = await client.getUiTree();
+      const { tree } = await client.uiTree();
       console.log(JSON.stringify(tree, null, 2));
     } catch (e) {
       console.error("Error:", (e as Error).message);
@@ -108,14 +113,15 @@ program
   });
 
 program
-  .command("scroll <x> <y> <dx> <dy>")
-  .description("Finger scroll at (x,y) by (dx,dy)")
-  .action(async (x: string, y: string, dx: string, dy: string) => {
+  .command("scroll <direction> [amount]")
+  .description('Scroll the screen (direction: up, down, left, right)')
+  .action(async (direction: string, amount?: string) => {
     const client = createClient();
     try {
       await client.connect();
-      await client.scroll(parseFloat(x), parseFloat(y), parseFloat(dx), parseFloat(dy));
-      console.log(`Scrolled at (${x}, ${y}) by (${dx}, ${dy})`);
+      const dir = direction as "up" | "down" | "left" | "right";
+      await client.scroll(dir, amount ? parseInt(amount) : undefined);
+      console.log(`Scrolled ${direction}${amount ? ` by ${amount}px` : ""}`);
     } catch (e) {
       console.error("Error:", (e as Error).message);
       process.exit(1);
@@ -125,27 +131,29 @@ program
   });
 
 program
-  .command("camera [cameraId]")
-  .description("Capture photo from camera (0=rear, 1=front)")
+  .command("camera [facing]")
+  .description("Capture photo (facing: front or rear)")
   .option("-q, --quality <n>", "WebP quality (1-100)", parseInt)
   .option("--max-width <n>", "Max width in pixels", parseInt)
   .option("--max-height <n>", "Max height in pixels", parseInt)
   .option("-o, --output <file>", "Output filename")
-  .action(async (cameraId: string | undefined, opts: { quality?: number; maxWidth?: number; maxHeight?: number; output?: string }) => {
+  .action(async (facing: string | undefined, opts: { quality?: number; maxWidth?: number; maxHeight?: number; output?: string }) => {
     const client = createClient();
     try {
       await client.connect();
-      const base64 = await client.camera({
-        camera: cameraId !== undefined ? parseInt(cameraId) : undefined,
-        quality: opts.quality,
-        max_width: opts.maxWidth,
-        max_height: opts.maxHeight,
-      });
-      if (!base64) {
+      const params: Record<string, unknown> = {};
+      if (facing !== undefined) params.camera = facing === "front" ? "1" : "0";
+      if (opts.quality !== undefined) params.quality = opts.quality;
+      if (opts.maxWidth !== undefined) params.max_width = opts.maxWidth;
+      if (opts.maxHeight !== undefined) params.max_height = opts.maxHeight;
+
+      const resp = await client.sendCommand("camera", Object.keys(params).length > 0 ? params : undefined);
+      const image = (resp.result as { image?: string })?.image;
+      if (!image) {
         console.log("No image returned (camera may not be available)");
         return;
       }
-      const buf = Buffer.from(base64, "base64");
+      const buf = Buffer.from(image, "base64");
       const filename = opts.output || `camera_${Date.now()}.webp`;
       fs.writeFileSync(filename, buf);
       console.log(`Saved ${filename} (${buf.length} bytes)`);
@@ -169,21 +177,13 @@ program
     client.on("reconnected", (url: string) => {
       console.log(`[reconnected to ${url}]`);
     });
-    client.on("reconnect_exhausted", () => {
-      console.log("[failed to reconnect after all retries]");
-      process.exit(1);
-    });
 
     try {
       await client.connect();
-      console.log(
-        `Connected to ${client.workerUrl}. Phone: ${client.phoneConnected ? "online" : "offline"}`
-      );
+      console.log(`Connected to ${client.workerUrl}. Phone: ${client.phoneConnected ? "online" : "offline"}`);
 
       client.on("phone_status", (connected: boolean) => {
-        console.log(
-          `\n[phone ${connected ? "connected" : "disconnected"}]`
-        );
+        console.log(`\n[phone ${connected ? "connected" : "disconnected"}]`);
       });
 
       const rl = readline.createInterface({
@@ -206,34 +206,37 @@ program
         try {
           switch (cmd) {
             case "screenshot": {
-              const ssOpts: { quality?: number; max_width?: number; max_height?: number } = {};
+              const ssParams: Record<string, unknown> = {};
               let ssFile: string | undefined;
               for (let i = 1; i < parts.length; i++) {
-                if (parts[i] === "--quality" || parts[i] === "-q") ssOpts.quality = parseInt(parts[++i]);
-                else if (parts[i] === "--max-width") ssOpts.max_width = parseInt(parts[++i]);
-                else if (parts[i] === "--max-height") ssOpts.max_height = parseInt(parts[++i]);
+                if (parts[i] === "--quality" || parts[i] === "-q") ssParams.quality = parseInt(parts[++i]);
+                else if (parts[i] === "--max-width") ssParams.max_width = parseInt(parts[++i]);
+                else if (parts[i] === "--max-height") ssParams.max_height = parseInt(parts[++i]);
                 else if (!ssFile) ssFile = parts[i];
               }
-              const base64 = await client.screenshot(Object.keys(ssOpts).length > 0 ? ssOpts : undefined);
-              const buf = Buffer.from(base64, "base64");
+              const ssResp = await client.sendCommand("screenshot", Object.keys(ssParams).length > 0 ? ssParams : undefined);
+              const ssImage = (ssResp.result as { image?: string })?.image ?? "";
+              const buf = Buffer.from(ssImage, "base64");
               const filename = ssFile || `screenshot_${Date.now()}.webp`;
               fs.writeFileSync(filename, buf);
               console.log(`Saved ${filename} (${buf.length} bytes)`);
               break;
             }
             case "click": {
-              const x = parseFloat(parts[1]);
-              const y = parseFloat(parts[2]);
+              const cx = parseFloat(parts[1]);
+              const cy = parseFloat(parts[2]);
               const dur = parts[3] ? parseInt(parts[3]) : undefined;
-              await client.click(x, y, dur);
-              console.log(`Clicked at (${x}, ${y})${dur ? ` for ${dur}ms` : ""}`);
+              const clickParams: Record<string, unknown> = { x: cx, y: cy };
+              if (dur) clickParams.duration = dur;
+              await client.sendCommand("click", clickParams);
+              console.log(`Clicked at (${cx}, ${cy})${dur ? ` for ${dur}ms` : ""}`);
               break;
             }
             case "long_click": {
-              const x = parseFloat(parts[1]);
-              const y = parseFloat(parts[2]);
-              await client.longClick(x, y);
-              console.log(`Long-clicked at (${x}, ${y})`);
+              const lx = parseFloat(parts[1]);
+              const ly = parseFloat(parts[2]);
+              await client.longClick(lx, ly);
+              console.log(`Long-clicked at (${lx}, ${ly})`);
               break;
             }
             case "drag": {
@@ -252,12 +255,12 @@ program
               break;
             }
             case "get_text": {
-              const text = await client.getText();
+              const { text } = await client.getText();
               console.log(`Text: ${text}`);
               break;
             }
             case "tree": {
-              const tree = await client.getUiTree();
+              const { tree } = await client.uiTree();
               console.log(JSON.stringify(tree, null, 2));
               break;
             }
@@ -273,26 +276,36 @@ program
               await client.recents();
               console.log("Recents");
               break;
+            case "select_all":
+              await client.selectAll();
+              console.log("Selected all");
+              break;
+            case "copy":
+              await client.copy();
+              console.log("Copied");
+              break;
+            case "paste":
+              await client.paste();
+              console.log("Pasted");
+              break;
             case "scroll": {
-              const sx = parseFloat(parts[1]);
-              const sy = parseFloat(parts[2]);
-              const sdx = parseFloat(parts[3]);
-              const sdy = parseFloat(parts[4]);
-              await client.scroll(sx, sy, sdx, sdy);
-              console.log(`Scrolled at (${sx}, ${sy}) by (${sdx}, ${sdy})`);
+              const dir = parts[1] as "up" | "down" | "left" | "right";
+              const amt = parts[2] ? parseInt(parts[2]) : undefined;
+              await client.scroll(dir, amt);
+              console.log(`Scrolled ${dir}${amt ? ` by ${amt}px` : ""}`);
               break;
             }
             case "right_click": {
               const rx = parseFloat(parts[1]);
               const ry = parseFloat(parts[2]);
-              const rResp = await client.rightClick(rx, ry);
+              const rResp = await client.sendCommand("right_click", { x: rx, y: ry });
               console.log(`Right-click at (${rx}, ${ry})`, (rResp.result as Record<string, unknown>)?.unsupported ? "(unsupported on this device)" : "");
               break;
             }
             case "middle_click": {
               const mx = parseFloat(parts[1]);
               const my = parseFloat(parts[2]);
-              const mResp = await client.middleClick(mx, my);
+              const mResp = await client.sendCommand("middle_click", { x: mx, y: my });
               console.log(`Middle-click at (${mx}, ${my})`, (mResp.result as Record<string, unknown>)?.unsupported ? "(unsupported on this device)" : "");
               break;
             }
@@ -301,25 +314,26 @@ program
               const msy = parseFloat(parts[2]);
               const msdx = parseFloat(parts[3]);
               const msdy = parseFloat(parts[4]);
-              const msResp = await client.mouseScroll(msx, msy, msdx, msdy);
+              const msResp = await client.sendCommand("mouse_scroll", { x: msx, y: msy, dx: msdx, dy: msdy });
               console.log(`Mouse scroll at (${msx}, ${msy}) by (${msdx}, ${msdy})`, (msResp.result as Record<string, unknown>)?.unsupported ? "(unsupported on this device)" : "");
               break;
             }
             case "camera": {
-              const camOpts: { camera?: number; quality?: number; max_width?: number; max_height?: number } = {};
+              const camParams: Record<string, unknown> = {};
               let camFile: string | undefined;
-              if (parts[1] && !parts[1].startsWith("-")) camOpts.camera = parseInt(parts[1]);
-              for (let i = camOpts.camera !== undefined ? 2 : 1; i < parts.length; i++) {
-                if (parts[i] === "--quality" || parts[i] === "-q") camOpts.quality = parseInt(parts[++i]);
-                else if (parts[i] === "--max-width") camOpts.max_width = parseInt(parts[++i]);
-                else if (parts[i] === "--max-height") camOpts.max_height = parseInt(parts[++i]);
+              const startIdx = (parts[1] && !parts[1].startsWith("-")) ? (camParams.camera = parts[1] === "front" ? "1" : "0", 2) : 1;
+              for (let i = startIdx; i < parts.length; i++) {
+                if (parts[i] === "--quality" || parts[i] === "-q") camParams.quality = parseInt(parts[++i]);
+                else if (parts[i] === "--max-width") camParams.max_width = parseInt(parts[++i]);
+                else if (parts[i] === "--max-height") camParams.max_height = parseInt(parts[++i]);
                 else if (parts[i] === "-o" || parts[i] === "--output") camFile = parts[++i];
               }
-              const camBase64 = await client.camera(Object.keys(camOpts).length > 0 ? camOpts : undefined);
-              if (!camBase64) {
+              const camResp = await client.sendCommand("camera", Object.keys(camParams).length > 0 ? camParams : undefined);
+              const camImage = (camResp.result as { image?: string })?.image;
+              if (!camImage) {
                 console.log("No image returned (camera may not be available)");
               } else {
-                const camBuf = Buffer.from(camBase64, "base64");
+                const camBuf = Buffer.from(camImage, "base64");
                 const camFilename = camFile || `camera_${Date.now()}.webp`;
                 fs.writeFileSync(camFilename, camBuf);
                 console.log(`Saved ${camFilename} (${camBuf.length} bytes)`);
@@ -328,7 +342,12 @@ program
             }
             case "help":
               console.log(
-                "Commands: screenshot [file] [--quality N] [--max-width N] [--max-height N], click <x> <y> [duration], long_click <x> <y>, drag <sx> <sy> <ex> <ey>, scroll <x> <y> <dx> <dy>, type <text>, get_text, tree, back, home, recents, right_click <x> <y>, middle_click <x> <y>, mouse_scroll <x> <y> <dx> <dy>, camera [id] [--quality N] [--max-width N] [--max-height N], quit"
+                "Commands: screenshot [file] [--quality N] [--max-width N] [--max-height N], " +
+                "click <x> <y> [duration], long_click <x> <y>, drag <sx> <sy> <ex> <ey>, " +
+                "scroll <direction> [amount], type <text>, get_text, select_all, copy, paste, " +
+                "tree, back, home, recents, right_click <x> <y>, middle_click <x> <y>, " +
+                "mouse_scroll <x> <y> <dx> <dy>, camera [front|rear] [--quality N] [--max-width N] " +
+                "[--max-height N] [-o file], quit"
               );
               break;
             case "quit":
@@ -338,9 +357,7 @@ program
               process.exit(0);
               break;
             default:
-              console.log(
-                `Unknown command: ${cmd}. Type 'help' for commands.`
-              );
+              console.log(`Unknown command: ${cmd}. Type 'help' for commands.`);
           }
         } catch (e) {
           console.error("Error:", (e as Error).message);

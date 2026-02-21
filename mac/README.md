@@ -2,7 +2,25 @@
 
 A macOS menu bar application that connects to the ScreenMCP worker as a "phone" device, allowing remote control of the Mac desktop (screenshots, mouse, keyboard, clipboard, window listing).
 
-## Build
+## Install from GitHub Releases
+
+Pre-built `.dmg` files are available on the [Releases](../../releases) page:
+
+- **Apple Silicon** (M1/M2/M3/M4): `screenmcp-mac-aarch64-apple-darwin-*.dmg`
+- **Intel**: `screenmcp-mac-x86_64-apple-darwin-*.dmg`
+
+### Installation steps
+
+1. Download the `.dmg` for your architecture
+2. Open the `.dmg` and drag **ScreenMCP** to `/Applications`
+3. The app is ad-hoc signed but not notarized — macOS Gatekeeper will block it on first launch. Run:
+   ```bash
+   xattr -cr /Applications/ScreenMCP.app
+   ```
+4. Launch ScreenMCP — it appears as a menu bar icon (no Dock icon)
+5. Grant **Accessibility** and **Screen Recording** permissions when prompted (see below)
+
+## Build from Source
 
 ```bash
 cd mac
@@ -10,6 +28,8 @@ cargo build --release
 ```
 
 The binary will be at `target/release/screenmcp-mac`.
+
+> **Note:** A bare binary works for testing, but for tray icon, permissions, and Dock hiding you need a `.app` bundle. See [CROSS-COMPILE.md](CROSS-COMPILE.md) for building `.app` + `.dmg` on Linux.
 
 ## Required macOS Permissions
 

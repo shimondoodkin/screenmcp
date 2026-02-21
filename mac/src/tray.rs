@@ -10,6 +10,11 @@ use winit::window::WindowId;
 use crate::config::Config;
 use crate::ws::{ConnectionStatus, WsCommand};
 
+/// Wrapper to move non-Send types into a single background thread.
+/// Safety: the wrapped value must only be accessed from that thread.
+struct SendWrapper<T>(T);
+unsafe impl<T> Send for SendWrapper<T> {}
+
 /// Truncate a string for display, appending "..." if it exceeds max_len.
 fn truncate_display(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
@@ -227,12 +232,19 @@ impl ApplicationHandler<TrayEvent> for App {
         let opensource_api_url_id = self.menu_items.as_ref().unwrap().opensource_api_url.id().clone();
         let quit_id = self.menu_items.as_ref().unwrap().quit.id().clone();
 
-        // Clone the CheckMenuItem so the background thread can read its checked state
-        let oss_check_ref = self.menu_items.as_ref().unwrap().opensource_enabled.clone();
-        let oss_userid_ref = self.menu_items.as_ref().unwrap().opensource_user_id.clone();
-        let oss_apiurl_ref = self.menu_items.as_ref().unwrap().opensource_api_url.clone();
+        // Clone the menu items so the background thread can read/update state.
+        // Wrapped in SendWrapper because muda's menu items use Rc internally.
+        let oss_check_ref = SendWrapper(self.menu_items.as_ref().unwrap().opensource_enabled.clone());
+        let oss_userid_ref = SendWrapper(self.menu_items.as_ref().unwrap().opensource_user_id.clone());
+        let oss_apiurl_ref = SendWrapper(self.menu_items.as_ref().unwrap().opensource_api_url.clone());
 
         std::thread::spawn(move || {
+            // Force the closure to capture the SendWrappers as whole values
+            // (Rust 2021 captures fields individually, which would bypass SendWrapper).
+            let oss_check_ref = oss_check_ref;
+            let oss_userid_ref = oss_userid_ref;
+            let oss_apiurl_ref = oss_apiurl_ref;
+
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -264,7 +276,7 @@ impl ApplicationHandler<TrayEvent> for App {
                         }
                     } else if event.id() == &opensource_enabled_id {
                         // CheckMenuItem auto-toggles its checked state on click
-                        let is_checked = oss_check_ref.is_checked();
+                        let is_checked = oss_check_ref.0.is_checked();
                         info!("menu: open source server toggled to {is_checked}");
 
                         // Update config and save
@@ -275,8 +287,8 @@ impl ApplicationHandler<TrayEvent> for App {
                         }
 
                         // Enable/disable the User ID and API URL items
-                        oss_userid_ref.set_enabled(is_checked);
-                        oss_apiurl_ref.set_enabled(is_checked);
+                        oss_userid_ref.0.set_enabled(is_checked);
+                        oss_apiurl_ref.0.set_enabled(is_checked);
 
                         // Update display labels
                         if is_checked {
@@ -290,11 +302,11 @@ impl ApplicationHandler<TrayEvent> for App {
                             } else {
                                 truncate_display(&config.opensource_api_url, 40)
                             };
-                            let _ = oss_userid_ref.set_text(&format!("User ID: {uid}"));
-                            let _ = oss_apiurl_ref.set_text(&format!("API URL: {aurl}"));
+                            let _ = oss_userid_ref.0.set_text(&format!("User ID: {uid}"));
+                            let _ = oss_apiurl_ref.0.set_text(&format!("API URL: {aurl}"));
                         } else {
-                            let _ = oss_userid_ref.set_text("User ID: (disabled)");
-                            let _ = oss_apiurl_ref.set_text("API URL: (disabled)");
+                            let _ = oss_userid_ref.0.set_text("User ID: (disabled)");
+                            let _ = oss_apiurl_ref.0.set_text("API URL: (disabled)");
                         }
 
                         // Notify WS manager of config change

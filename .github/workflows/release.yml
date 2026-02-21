@@ -86,8 +86,30 @@ jobs:
           echo "name=${name}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Package (Unix)
-        if: matrix.archive == 'tar.gz'
+      - name: Package macOS (.app + .dmg)
+        if: matrix.client == 'mac'
+        shell: bash
+        run: |
+          APP="ScreenMCP.app"
+          BINARY="mac/target/${{ matrix.target }}/release/screenmcp-mac"
+
+          # Create .app bundle
+          mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
+          cp mac/Info.plist "${APP}/Contents/Info.plist"
+          cp "$BINARY" "${APP}/Contents/MacOS/screenmcp-mac"
+          chmod +x "${APP}/Contents/MacOS/screenmcp-mac"
+          echo "APPLscmc" > "${APP}/Contents/PkgInfo"
+
+          # Ad-hoc sign (no developer cert needed, satisfies basic integrity checks)
+          codesign --force --deep -s - "${APP}"
+
+          # Create .dmg using hdiutil (native on macOS runners)
+          staging="${{ steps.archive.outputs.name }}"
+          hdiutil create -volname "ScreenMCP" -srcfolder "${APP}" -ov -format UDZO "${staging}.dmg"
+          echo "ASSET=${staging}.dmg" >> "$GITHUB_ENV"
+
+      - name: Package (Unix, non-Mac)
+        if: matrix.archive == 'tar.gz' && matrix.client != 'mac'
         shell: bash
         run: |
           staging="${{ steps.archive.outputs.name }}"
@@ -194,7 +216,7 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.apk' \) -exec mv {} release/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.apk' -o -name '*.dmg' \) -exec mv {} release/ \;
           ls -lh release/
 
       - name: Generate checksums
@@ -211,3 +233,32 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            ## Downloads
+
+            | Platform | File | Notes |
+            |----------|------|-------|
+            | **macOS (Apple Silicon)** | `screenmcp-mac-aarch64-apple-darwin-*.dmg` | M1/M2/M3/M4 Macs |
+            | **macOS (Intel)** | `screenmcp-mac-x86_64-apple-darwin-*.dmg` | Older Intel Macs |
+            | **Windows** | `screenmcp-windows-*.zip` | x86_64 |
+            | **Linux** | `screenmcp-linux-*.tar.gz` | x86_64 |
+            | **Android** | `screenmcp-android-*.apk` | ARM/x86 |
+
+            ## macOS Installation
+
+            1. Download the `.dmg` for your architecture (Apple Silicon or Intel)
+            2. Open the `.dmg` and drag **ScreenMCP** to `/Applications`
+            3. **Important** — the app is not notarized, so macOS Gatekeeper will block it. Run:
+               ```bash
+               xattr -cr /Applications/ScreenMCP.app
+               ```
+            4. Launch ScreenMCP — it appears as a menu bar icon (no Dock icon)
+            5. Grant **Accessibility** and **Screen Recording** permissions when prompted
+
+            ## Windows / Linux
+
+            Extract the archive and run the `screenmcp-windows.exe` or `screenmcp-linux` binary.
+
+            ## Android
+
+            Install the APK directly. You may need to enable "Install from unknown sources".

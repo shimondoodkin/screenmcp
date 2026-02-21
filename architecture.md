@@ -4,225 +4,156 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    server10.doodkin.com                          │
+│                         Local Machine                            │
 │                                                                  │
 │  ┌──────────────┐                 ┌────────────────────────────┐ │
-│  │   Web API     │                │  Rust WS Worker             │ │
-│  │   (Next.js)   │                │  (phone + controller conns) │ │
+│  │  MCP Server   │                │  Rust WS Worker             │ │
+│  │  (Node.js)    │                │  (phone + controller conns) │ │
 │  │               │                │                              │ │
-│  │  - Landing    │   HTTP verify  │  - Holds phone WS            │ │
-│  │  - Dashboard  │◄──────────────►│  - Routes commands           │ │
-│  │  - Login      │                │  - Session resumption (Redis)│ │
-│  │  - API keys   │                │  - Self-registers on start   │ │
-│  │  - Discovery  │                │                              │ │
-│  │  - Devices    │                │  :8080 (internal)            │ │
-│  │  :3000 (int)  │                │  :8443 (WSS via socat)       │ │
+│  │  - MCP tools  │   reads        │  - Holds phone WS            │ │
+│  │  - Device reg │◄─────────────►│  - Routes commands           │ │
+│  │  - SSE events │  worker.toml   │  - In-memory cmd queue       │ │
+│  │  - Discovery  │                │  - Token verify from TOML    │ │
+│  │               │                │                              │ │
+│  │  :3000        │                │  :8080                       │ │
 │  └──────┬───────┘                └────────┬──────────────────┘  │
 │         │                                  │                     │
 │         └──────────┬───────────────────────┘                     │
 │                    │                                              │
 │             ┌──────┴──────┐                                      │
-│             │  Redis      │                                      │
-│             │  + Postgres │                                      │
+│             │ worker.toml │                                      │
 │             │             │                                      │
-│             │ - Sessions  │                                      │
-│             │ - Workers   │                                      │
-│             │ - Users     │                                      │
-│             │ - Devices   │                                      │
-│             │ - Cmd queue │                                      │
-│             └─────────────┘                                      │
-│                                                                  │
-│             ┌─────────────┐                                      │
-│             │  Firebase   │                                      │
-│             │  Auth       │                                      │
-│             │  (Google)   │                                      │
+│             │ - user.id   │                                      │
+│             │ - api_keys  │                                      │
+│             │ - devices   │                                      │
+│             │ - server    │                                      │
 │             └─────────────┘                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Auth Flow — Google Login via Firebase
+## Auth Flow
 
-Firebase Auth handles Google Sign-In for both phone app and website. The server never sees Google credentials — it only verifies Firebase ID tokens.
+Auth is based on a shared secret (`user.id`) and optional API keys, all stored in `~/.screenmcp/worker.toml`.
 
-Dual auth system (resolved by `web/src/lib/resolve-auth.ts`):
-- **Firebase ID tokens**: verified via Firebase Admin SDK
-- **API keys**: `pk_` + 64 hex chars, stored as SHA-256 hash in `api_keys` table
+```toml
+[user]
+id = "my-secret-token"
 
-### Website (Next.js)
-
-```
-Browser                    Firebase             Next.js API           Postgres
-  │                           │                     │                    │
-  ├── Google Sign-In popup ──►│                     │                    │
-  │◄── Firebase ID token ────┤                     │                    │
-  │                           │                     │                    │
-  ├── POST /api/auth/login ─────────────────────►│                    │
-  │   { idToken }             │                     │                    │
-  │                           │     verify token ──►│                    │
-  │                           │◄── uid, email ──────┤                    │
-  │                           │                     ├── upsert user ───►│
-  │                           │                     │◄── user record ───┤
-  │◄── { session cookie } ───────────────────────┤                    │
-  │                           │                     │                    │
+[auth]
+api_keys = ["pk_abc123", "pk_def456"]
 ```
 
-### Phone App (Android)
+Both `user.id` and any `api_keys` entry are accepted as Bearer tokens by the worker and mcp-server.
+
+### Phone/Desktop App
 
 ```
-Phone App                  Firebase             Discovery API         Worker WS
-  │                           │                     │                    │
-  ├── Google Sign-In ────────►│                     │                    │
-  │◄── Firebase ID token ────┤                     │                    │
-  │                           │                     │                    │
-  ├── POST /api/discover ──────────────────────►│                    │
-  │   Authorization: Bearer {idToken|apiKey}      │                    │
-  │                           │     verify token ──►│                    │
-  │◄── { wsUrl } ─────────────────────────────────┤                    │
-  │                           │                     │                    │
-  ├── WS connect ───────────────────────────────────────────────────►│
-  │   { type: "auth", token, role: "phone", device_id, last_ack: 5 }│
-  │                           │                     │   verify via API──►│
-  │◄── { type: "auth_ok" } ────────────────────────────────────────┤
-  │                           │                     │                    │
+Phone/Desktop               MCP Server              Worker WS
+  │                            │                        │
+  ├── POST /api/devices/register ──►│                   │
+  │   Authorization: Bearer {user.id}                   │
+  │◄── { device_number: 1 } ──┤                        │
+  │                            │                        │
+  │   (listens on SSE)         │                        │
+  ├── GET /api/events ────────►│                        │
+  │   Authorization: Bearer ..  │                        │
+  │◄── SSE stream ────────────┤                        │
+  │                            │                        │
+  │   ... SSE: { type: "connect", wsUrl, target_device_id } ...  │
+  │                            │                        │
+  ├── WS connect ─────────────────────────────────────►│
+  │   { "type":"auth", "user_id":"my-secret-token",   │
+  │     "role":"phone", "device_id":"a1b2..." }        │
+  │                            │   verify against TOML──►│
+  │◄── { "type":"auth_ok" } ──────────────────────────┤
+  │                            │                        │
+```
+
+### Controller (MCP Client / CLI)
+
+```
+MCP Client                  MCP Server              Worker WS
+  │                            │                        │
+  ├── POST /api/discover ─────►│                        │
+  │   { device_id: "a1b2..." } │                        │
+  │   Authorization: Bearer ..  │── SSE: connect event──►│ (to phone)
+  │◄── { wsUrl } ─────────────┤                        │
+  │                            │                        │
+  ├── WS connect ─────────────────────────────────────►│
+  │   { "type":"auth", "key":"pk_abc123",              │
+  │     "role":"controller", "target_device_id":"a1b2.."│
+  │◄── { "type":"auth_ok", "phone_connected": true } ──┤
+  │                            │                        │
+  │── MCP tool calls (via Streamable HTTP) ───────────►│
+  │                            │                        │
 ```
 
 ### Token Chain
 ```
-Google credentials
-    → Firebase ID token (short-lived, ~1hr)
-        → Used directly for WS auth (worker verifies via POST /api/auth/verify)
-
-Alternative:
-    API key (pk_...) → worker verifies via POST /api/auth/verify → resolves to user
+~/.screenmcp/worker.toml
+    → user.id used as Bearer token (phones/desktops)
+    → auth.api_keys used as Bearer token (controllers/MCP clients)
+    → Worker and MCP Server both verify locally against the same file
 ```
 
-## Firebase Setup Requirements
+## Config File (`~/.screenmcp/worker.toml`)
 
-1. Create Firebase project
-2. Enable Google Sign-In provider in Firebase Console → Authentication
-3. Add Android app (package: com.doodkin.screenmcp, SHA-1 fingerprint)
-4. Add Web app (for Next.js dashboard)
-5. Download `google-services.json` → Android app
-6. Copy web config → `web/.env.local` (NEXT_PUBLIC_FIREBASE_* vars)
+```toml
+[user]
+id = "local-user"
 
-## Data Models (Postgres)
+[auth]
+api_keys = ["pk_abc123"]
 
-### users
-```sql
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    firebase_uid TEXT UNIQUE NOT NULL,
-    email TEXT NOT NULL,
-    name TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    plan TEXT DEFAULT 'free'
-);
+[devices]
+allowed = ["hexid1 My Phone", "hexid2 My Desktop"]   # "device_id optional_name" format
+
+[server]
+port = 3000
+worker_url = "ws://localhost:8080"
 ```
 
-### workers
-```sql
-CREATE TABLE workers (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    domain TEXT UNIQUE NOT NULL,
-    active BOOLEAN DEFAULT true,
-    connection_count INT DEFAULT 0,
-    region TEXT,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-```
+- **user.id**: Shared secret used by phones/desktops as Bearer token
+- **auth.api_keys**: Tokens for controllers and MCP clients
+- **devices.allowed**: Registered devices. Format is `"hex_device_id Optional Description"`. Empty list = accept all devices (worker) or no devices registered yet (mcp-server)
+- **server.port**: MCP server listen port
+- **server.worker_url**: WebSocket URL of the worker
 
-### devices
-```sql
-CREATE TABLE devices (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id),
-    device_name TEXT NOT NULL DEFAULT 'default',
-    device_model TEXT,
-    device_number INT,
-    fcm_token TEXT,
-    last_seen TIMESTAMPTZ,
-    worker_id UUID REFERENCES workers(id),
-    connected BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(user_id, device_name),
-    UNIQUE(user_id, device_number)
-);
-```
-The `id` is a client-generated cryptographic hex ID (128 bits). `device_number` is a user-facing integer (1, 2, 3...) auto-assigned on registration, used in MCP tool calls.
-
-### api_keys
-```sql
-CREATE TABLE api_keys (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id),
-    key_hash TEXT NOT NULL,
-    key_prefix TEXT NOT NULL,
-    name TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    last_used TIMESTAMPTZ
-);
-```
-
-## Redis Keys
-
-`{device_id}` is the client-generated cryptographic hex ID (e.g. `a1b2c3d4e5f67890abcdef1234567890`).
-```
-# Worker status (for discovery)
-worker:{id}:status        → "ready" | "draining"
-worker:{id}:connections   → 142
-
-# Device sessions (for WS routing)
-device:{device_id}:server         → "worker-3"
-device:{device_id}:pending        → [cmd7, cmd8, ...]
-device:{device_id}:last_ack       → 6
-device:{device_id}:cmd_counter    → 13
-
-# Session tokens
-session:{token}           → { user_id, firebase_uid }  TTL 24h
-```
+Device registration via `POST /api/devices/register` persists back to this file.
 
 ## Implementation Status
 
-### Phase 1 — Android App ✓
+### Android App ✓
 - [x] Accessibility service (ScreenMcpService)
 - [x] Screenshot, click, long_click, drag, scroll, type, clipboard, UI tree
 - [x] Camera capture (front/rear)
 - [x] Phone lock detection
 - [x] WebP screenshot format with quality/scaling params
-- [x] Test UI (MainActivity)
+- [x] Open Source Server mode (SSE + user_id auth)
 
-### Phase 2 — Firebase Auth ✓
-- [x] Firebase project, Google Sign-In enabled
-- [x] Firebase in Android app (google-services.json)
-- [x] Google Sign-In screen in phone app
-- [x] Next.js project setup
-- [x] Firebase web auth (Google Sign-In on website)
-- [x] Server-side token verification
-- [x] User table in Postgres
-- [x] API key auth system (pk_ prefix, SHA-256 hash)
+### Desktop Clients ✓
+- [x] Windows — Win32 APIs for ui_tree, system tray
+- [x] macOS — CoreGraphics for ui_tree, Cmd shortcuts
+- [x] Linux — wmctrl/xdotool for ui_tree, Ctrl shortcuts
+- [x] All: Open Source Server settings (checkbox + user_id + API URL)
+- [x] All: SSE event listening with target_device_id filtering
 
-### Phase 3 — Website Dashboard ✓
-- [x] Login/signup flow
-- [x] Dashboard (devices, API keys CRUD)
-
-### Phase 4 — WebSocket + Workers ✓
+### Worker ✓
 - [x] Rust WS server (phone + controller connections)
-- [x] Discovery API (POST /api/discover, least-loaded worker)
 - [x] Protocol implementation (see protocol.md)
-- [x] Session resumption via Redis
-- [x] Phone app WS client + auto-reconnect
-- [x] Remote CLI client (TypeScript)
-- [x] Docker Compose deployment
+- [x] File backend: auth from TOML, in-memory state
+- [x] API backend: auth via web API, state in Redis (--features api)
 
-### Phase 5 — MCP Integration ✓
-- [x] MCP endpoint (Streamable HTTP at /api/mcp)
+### MCP Server ✓
+- [x] MCP endpoint (Streamable HTTP)
 - [x] Route MCP commands → phone → results back
 - [x] `list_devices` tool — discover registered devices
 - [x] All phone tools require explicit `device_id` (integer device_number)
-- [x] Per-device phone connections (Map keyed by device UUID)
+- [x] Device registration API (persists to TOML)
+- [x] SSE event notifications with target_device_id
+- [x] Discovery endpoint (POST /api/discover)
 
-### Phase 6 — Payments & Polish
-- [ ] PayPal subscription integration
-- [x] Rate limiting per plan (usage tracking + daily limits)
-- [x] Usage tracking
-- [ ] Landing page, docs, use cases
+### Remote CLI ✓
+- [x] TypeScript CLI client + library
+- [x] Interactive REPL shell mode
+- [x] Worker discovery via API

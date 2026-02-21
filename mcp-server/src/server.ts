@@ -8,6 +8,7 @@ const config = loadConfig();
 // Env overrides
 if (process.env.WORKER_URL) config.server.worker_url = process.env.WORKER_URL;
 if (process.env.PORT) config.server.port = parseInt(process.env.PORT, 10);
+if (process.env.NOTIFY_SECRET) config.auth.notify_secret = process.env.NOTIFY_SECRET;
 
 console.log(`Loaded config: user=${config.user.id}, keys=${config.auth.api_keys.length}, devices=${config.devices.allowed.length}`);
 
@@ -110,6 +111,27 @@ const server = createServer(async (req, res) => {
         return;
       }
       emitEvent('connect', { wsUrl: config.server.worker_url, target_device_id: targetDeviceId });
+
+      // Also notify the worker's SSE stream so devices connected there get the event
+      const workerHttpUrl = config.server.worker_url
+        .replace(/^wss:/, 'https:')
+        .replace(/^ws:/, 'http:');
+      const notifyBody = JSON.stringify({
+        type: 'connect',
+        device_id: targetDeviceId,
+        target_device_id: targetDeviceId,
+        wsUrl: config.server.worker_url,
+      });
+      const notifyHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (config.auth.notify_secret) {
+        notifyHeaders['Authorization'] = `Bearer ${config.auth.notify_secret}`;
+      }
+      fetch(`${workerHttpUrl}/notify`, {
+        method: 'POST',
+        headers: notifyHeaders,
+        body: notifyBody,
+      }).catch(err => console.error('Failed to notify worker:', err));
+
       json(res, { wsUrl: config.server.worker_url });
       return;
     }

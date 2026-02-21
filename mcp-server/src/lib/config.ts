@@ -13,6 +13,7 @@ export interface Config {
   };
   auth: {
     api_keys: string[];
+    notify_secret?: string;
   };
   devices: {
     allowed: DeviceEntry[];
@@ -128,6 +129,7 @@ function parseTOML(raw: string, path: string): Config {
         break;
       case 'auth':
         if (key === 'api_keys' && Array.isArray(val)) config.auth.api_keys = val as string[];
+        if (key === 'notify_secret') config.auth.notify_secret = String(val);
         break;
       case 'devices':
         if (key === 'allowed' && Array.isArray(val)) {

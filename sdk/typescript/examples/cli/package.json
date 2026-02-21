@@ -1,0 +1,20 @@
+{
+  "name": "screenmcp-cli-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CLI example using @screenmcp/sdk",
+  "scripts": {
+    "dev": "tsx cli.ts",
+    "build": "tsc",
+    "start": "node cli.js"
+  },
+  "dependencies": {
+    "@screenmcp/sdk": "../../",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

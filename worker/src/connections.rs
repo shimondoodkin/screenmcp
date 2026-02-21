@@ -15,6 +15,8 @@ pub struct Connections {
     response_tx: broadcast::Sender<(String, i64, String)>,
     /// Track last disconnect time per device_id to enforce cooldown
     last_disconnect: RwLock<HashMap<String, Instant>>,
+    /// SSE client senders: device_id -> channel to push SSE events
+    sse_clients: RwLock<HashMap<String, mpsc::Sender<String>>>,
 }
 
 impl Connections {
@@ -28,6 +30,7 @@ impl Connections {
             controllers: RwLock::new(HashMap::new()),
             response_tx,
             last_disconnect: RwLock::new(HashMap::new()),
+            sse_clients: RwLock::new(HashMap::new()),
         })
     }
 
@@ -123,6 +126,35 @@ impl Connections {
     /// Subscribe to response notifications.
     pub fn subscribe_responses(&self) -> broadcast::Receiver<(String, i64, String)> {
         self.response_tx.subscribe()
+    }
+
+    /// Register an SSE client for a device_id. Returns a Receiver for events.
+    /// Replaces any existing SSE connection for the same device_id.
+    pub async fn register_sse(&self, device_id: &str) -> mpsc::Receiver<String> {
+        let (tx, rx) = mpsc::channel(64);
+        let mut clients = self.sse_clients.write().await;
+        if clients.contains_key(device_id) {
+            warn!(device_id, "replacing existing SSE connection");
+        }
+        clients.insert(device_id.to_string(), tx);
+        info!(device_id, "SSE client registered");
+        rx
+    }
+
+    /// Unregister an SSE client for a device_id.
+    pub async fn unregister_sse(&self, device_id: &str) {
+        self.sse_clients.write().await.remove(device_id);
+        info!(device_id, "SSE client unregistered");
+    }
+
+    /// Send an SSE event to a specific device. Returns true if sent.
+    pub async fn send_sse_event(&self, device_id: &str, event_json: &str) -> bool {
+        let clients = self.sse_clients.read().await;
+        if let Some(tx) = clients.get(device_id) {
+            tx.try_send(event_json.to_string()).is_ok()
+        } else {
+            false
+        }
     }
 
     /// Send a message to all controllers watching this device_id.

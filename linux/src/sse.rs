@@ -17,14 +17,18 @@ pub async fn run_sse_listener(
     let api_url = config.opensource_api_url.trim_end_matches('/').to_string();
     let token = config.opensource_user_id.clone();
     let device_id = config.device_id.clone();
-    let sse_url = format!("{api_url}/api/events");
 
-    info!("SSE listener starting: {sse_url}");
+    info!("SSE listener starting");
 
     let mut backoff_secs: u64 = 1;
     let max_backoff: u64 = 60;
 
     loop {
+        // Discover worker URL, then connect SSE there; fall back to api_url/api/events
+        let sse_url = match discover_sse_url(&api_url, &token, &device_id).await {
+            Some(url) => url,
+            None => format!("{api_url}/api/events"),
+        };
         info!("SSE connecting to {sse_url}");
 
         let client = reqwest::Client::builder()
@@ -112,6 +116,39 @@ pub async fn run_sse_listener(
 
         backoff_secs = (backoff_secs * 2).min(max_backoff);
     }
+}
+
+/// Call POST {api_url}/api/discover to get worker URL, convert to SSE endpoint.
+/// Returns None if discover fails (caller should fall back to api_url/api/events).
+async fn discover_sse_url(api_url: &str, token: &str, device_id: &str) -> Option<String> {
+    let client = reqwest::Client::new();
+    let body = serde_json::json!({ "device_id": device_id });
+    let resp = client
+        .post(format!("{api_url}/api/discover"))
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.status().is_success() {
+        warn!("SSE discover failed: HTTP {}", resp.status());
+        return None;
+    }
+
+    let json: serde_json::Value = resp.json().await.ok()?;
+    let ws_url = json.get("wsUrl")?.as_str()?;
+
+    // Convert ws(s) URL to http(s)
+    let http_url = ws_url
+        .replace("wss://", "https://")
+        .replace("ws://", "http://");
+    let http_url = http_url.trim_end_matches('/');
+
+    let sse_url = format!("{http_url}/events?device_id={device_id}");
+    info!("SSE discovered worker URL: {sse_url}");
+    Some(sse_url)
 }
 
 /// Parse the `data:` field from an SSE event block.

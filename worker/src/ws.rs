@@ -14,9 +14,71 @@ use crate::protocol::{
     parse_controller_message, parse_phone_message, PhoneMessage, ServerMessage,
 };
 
+use std::collections::HashMap;
+
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Parsed HTTP request fields.
+struct HttpRequest {
+    method: String,
+    path: String,
+    query: HashMap<String, String>,
+    headers: HashMap<String, String>,
+    body: String,
+}
+
+/// Parse a raw HTTP request into method, path, query params, headers, and body.
+fn parse_http_request(raw: &str) -> HttpRequest {
+    let mut method = String::new();
+    let mut path = String::new();
+    let mut query = HashMap::new();
+    let mut headers = HashMap::new();
+
+    // Split headers from body
+    let (header_section, body_section) = if let Some(idx) = raw.find("\r\n\r\n") {
+        (&raw[..idx], &raw[idx + 4..])
+    } else if let Some(idx) = raw.find("\n\n") {
+        (&raw[..idx], &raw[idx + 2..])
+    } else {
+        (raw, "")
+    };
+    let body = body_section.to_string();
+
+    let mut lines = header_section.lines();
+
+    // Request line: METHOD /path?query HTTP/1.1
+    if let Some(request_line) = lines.next() {
+        let parts: Vec<&str> = request_line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            method = parts[0].to_string();
+            let full_path = parts[1];
+            if let Some(qmark) = full_path.find('?') {
+                path = full_path[..qmark].to_string();
+                let query_str = &full_path[qmark + 1..];
+                for pair in query_str.split('&') {
+                    if let Some(eq) = pair.find('=') {
+                        query.insert(pair[..eq].to_string(), pair[eq + 1..].to_string());
+                    }
+                }
+            } else {
+                path = full_path.to_string();
+            }
+        }
+    }
+
+    // Headers
+    for line in lines {
+        if let Some(colon) = line.find(':') {
+            let key = line[..colon].trim().to_lowercase();
+            let value = line[colon + 1..].trim().to_string();
+            headers.insert(key, value);
+        }
+    }
+
+    HttpRequest { method, path, query, headers, body }
+}
 
 /// Handle a new connection: if it's a WebSocket upgrade, proceed; otherwise return HTTP 200.
 pub async fn handle_connection(
@@ -42,19 +104,44 @@ pub async fn handle_connection(
         .any(|line| line.to_lowercase().starts_with("upgrade:") && line.to_lowercase().contains("websocket"));
 
     if !is_websocket {
-        // Plain HTTP request — consume the request and respond with 200 OK
+        // Plain HTTP request — parse and route
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (mut reader, mut writer) = stream.into_split();
-        let mut discard = vec![0u8; 4096];
-        let _ = reader.read(&mut discard).await;
-        let body = r#"{"status":"ok"}"#;
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        );
-        let _ = writer.write_all(response.as_bytes()).await;
-        let _ = writer.shutdown().await;
+
+        // Read full request (peeked bytes + any remaining)
+        let mut full_buf = vec![0u8; 65536];
+        let n = reader.read(&mut full_buf).await.unwrap_or(0);
+        let raw = String::from_utf8_lossy(&full_buf[..n]);
+        let parsed = parse_http_request(&raw);
+
+        match (parsed.method.as_str(), parsed.path.as_str()) {
+            ("GET", "/events") => {
+                handle_sse(writer, addr, &parsed, connections, auth).await;
+            }
+            ("POST", "/notify") => {
+                handle_notify(writer, addr, &parsed.body, &parsed.headers, connections, auth).await;
+            }
+            ("OPTIONS", "/events") | ("OPTIONS", "/notify") => {
+                let response = "HTTP/1.1 204 No Content\r\n\
+                    Access-Control-Allow-Origin: *\r\n\
+                    Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
+                    Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
+                    Content-Length: 0\r\n\
+                    Connection: close\r\n\r\n";
+                let _ = writer.write_all(response.as_bytes()).await;
+                let _ = writer.shutdown().await;
+            }
+            _ => {
+                let body = r#"{"status":"ok"}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = writer.write_all(response.as_bytes()).await;
+                let _ = writer.shutdown().await;
+            }
+        }
         return;
     }
 
@@ -449,4 +536,215 @@ async fn handle_controller_connection(
     // but the channel will be dropped which effectively removes it
     let _ = ws_tx.close().await;
     info!(%addr, device_id, "controller disconnected");
+}
+
+/// Handle SSE connection: authenticate, register, stream events.
+async fn handle_sse(
+    mut writer: tokio::net::tcp::OwnedWriteHalf,
+    addr: SocketAddr,
+    req: &HttpRequest,
+    connections: Arc<Connections>,
+    auth: Arc<dyn AuthBackend>,
+) {
+    use tokio::io::AsyncWriteExt;
+
+    let device_id = match req.query.get("device_id") {
+        Some(id) if !id.is_empty() => id.clone(),
+        _ => {
+            let body = r#"{"error":"missing device_id query parameter"}"#;
+            let resp = format!(
+                "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(), body
+            );
+            let _ = writer.write_all(resp.as_bytes()).await;
+            let _ = writer.shutdown().await;
+            return;
+        }
+    };
+
+    // Auth: extract Bearer token
+    let token = req.headers.get("authorization")
+        .and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")))
+        .map(|s| s.to_string());
+    let token = match token {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            let body = r#"{"error":"missing or invalid Authorization header"}"#;
+            let resp = format!(
+                "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(), body
+            );
+            let _ = writer.write_all(resp.as_bytes()).await;
+            let _ = writer.shutdown().await;
+            return;
+        }
+    };
+
+    if let Err(e) = auth.verify_token(&token).await {
+        warn!(%addr, %device_id, "SSE auth failed: {e}");
+        let body = r#"{"error":"invalid token"}"#;
+        let resp = format!(
+            "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), body
+        );
+        let _ = writer.write_all(resp.as_bytes()).await;
+        let _ = writer.shutdown().await;
+        return;
+    }
+
+    if let Err(e) = auth.verify_device(&device_id).await {
+        warn!(%addr, %device_id, "SSE device verification failed: {e}");
+        let body = r#"{"error":"device not allowed"}"#;
+        let resp = format!(
+            "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), body
+        );
+        let _ = writer.write_all(resp.as_bytes()).await;
+        let _ = writer.shutdown().await;
+        return;
+    }
+
+    info!(%addr, %device_id, "SSE client connected");
+
+    // Write SSE response headers
+    let headers = "HTTP/1.1 200 OK\r\n\
+        Content-Type: text/event-stream\r\n\
+        Cache-Control: no-cache\r\n\
+        Connection: keep-alive\r\n\
+        Access-Control-Allow-Origin: *\r\n\r\n";
+    if writer.write_all(headers.as_bytes()).await.is_err() {
+        return;
+    }
+
+    // Send initial connected event
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let connected_event = format!("data: {{\"type\":\"connected\",\"timestamp\":{}}}\n\n", ts);
+    if writer.write_all(connected_event.as_bytes()).await.is_err() {
+        return;
+    }
+
+    // Register SSE client
+    let mut event_rx = connections.register_sse(&device_id).await;
+
+    // Stream loop
+    let mut heartbeat = interval(HEARTBEAT_INTERVAL);
+
+    loop {
+        tokio::select! {
+            event = event_rx.recv() => {
+                match event {
+                    Some(data) => {
+                        let line = format!("data: {}\n\n", data);
+                        if writer.write_all(line.as_bytes()).await.is_err() {
+                            break;
+                        }
+                    }
+                    None => break, // channel closed (replaced by new SSE connection)
+                }
+            }
+            _ = heartbeat.tick() => {
+                if writer.write_all(b": heartbeat\n\n").await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Cleanup
+    connections.unregister_sse(&device_id).await;
+    let _ = writer.shutdown().await;
+    info!(%addr, %device_id, "SSE client disconnected");
+}
+
+/// Handle POST /notify: push an event to a specific device's SSE stream.
+async fn handle_notify(
+    mut writer: tokio::net::tcp::OwnedWriteHalf,
+    addr: SocketAddr,
+    body: &str,
+    headers: &HashMap<String, String>,
+    connections: Arc<Connections>,
+    auth: Arc<dyn AuthBackend>,
+) {
+    use tokio::io::AsyncWriteExt;
+
+    // Verify notify_secret if configured
+    if let Some(expected) = auth.notify_secret() {
+        let token = headers.get("authorization")
+            .and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")));
+        match token {
+            Some(t) if t == expected => {} // ok
+            _ => {
+                warn!(%addr, "POST /notify rejected: invalid or missing notify_secret");
+                let resp_body = r#"{"error":"unauthorized"}"#;
+                let resp = format!(
+                    "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(), resp_body
+                );
+                let _ = writer.write_all(resp.as_bytes()).await;
+                let _ = writer.shutdown().await;
+                return;
+            }
+        }
+    }
+
+    let parsed: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => {
+            let resp_body = r#"{"error":"invalid JSON body"}"#;
+            let resp = format!(
+                "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                resp_body.len(), resp_body
+            );
+            let _ = writer.write_all(resp.as_bytes()).await;
+            let _ = writer.shutdown().await;
+            return;
+        }
+    };
+
+    let device_id = match parsed.get("device_id").and_then(|v| v.as_str()) {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => {
+            let resp_body = r#"{"error":"missing device_id"}"#;
+            let resp = format!(
+                "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                resp_body.len(), resp_body
+            );
+            let _ = writer.write_all(resp.as_bytes()).await;
+            let _ = writer.shutdown().await;
+            return;
+        }
+    };
+
+    // Build event JSON — add timestamp if not present
+    let event = if parsed.get("timestamp").is_none() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let mut obj = parsed.clone();
+        obj.as_object_mut().unwrap().insert("timestamp".to_string(), serde_json::json!(ts));
+        obj.to_string()
+    } else {
+        parsed.to_string()
+    };
+
+    let sent = connections.send_sse_event(&device_id, &event).await;
+
+    let (status, resp_body) = if sent {
+        info!(%addr, %device_id, "SSE event delivered via /notify");
+        ("200 OK", r#"{"ok":true}"#.to_string())
+    } else {
+        warn!(%addr, %device_id, "SSE event failed: device not connected");
+        ("404 Not Found", r#"{"error":"device not connected"}"#.to_string())
+    };
+
+    let resp = format!(
+        "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+        status, resp_body.len(), resp_body
+    );
+    let _ = writer.write_all(resp.as_bytes()).await;
+    let _ = writer.shutdown().await;
 }

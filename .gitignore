@@ -18,6 +18,10 @@ linux/target/
 mac/target/
 windows/target/
 
+# Mac build artifacts
+mac/ScreenMCP.app/
+mac/ScreenMCP.dmg
+
 # IDE
 .idea/
 *.iml

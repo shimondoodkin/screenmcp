@@ -97,12 +97,14 @@ fn init_backend(
             .unwrap_or_else(|_| format!("ws://localhost:{_port}"));
         let region = env::var("WORKER_REGION").unwrap_or_else(|_| "local".into());
 
+        let notify_secret = env::var("NOTIFY_SECRET").ok();
         let api_auth = ApiAuth::new(
             api_url,
             _worker_id.to_string(),
             external_url,
             region,
             register_with_server,
+            notify_secret,
         );
 
         let api_state = ApiState::new(&redis_url, _worker_id.to_string())

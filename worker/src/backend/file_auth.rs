@@ -20,6 +20,8 @@ pub struct UserConfig {
 #[derive(Debug, Deserialize)]
 pub struct AuthConfig {
     pub api_keys: Vec<String>,
+    #[serde(default)]
+    pub notify_secret: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -47,6 +49,7 @@ impl FileAuth {
             user_id = %config.user.id,
             api_keys = config.auth.api_keys.len(),
             allowed_devices = config.devices.allowed.len(),
+            notify_secret = config.auth.notify_secret.is_some(),
             "loaded file auth config"
         );
         Ok(Self { config })
@@ -66,6 +69,10 @@ impl AuthBackend for FileAuth {
             warn!("rejected token (not user_id or API key in config)");
             Err("invalid token — not found in worker.toml".to_string())
         }
+    }
+
+    fn notify_secret(&self) -> Option<&str> {
+        self.config.auth.notify_secret.as_deref()
     }
 
     async fn verify_device(&self, device_id: &str) -> Result<(), String> {

@@ -235,6 +235,64 @@ Controller sends command
 7. Set status back to "ready"
 ```
 
+## SSE Notifications (Worker)
+
+Devices can connect to the worker via Server-Sent Events to receive push notifications (e.g. "connect" events from discover). This replaces the MCP-server's broadcast-to-all model with targeted per-device delivery.
+
+### GET /events — SSE stream
+
+```
+GET /events?device_id=a1b2c3d4 HTTP/1.1
+Authorization: Bearer <token>
+```
+
+- **Auth**: Bearer token verified against TOML config (`user.id` or `api_keys`). Device ID verified against allowed list.
+- **Response**: `text/event-stream` with `Cache-Control: no-cache`, `Connection: keep-alive`.
+- One SSE connection per device_id. A new connection replaces the old one (same as phone WebSocket behavior).
+- Initial event on connect:
+  ```
+  data: {"type":"connected","timestamp":1234567890}
+  ```
+- Heartbeat comment every 30s: `: heartbeat`
+- Events pushed via `/notify` arrive as:
+  ```
+  data: {"device_id":"a1b2c3d4","type":"connect","wsUrl":"ws://...","target_device_id":"a1b2c3d4","timestamp":1234567890}
+  ```
+
+### POST /notify — push event to device
+
+```
+POST /notify HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer <notify_secret>
+
+{
+  "device_id": "a1b2c3d4",
+  "type": "connect",
+  "wsUrl": "ws://localhost:8080",
+  "target_device_id": "a1b2c3d4"
+}
+```
+
+- **Auth**: If `notify_secret` is configured (in `[auth].notify_secret` in worker.toml or `NOTIFY_SECRET` env var), the request must include `Authorization: Bearer <notify_secret>`. Returns 401 if the secret doesn't match. If not configured, no auth is required (backwards compat / dev).
+- Adds `timestamp` if not present in the request body.
+- Returns `200 {"ok":true}` if the device has an active SSE connection and the event was delivered.
+- Returns `404 {"error":"device not connected"}` if no SSE client is connected for that device_id.
+
+### SSE Notification Flow
+
+```
+MCP-server                        Worker                         Phone/Desktop
+    │                                │                                │
+    │  POST /notify {device_id, ..}  │                                │
+    ├───────────────────────────────►│                                │
+    │◄── 200 {"ok":true} ───────────┤  data: {event}\n\n             │
+    │                                ├───────────────────────────────►│
+    │                                │                                │
+    │                                │     (device connects to WS)    │
+    │                                │◄──── WS auth ─────────────────┤
+```
+
 ## Heartbeat
 
 ```

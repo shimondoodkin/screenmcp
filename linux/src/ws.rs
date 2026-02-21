@@ -93,8 +93,9 @@ pub async fn run_ws_manager(
 ) {
     let config = Arc::new(tokio::sync::RwLock::new(initial_config.clone()));
 
-    // Auto-connect on startup if configured
-    let should_auto_connect = initial_config.auto_connect && initial_config.is_ready();
+    // Auto-connect on startup if configured (skip in opensource mode — SSE drives connections)
+    let should_auto_connect = initial_config.auto_connect && initial_config.is_ready()
+        && !initial_config.opensource_server_enabled;
 
     let (internal_tx, mut internal_rx) = mpsc::channel::<WsCommand>(16);
 
@@ -104,6 +105,18 @@ pub async fn run_ws_manager(
 
     let mut connection_task: Option<tokio::task::JoinHandle<()>> = None;
     let (disconnect_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+
+    // SSE listener lifecycle (managed here so UpdateConfig can restart it)
+    let mut sse_task: Option<tokio::task::JoinHandle<()>> = None;
+    if initial_config.opensource_server_enabled && initial_config.is_ready() {
+        let cfg = initial_config.clone();
+        let sse_tx = internal_tx.clone();
+        let (_, sse_shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+        sse_task = Some(tokio::spawn(async move {
+            crate::sse::run_sse_listener(cfg, sse_tx, sse_shutdown_rx).await;
+        }));
+        info!("SSE listener started for opensource mode");
+    }
 
     loop {
         let cmd = tokio::select! {
@@ -168,12 +181,38 @@ pub async fn run_ws_manager(
                 info!("disconnected by user");
             }
             WsCommand::UpdateConfig(new_config) => {
-                *config.write().await = new_config;
+                let old_config = config.read().await.clone();
+                let oss_changed = old_config.opensource_server_enabled != new_config.opensource_server_enabled
+                    || old_config.opensource_user_id != new_config.opensource_user_id
+                    || old_config.opensource_api_url != new_config.opensource_api_url;
+
+                *config.write().await = new_config.clone();
+
+                // Restart SSE listener if opensource settings changed
+                if oss_changed {
+                    if let Some(handle) = sse_task.take() {
+                        handle.abort();
+                        info!("stopped previous SSE listener");
+                    }
+                    if new_config.opensource_server_enabled && new_config.is_ready() {
+                        let cfg = new_config.clone();
+                        let sse_tx = internal_tx.clone();
+                        let (_, sse_shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+                        sse_task = Some(tokio::spawn(async move {
+                            crate::sse::run_sse_listener(cfg, sse_tx, sse_shutdown_rx).await;
+                        }));
+                        info!("started SSE listener for opensource mode");
+                    }
+                }
+
                 info!("config updated");
             }
             WsCommand::Shutdown => {
                 let _ = disconnect_tx.send(());
                 if let Some(handle) = connection_task.take() {
+                    handle.abort();
+                }
+                if let Some(handle) = sse_task.take() {
                     handle.abort();
                 }
                 break;

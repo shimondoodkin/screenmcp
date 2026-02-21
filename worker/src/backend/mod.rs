@@ -34,6 +34,12 @@ pub trait AuthBackend: Send + Sync + 'static {
     async fn on_shutdown(&self) -> Result<(), String> {
         Ok(())
     }
+
+    /// Shared secret for POST /notify authentication.
+    /// If None, /notify is unauthenticated (backwards compat / dev).
+    fn notify_secret(&self) -> Option<&str> {
+        None
+    }
 }
 
 #[async_trait]

@@ -115,12 +115,58 @@ class SseService : Service() {
     private fun connectSse() {
         val url = apiUrl ?: return
         val token = userId ?: return
+        val deviceId = getDeviceUUID()
 
-        Log.i(TAG, "Connecting SSE to $url/api/events")
+        Log.i(TAG, "Discovering worker URL via $url/api/discover")
         updateNotification("Connecting to SSE...")
 
+        // Discover worker URL in background, then connect SSE
+        Thread {
+            val sseUrl = discoverSseUrl(url, token, deviceId) ?: "$url/api/events"
+            Log.i(TAG, "SSE connecting to $sseUrl")
+            handler.post { connectSseToUrl(sseUrl, token) }
+        }.start()
+    }
+
+    private fun discoverSseUrl(apiUrl: String, token: String, deviceId: String): String? {
+        return try {
+            val body = okhttp3.RequestBody.create(
+                okhttp3.MediaType.get("application/json"),
+                """{"device_id":"$deviceId"}"""
+            )
+            val request = Request.Builder()
+                .url("$apiUrl/api/discover")
+                .addHeader("Authorization", "Bearer $token")
+                .post(body)
+                .build()
+            val response = httpClient.newBuilder()
+                .readTimeout(10, TimeUnit.SECONDS)
+                .build()
+                .newCall(request).execute()
+            if (!response.isSuccessful) {
+                Log.w(TAG, "SSE discover failed: HTTP ${response.code()}")
+                return null
+            }
+            val json = JSONObject(response.body()?.string() ?: return null)
+            val wsUrl = json.optString("wsUrl", "")
+            if (wsUrl.isEmpty()) return null
+
+            val httpUrl = wsUrl
+                .replace("wss://", "https://")
+                .replace("ws://", "http://")
+                .trimEnd('/')
+            val sseUrl = "$httpUrl/events?device_id=$deviceId"
+            Log.i(TAG, "SSE discovered worker URL: $sseUrl")
+            sseUrl
+        } catch (e: Exception) {
+            Log.w(TAG, "SSE discover error: ${e.message}")
+            null
+        }
+    }
+
+    private fun connectSseToUrl(sseUrl: String, token: String) {
         val request = Request.Builder()
-            .url("$url/api/events")
+            .url(sseUrl)
             .addHeader("Authorization", "Bearer $token")
             .addHeader("Accept", "text/event-stream")
             .build()
