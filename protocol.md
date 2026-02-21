@@ -1,4 +1,4 @@
-# PhoneMCP Protocol
+# ScreenMCP Protocol
 
 ## Overview
 
@@ -153,6 +153,14 @@ Returns WebP image as base64. Default: lossless WebP (quality omitted or 100). Q
 → { "id": 15, "status": "ok", "result": { "image": "<base64 webp>" } }
 ```
 Camera ID: "0" = rear (default), "1" = front. Returns empty image string if camera not available. Quality default: 80 (lossy). Optional `max_width`/`max_height` for scaling.
+
+### hold_key / release_key / press_key (desktop only)
+```json
+{ "id": 16, "cmd": "hold_key", "params": { "key": "alt" } }
+{ "id": 17, "cmd": "press_key", "params": { "key": "tab" } }
+{ "id": 18, "cmd": "release_key", "params": { "key": "alt" } }
+```
+Desktop keyboard control. `hold_key` presses and holds a key, `release_key` releases it, `press_key` does press+release in one action. Supported key names: `shift`, `ctrl`/`control`, `alt`, `meta`/`cmd`/`win`/`command`/`super`, `tab`, `enter`/`return`, `escape`/`esc`, `space`, `backspace`, `delete`/`del`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1`–`f12`, or any single character. On Android these return `{status: "error"}` (unsupported).
 
 ### Unsupported PC commands
 These are accepted but return unsupported flag (for cross-platform CLI compatibility):

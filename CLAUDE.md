@@ -52,6 +52,11 @@ Phone (Android) ←──WSS──→ Worker (Rust) ←──HTTP──→ Web A
 
 **Remote** (`remote/`) — TypeScript CLI client + library. Discovers worker via API, connects via WebSocket, sends commands. Has interactive REPL shell mode.
 
+**Desktop Clients** — Rust system tray apps that connect as "phone" devices for desktop control:
+- `pc/` — Windows (uses Win32 APIs for ui_tree)
+- `mac/` — macOS (uses CoreGraphics for ui_tree, Cmd shortcuts)
+- `linux/` — Linux (uses wmctrl/xdotool for ui_tree, Ctrl shortcuts)
+
 ## Auth System
 
 Two auth methods, resolved by `web/src/lib/resolve-auth.ts`:
@@ -80,7 +85,7 @@ Worker verifies tokens by calling `POST /api/auth/verify` on the web API.
 - **Server**: server10.doodkin.com
 - **SSL**: socat terminates TLS on :443 → localhost:3000 and :8443 → localhost:8080
 - **Certs**: Let's Encrypt at `/etc/letsencrypt/live/server10.doodkin.com/`
-- **Start**: `screen -dmS phonemcp bash start-server.sh`
+- **Start**: `screen -dmS screenmcp bash start-server.sh`
 - **Secrets** (not in git): `.env` (Docker Compose vars), `web/.env.local` (Firebase + PayPal keys), `firebase-service-account.json`, `app/google-services.json`
 - Docker ports bound to 127.0.0.1 only; socat handles public access
 
@@ -90,4 +95,4 @@ Schema in `db/init.sql`. Tables: `users`, `workers`, `devices`, `api_keys`. All 
 
 ## Supported Phone Commands
 
-`screenshot`, `click`, `long_click`, `drag`, `scroll`, `type`, `get_text`, `select_all`, `copy`, `paste`, `back`, `home`, `recents`, `ui_tree`, `camera`. Unsupported PC-style commands (`right_click`, `middle_click`, `mouse_scroll`) return `{status: "ok", unsupported: true}`.
+`screenshot`, `click`, `long_click`, `drag`, `scroll`, `type`, `get_text`, `select_all`, `copy`, `paste`, `back`, `home`, `recents`, `ui_tree`, `camera`. Desktop-only keyboard commands: `hold_key`, `release_key`, `press_key` (PC/Mac/Linux). Unsupported PC-style commands (`right_click`, `middle_click`, `mouse_scroll`) return `{status: "ok", unsupported: true}`.

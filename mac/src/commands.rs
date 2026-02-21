@@ -47,6 +47,9 @@ pub fn execute_command(
         "right_click" => handle_right_click(params),
         "middle_click" => handle_middle_click(params),
         "mouse_scroll" => handle_mouse_scroll(params),
+        "hold_key" => handle_hold_key(params),
+        "release_key" => handle_release_key(params),
+        "press_key" => handle_press_key(params),
         _ => {
             return json!({
                 "id": id,
@@ -402,6 +405,70 @@ fn handle_middle_click(params: Option<&Value>) -> Result<Value, String> {
 
 fn handle_mouse_scroll(params: Option<&Value>) -> Result<Value, String> {
     handle_scroll(params)
+}
+
+fn parse_key(key_name: &str) -> Result<Key, String> {
+    match key_name.to_lowercase().as_str() {
+        "shift" => Ok(Key::Shift),
+        "ctrl" | "control" => Ok(Key::Control),
+        "alt" => Ok(Key::Alt),
+        "meta" | "cmd" | "win" | "command" | "super" => Ok(Key::Meta),
+        "tab" => Ok(Key::Tab),
+        "enter" | "return" => Ok(Key::Return),
+        "escape" | "esc" => Ok(Key::Escape),
+        "space" => Ok(Key::Space),
+        "backspace" => Ok(Key::Backspace),
+        "delete" | "del" => Ok(Key::Delete),
+        "home" => Ok(Key::Home),
+        "end" => Ok(Key::End),
+        "pageup" => Ok(Key::PageUp),
+        "pagedown" => Ok(Key::PageDown),
+        "up" => Ok(Key::UpArrow),
+        "down" => Ok(Key::DownArrow),
+        "left" => Ok(Key::LeftArrow),
+        "right" => Ok(Key::RightArrow),
+        "f1" => Ok(Key::F1),
+        "f2" => Ok(Key::F2),
+        "f3" => Ok(Key::F3),
+        "f4" => Ok(Key::F4),
+        "f5" => Ok(Key::F5),
+        "f6" => Ok(Key::F6),
+        "f7" => Ok(Key::F7),
+        "f8" => Ok(Key::F8),
+        "f9" => Ok(Key::F9),
+        "f10" => Ok(Key::F10),
+        "f11" => Ok(Key::F11),
+        "f12" => Ok(Key::F12),
+        s if s.len() == 1 => Ok(Key::Unicode(s.chars().next().unwrap())),
+        _ => Err(format!("unknown key: {key_name}")),
+    }
+}
+
+fn handle_hold_key(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let key_name = p.get("key").and_then(|v| v.as_str()).ok_or("missing key")?;
+    let key = parse_key(key_name)?;
+    let mut enigo = new_enigo()?;
+    enigo.key(key, Press).map_err(|e| format!("hold_key failed: {e}"))?;
+    Ok(json!({}))
+}
+
+fn handle_release_key(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let key_name = p.get("key").and_then(|v| v.as_str()).ok_or("missing key")?;
+    let key = parse_key(key_name)?;
+    let mut enigo = new_enigo()?;
+    enigo.key(key, Release).map_err(|e| format!("release_key failed: {e}"))?;
+    Ok(json!({}))
+}
+
+fn handle_press_key(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let key_name = p.get("key").and_then(|v| v.as_str()).ok_or("missing key")?;
+    let key = parse_key(key_name)?;
+    let mut enigo = new_enigo()?;
+    enigo.key(key, Click).map_err(|e| format!("press_key failed: {e}"))?;
+    Ok(json!({}))
 }
 
 /// Get a list of visible windows with titles and positions using the macOS Accessibility API.

@@ -136,7 +136,7 @@ fn handle_screenshot(
         img
     };
 
-    // Encode as PNG (widely supported; WebP encoding requires extra feature flags)
+    // Encode as PNG
     let mut buf = Cursor::new(Vec::new());
     PngEncoder::new(&mut buf)
         .write_image(
@@ -313,40 +313,25 @@ fn handle_get_text() -> Result<Value, String> {
 
 fn handle_select_all() -> Result<Value, String> {
     let mut enigo = new_enigo()?;
-    #[cfg(target_os = "macos")]
-    let modifier = Key::Meta;
-    #[cfg(not(target_os = "macos"))]
-    let modifier = Key::Control;
-
-    enigo.key(modifier, Press).map_err(|e| format!("{e}"))?;
+    enigo.key(Key::Control, Press).map_err(|e| format!("{e}"))?;
     enigo.key(Key::Unicode('a'), Click).map_err(|e| format!("{e}"))?;
-    enigo.key(modifier, Release).map_err(|e| format!("{e}"))?;
+    enigo.key(Key::Control, Release).map_err(|e| format!("{e}"))?;
     Ok(json!({}))
 }
 
 fn handle_copy() -> Result<Value, String> {
     let mut enigo = new_enigo()?;
-    #[cfg(target_os = "macos")]
-    let modifier = Key::Meta;
-    #[cfg(not(target_os = "macos"))]
-    let modifier = Key::Control;
-
-    enigo.key(modifier, Press).map_err(|e| format!("{e}"))?;
+    enigo.key(Key::Control, Press).map_err(|e| format!("{e}"))?;
     enigo.key(Key::Unicode('c'), Click).map_err(|e| format!("{e}"))?;
-    enigo.key(modifier, Release).map_err(|e| format!("{e}"))?;
+    enigo.key(Key::Control, Release).map_err(|e| format!("{e}"))?;
     Ok(json!({}))
 }
 
 fn handle_paste() -> Result<Value, String> {
     let mut enigo = new_enigo()?;
-    #[cfg(target_os = "macos")]
-    let modifier = Key::Meta;
-    #[cfg(not(target_os = "macos"))]
-    let modifier = Key::Control;
-
-    enigo.key(modifier, Press).map_err(|e| format!("{e}"))?;
+    enigo.key(Key::Control, Press).map_err(|e| format!("{e}"))?;
     enigo.key(Key::Unicode('v'), Click).map_err(|e| format!("{e}"))?;
-    enigo.key(modifier, Release).map_err(|e| format!("{e}"))?;
+    enigo.key(Key::Control, Release).map_err(|e| format!("{e}"))?;
     Ok(json!({}))
 }
 
@@ -363,22 +348,8 @@ fn handle_back() -> Result<Value, String> {
 
 fn handle_home() -> Result<Value, String> {
     let mut enigo = new_enigo()?;
-    // Windows/Super key to show desktop/start menu
-    #[cfg(target_os = "windows")]
-    {
-        enigo.key(Key::Meta, Click).map_err(|e| format!("{e}"))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        // Cmd+F3 for Mission Control / show desktop
-        enigo.key(Key::Meta, Press).map_err(|e| format!("{e}"))?;
-        enigo.key(Key::F3, Click).map_err(|e| format!("{e}"))?;
-        enigo.key(Key::Meta, Release).map_err(|e| format!("{e}"))?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        enigo.key(Key::Meta, Click).map_err(|e| format!("{e}"))?;
-    }
+    // Super key to show activities/desktop (works on GNOME, KDE, etc.)
+    enigo.key(Key::Meta, Click).map_err(|e| format!("{e}"))?;
     Ok(json!({}))
 }
 
@@ -483,69 +454,115 @@ fn handle_press_key(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-/// Get list of windows with titles and positions.
-/// On non-Windows platforms, returns an empty list.
-#[cfg(windows)]
+/// Get list of windows with titles and positions using wmctrl.
+/// Falls back to an empty list if wmctrl is not installed.
 fn handle_ui_tree() -> Result<Value, String> {
-    use std::ffi::OsString;
-    use std::os::windows::ffi::OsStringExt;
-    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsWindowVisible,
-    };
+    // Try wmctrl -lG for window list with geometry
+    let output = std::process::Command::new("wmctrl")
+        .args(["-lG"])
+        .output();
 
-    let mut windows: Vec<Value> = Vec::new();
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let mut windows: Vec<Value> = Vec::new();
 
-    unsafe extern "system" fn enum_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let windows = &mut *(lparam.0 as *mut Vec<Value>);
+            for line in stdout.lines() {
+                // wmctrl -lG format: <win_id> <desktop> <x> <y> <w> <h> <hostname> <title>
+                let parts: Vec<&str> = line.splitn(8, char::is_whitespace).collect();
+                let parts: Vec<&str> = parts.into_iter().filter(|s| !s.is_empty()).collect();
+                if parts.len() >= 8 {
+                    let win_id = parts[0];
+                    let x: i64 = parts[2].parse().unwrap_or(0);
+                    let y: i64 = parts[3].parse().unwrap_or(0);
+                    let width: i64 = parts[4].parse().unwrap_or(0);
+                    let height: i64 = parts[5].parse().unwrap_or(0);
+                    let title = parts[7];
 
-        if !IsWindowVisible(hwnd).as_bool() {
-            return BOOL(1);
+                    // Skip desktop window entries (desktop -1)
+                    if parts[1] == "-1" {
+                        continue;
+                    }
+
+                    windows.push(json!({
+                        "title": title,
+                        "x": x,
+                        "y": y,
+                        "width": width,
+                        "height": height,
+                        "windowId": win_id,
+                    }));
+                }
+            }
+
+            Ok(json!({ "tree": windows }))
         }
+        _ => {
+            // wmctrl not available — try xdotool as fallback
+            let output = std::process::Command::new("xdotool")
+                .args(["search", "--onlyvisible", "--name", ""])
+                .output();
 
-        let len = GetWindowTextLengthW(hwnd);
-        if len == 0 {
-            return BOOL(1);
+            match output {
+                Ok(out) if out.status.success() => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let mut windows: Vec<Value> = Vec::new();
+
+                    for win_id in stdout.lines() {
+                        let win_id = win_id.trim();
+                        if win_id.is_empty() {
+                            continue;
+                        }
+
+                        // Get window name
+                        let name_out = std::process::Command::new("xdotool")
+                            .args(["getwindowname", win_id])
+                            .output();
+                        let title = name_out
+                            .ok()
+                            .filter(|o| o.status.success())
+                            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                            .unwrap_or_default();
+
+                        // Get window geometry
+                        let geo_out = std::process::Command::new("xdotool")
+                            .args(["getwindowgeometry", "--shell", win_id])
+                            .output();
+
+                        let (mut x, mut y, mut width, mut height) = (0i64, 0i64, 0i64, 0i64);
+                        if let Ok(geo) = geo_out {
+                            if geo.status.success() {
+                                let geo_str = String::from_utf8_lossy(&geo.stdout);
+                                for line in geo_str.lines() {
+                                    if let Some(val) = line.strip_prefix("X=") {
+                                        x = val.parse().unwrap_or(0);
+                                    } else if let Some(val) = line.strip_prefix("Y=") {
+                                        y = val.parse().unwrap_or(0);
+                                    } else if let Some(val) = line.strip_prefix("WIDTH=") {
+                                        width = val.parse().unwrap_or(0);
+                                    } else if let Some(val) = line.strip_prefix("HEIGHT=") {
+                                        height = val.parse().unwrap_or(0);
+                                    }
+                                }
+                            }
+                        }
+
+                        windows.push(json!({
+                            "title": title,
+                            "x": x,
+                            "y": y,
+                            "width": width,
+                            "height": height,
+                            "windowId": win_id,
+                        }));
+                    }
+
+                    Ok(json!({ "tree": windows }))
+                }
+                _ => {
+                    Ok(json!({ "tree": [], "note": "install wmctrl or xdotool for window listing" }))
+                }
+            }
         }
-
-        let mut buf = vec![0u16; (len + 1) as usize];
-        let actual = GetWindowTextW(hwnd, &mut buf);
-        if actual == 0 {
-            return BOOL(1);
-        }
-
-        let title = OsString::from_wide(&buf[..actual as usize])
-            .to_string_lossy()
-            .to_string();
-
-        let mut rect = RECT::default();
-        let _ = GetWindowRect(hwnd, &mut rect);
-
-        windows.push(serde_json::json!({
-            "title": title,
-            "x": rect.left,
-            "y": rect.top,
-            "width": rect.right - rect.left,
-            "height": rect.bottom - rect.top,
-            "hwnd": hwnd.0 as u64,
-        }));
-
-        BOOL(1)
     }
-
-    unsafe {
-        let _ = EnumWindows(
-            Some(enum_callback),
-            LPARAM(&mut windows as *mut Vec<Value> as isize),
-        );
-    }
-
-    Ok(json!({ "tree": windows }))
-}
-
-#[cfg(not(windows))]
-fn handle_ui_tree() -> Result<Value, String> {
-    // On Linux/macOS, try to return basic window info using wmctrl-style approach
-    // For now, return a minimal response
-    Ok(json!({ "tree": [], "note": "ui_tree is best supported on Windows" }))
 }
