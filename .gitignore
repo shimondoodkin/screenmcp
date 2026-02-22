@@ -12,6 +12,10 @@ remote/dist/
 sdk/typescript/dist/
 web/.next/
 
+# Python
+__pycache__/
+*.pyc
+
 # Rust
 worker/target/
 linux/target/
