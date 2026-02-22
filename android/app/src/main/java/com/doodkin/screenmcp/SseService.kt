@@ -12,8 +12,10 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
@@ -130,10 +132,8 @@ class SseService : Service() {
 
     private fun discoverSseUrl(apiUrl: String, token: String, deviceId: String): String? {
         return try {
-            val body = okhttp3.RequestBody.create(
-                okhttp3.MediaType.get("application/json"),
-                """{"device_id":"$deviceId"}"""
-            )
+            val body = """{"device_id":"$deviceId"}"""
+                .toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
                 .url("$apiUrl/api/discover")
                 .addHeader("Authorization", "Bearer $token")
@@ -144,10 +144,10 @@ class SseService : Service() {
                 .build()
                 .newCall(request).execute()
             if (!response.isSuccessful) {
-                Log.w(TAG, "SSE discover failed: HTTP ${response.code()}")
+                Log.w(TAG, "SSE discover failed: HTTP ${response.code}")
                 return null
             }
-            val json = JSONObject(response.body()?.string() ?: return null)
+            val json = JSONObject(response.body?.string() ?: return null)
             val wsUrl = json.optString("wsUrl", "")
             if (wsUrl.isEmpty()) return null
 

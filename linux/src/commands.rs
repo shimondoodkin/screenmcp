@@ -30,8 +30,10 @@ pub fn execute_command(
         "type" => handle_type(params),
         "get_text" => handle_get_text(),
         "select_all" => handle_select_all(),
-        "copy" => handle_copy(),
-        "paste" => handle_paste(),
+        "copy" => handle_copy(params),
+        "paste" => handle_paste(params),
+        "get_clipboard" => handle_get_clipboard(),
+        "set_clipboard" => handle_set_clipboard(params),
         "back" => handle_back(),
         "home" => handle_home(),
         "recents" => handle_recents(),
@@ -41,6 +43,13 @@ pub fn execute_command(
                 "id": id,
                 "status": "ok",
                 "result": { "unsupported": true }
+            });
+        }
+        "list_cameras" => {
+            return json!({
+                "id": id,
+                "status": "ok",
+                "result": { "cameras": [] }
             });
         }
         "right_click" => handle_right_click(params),
@@ -318,19 +327,50 @@ fn handle_select_all() -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_copy() -> Result<Value, String> {
+fn handle_copy(params: Option<&Value>) -> Result<Value, String> {
     let mut enigo = new_enigo()?;
     enigo.key(Key::Control, Press).map_err(|e| format!("{e}"))?;
     enigo.key(Key::Unicode('c'), Click).map_err(|e| format!("{e}"))?;
     enigo.key(Key::Control, Release).map_err(|e| format!("{e}"))?;
-    Ok(json!({}))
+
+    let return_text = params
+        .and_then(|p| p.get("return_text"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if return_text {
+        thread::sleep(Duration::from_millis(50));
+        let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
+        let text = clipboard.get_text().unwrap_or_default();
+        Ok(json!({ "text": text }))
+    } else {
+        Ok(json!({}))
+    }
 }
 
-fn handle_paste() -> Result<Value, String> {
+fn handle_paste(params: Option<&Value>) -> Result<Value, String> {
+    if let Some(text) = params.and_then(|p| p.get("text")).and_then(|v| v.as_str()) {
+        let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
+        clipboard.set_text(text).map_err(|e| format!("set clipboard failed: {e}"))?;
+    }
+
     let mut enigo = new_enigo()?;
     enigo.key(Key::Control, Press).map_err(|e| format!("{e}"))?;
     enigo.key(Key::Unicode('v'), Click).map_err(|e| format!("{e}"))?;
     enigo.key(Key::Control, Release).map_err(|e| format!("{e}"))?;
+    Ok(json!({}))
+}
+
+fn handle_get_clipboard() -> Result<Value, String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
+    let text = clipboard.get_text().unwrap_or_default();
+    Ok(json!({ "text": text }))
+}
+
+fn handle_set_clipboard(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let text = p.get("text").and_then(|v| v.as_str()).ok_or("missing text")?;
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
+    clipboard.set_text(text).map_err(|e| format!("set clipboard failed: {e}"))?;
     Ok(json!({}))
 }
 

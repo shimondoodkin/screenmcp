@@ -1,8 +1,10 @@
-# ScreenMCP Protocol
+# ScreenMCP Initiation Protocol
 
 ## Overview
 
-Phone connects to a WebSocket server, receives commands, executes them, and sends results back. Sessions are resumable across server changes and disconnects.
+How phones and controllers discover, connect, authenticate, and maintain sessions with the WebSocket server. Sessions are resumable across server changes and disconnects.
+
+For the wire protocol (command format and full command catalog), see [wire-protocol.md](wire-protocol.md).
 
 ## Connection Flow
 
@@ -64,113 +66,7 @@ All messages are JSON over WebSocket.
 
 ## Commands
 
-### click
-```json
-{ "id": 1, "cmd": "click", "params": { "x": 540, "y": 1200 } }
-{ "id": 1, "cmd": "click", "params": { "x": 540, "y": 1200, "duration": 500 } }
-```
-Optional `duration` in ms (default 100). Use higher values for long-press effects.
-
-### long_click
-```json
-{ "id": 2, "cmd": "long_click", "params": { "x": 540, "y": 1200 } }
-```
-Fixed 1000ms press duration.
-
-### drag
-```json
-{ "id": 3, "cmd": "drag", "params": { "startX": 540, "startY": 1200, "endX": 540, "endY": 400, "duration": 300 } }
-```
-
-### scroll
-```json
-{ "id": 4, "cmd": "scroll", "params": { "x": 540, "y": 1200, "dx": 0, "dy": -300 } }
-```
-Finger-drag gesture from (x,y) to (x+dx, y+dy). Use negative dy to scroll content up.
-
-### type
-```json
-{ "id": 5, "cmd": "type", "params": { "text": "hello world" } }
-```
-Appends text to currently focused input field.
-
-### select_all / copy / paste
-```json
-{ "id": 6, "cmd": "select_all" }
-{ "id": 7, "cmd": "copy" }
-{ "id": 8, "cmd": "paste" }
-```
-
-### get_text
-```json
-{ "id": 9, "cmd": "get_text" }
-→ { "id": 9, "status": "ok", "result": { "text": "field contents" } }
-```
-
-### screenshot
-```json
-{ "id": 10, "cmd": "screenshot" }
-{ "id": 10, "cmd": "screenshot", "params": { "quality": 50, "max_width": 720, "max_height": 1280 } }
-→ { "id": 10, "status": "ok", "result": { "image": "<base64 webp>" } }
-→ { "id": 10, "status": "error", "error": "phone is locked" }
-```
-Returns WebP image as base64. Default: lossless WebP (quality omitted or 100). Quality 1-99: lossy WebP. Optional `max_width`/`max_height` for scaling (aspect ratio preserved). Returns error if phone is locked (keyguard active).
-
-### ui_tree
-```json
-{ "id": 11, "cmd": "ui_tree" }
-→ { "id": 11, "status": "ok", "result": { "tree": [ ...nodes ] } }
-```
-
-### UI Tree Node Format
-```json
-{
-  "className": "EditText",
-  "resourceId": "com.example:id/search_input",
-  "text": "hello",
-  "contentDescription": "Search",
-  "bounds": { "left": 0, "top": 100, "right": 1080, "bottom": 200 },
-  "clickable": true,
-  "editable": true,
-  "focused": true,
-  "scrollable": false,
-  "checkable": false,
-  "checked": false,
-  "children": [ ... ]
-}
-```
-
-### back / home / recents
-```json
-{ "id": 12, "cmd": "back" }
-{ "id": 13, "cmd": "home" }
-{ "id": 14, "cmd": "recents" }
-```
-
-### camera
-```json
-{ "id": 15, "cmd": "camera" }
-{ "id": 15, "cmd": "camera", "params": { "camera": "0", "quality": 80, "max_width": 1280, "max_height": 960 } }
-→ { "id": 15, "status": "ok", "result": { "image": "<base64 webp>" } }
-```
-Camera ID: "0" = rear (default), "1" = front. Returns empty image string if camera not available. Quality default: 80 (lossy). Optional `max_width`/`max_height` for scaling.
-
-### hold_key / release_key / press_key (desktop only)
-```json
-{ "id": 16, "cmd": "hold_key", "params": { "key": "alt" } }
-{ "id": 17, "cmd": "press_key", "params": { "key": "tab" } }
-{ "id": 18, "cmd": "release_key", "params": { "key": "alt" } }
-```
-Desktop keyboard control. `hold_key` presses and holds a key, `release_key` releases it, `press_key` does press+release in one action. Supported key names: `shift`, `ctrl`/`control`, `alt`, `meta`/`cmd`/`win`/`command`/`super`, `tab`, `enter`/`return`, `escape`/`esc`, `space`, `backspace`, `delete`/`del`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1`–`f12`, or any single character. On Android these return `{status: "error"}` (unsupported).
-
-### Unsupported desktop-only commands
-These are accepted but return unsupported flag (for cross-platform CLI compatibility):
-```json
-{ "id": 16, "cmd": "right_click", "params": { "x": 540, "y": 1200 } }
-{ "id": 17, "cmd": "middle_click", "params": { "x": 540, "y": 1200 } }
-{ "id": 18, "cmd": "mouse_scroll", "params": { "x": 540, "y": 1200, "dx": 0, "dy": -120 } }
-→ { "id": 16, "status": "ok", "result": { "unsupported": true } }
-```
+See [wire-protocol.md](wire-protocol.md) for command wire format and examples, and [commands.md](commands.md) for the full param reference.
 
 ## Authentication
 

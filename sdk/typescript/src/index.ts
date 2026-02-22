@@ -6,8 +6,11 @@ export type {
   TextResult,
   UiTreeResult,
   CameraResult,
+  ClipboardResult,
+  CopyResult,
+  CameraInfo,
+  ListCamerasResult,
   ScrollDirection,
-  CameraFacing,
   CommandResponse,
   ScreenMCPEvents,
 } from "./types.js";

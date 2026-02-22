@@ -119,18 +119,43 @@ const phoneTools = [
   },
   {
     name: 'copy',
-    description: 'Copy selected text',
-    inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
-      return (await phone.sendCommand('copy')).result;
+    description: 'Copy selected text. Optionally return the copied text.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      return_text: z.boolean().optional().describe('If true, return the copied text in the response (default: false)'),
+    },
+    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('copy', params)).result;
     },
   },
   {
     name: 'paste',
-    description: 'Paste text into the focused field',
+    description: 'Paste into the focused field. Optionally set clipboard contents before pasting.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      text: z.string().optional().describe('Text to set in clipboard before pasting. If omitted, pastes current clipboard contents.'),
+    },
+    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('paste', params)).result;
+    },
+  },
+  {
+    name: 'get_clipboard',
+    description: 'Get the current clipboard text contents.',
     inputSchema: { device_id: deviceIdParam },
     handler: async (phone: PhoneConnection) => {
-      return (await phone.sendCommand('paste')).result;
+      return (await phone.sendCommand('get_clipboard')).result;
+    },
+  },
+  {
+    name: 'set_clipboard',
+    description: 'Set the clipboard to the given text.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      text: z.string().describe('Text to put in the clipboard'),
+    },
+    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('set_clipboard', params)).result;
     },
   },
   {
@@ -158,11 +183,19 @@ const phoneTools = [
     },
   },
   {
+    name: 'list_cameras',
+    description: 'List available cameras on the device. Returns camera IDs with facing direction (back/front/external). Use before camera to discover valid IDs.',
+    inputSchema: { device_id: deviceIdParam },
+    handler: async (phone: PhoneConnection) => {
+      return (await phone.sendCommand('list_cameras')).result;
+    },
+  },
+  {
     name: 'camera',
     description: 'Take a photo with the phone camera',
     inputSchema: {
       device_id: deviceIdParam,
-      camera: z.enum(['0', '1']).optional().describe('Camera ID: 0 = rear (default), 1 = front'),
+      camera: z.string().optional().describe('Camera ID (use list_cameras to discover available IDs). Default: "0"'),
       quality: z.number().min(1).max(100).optional().describe('Image quality (default: 80)'),
       max_width: z.number().optional(),
       max_height: z.number().optional(),
@@ -202,6 +235,44 @@ const phoneTools = [
     },
     handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('press_key', params)).result;
+    },
+  },
+  {
+    name: 'right_click',
+    description: 'Right-click at coordinates (desktop only). Returns unsupported on Android.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      x: z.number().int().describe('X coordinate'),
+      y: z.number().int().describe('Y coordinate'),
+    },
+    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('right_click', params)).result;
+    },
+  },
+  {
+    name: 'middle_click',
+    description: 'Middle-click at coordinates (desktop only). Returns unsupported on Android.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      x: z.number().int().describe('X coordinate'),
+      y: z.number().int().describe('Y coordinate'),
+    },
+    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('middle_click', params)).result;
+    },
+  },
+  {
+    name: 'mouse_scroll',
+    description: 'Raw mouse scroll at coordinates with pixel deltas (desktop only). Returns unsupported on Android.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      x: z.number().int().describe('X coordinate'),
+      y: z.number().int().describe('Y coordinate'),
+      dx: z.number().int().describe('Horizontal delta'),
+      dy: z.number().int().describe('Vertical delta'),
+    },
+    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('mouse_scroll', params)).result;
     },
   },
 ];

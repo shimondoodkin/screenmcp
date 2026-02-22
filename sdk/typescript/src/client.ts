@@ -2,10 +2,12 @@ import WebSocket from "ws";
 import { EventEmitter } from "events";
 import type {
   AuthMessage,
-  CameraFacing,
   CameraResult,
+  ClipboardResult,
   CommandResponse,
+  CopyResult,
   ControllerCommand,
+  ListCamerasResult,
   ScreenMCPClientOptions,
   ScreenMCPEvents,
   ScreenshotResult,
@@ -189,14 +191,30 @@ export class ScreenMCPClient extends EventEmitter {
     await this.sendCommand("select_all");
   }
 
-  /** Copy selected text to clipboard. */
-  async copy(): Promise<void> {
-    await this.sendCommand("copy");
+  /** Copy selected text to clipboard. Optionally return the copied text. */
+  async copy(options?: { returnText?: boolean }): Promise<CopyResult> {
+    const params: Record<string, unknown> = {};
+    if (options?.returnText) params.return_text = true;
+    const resp = await this.sendCommand("copy", Object.keys(params).length > 0 ? params : undefined);
+    return (resp.result as CopyResult | undefined) ?? {};
   }
 
-  /** Paste from clipboard. */
-  async paste(): Promise<void> {
-    await this.sendCommand("paste");
+  /** Paste into the focused field. Optionally set clipboard before pasting. */
+  async paste(text?: string): Promise<void> {
+    const params: Record<string, unknown> = {};
+    if (text !== undefined) params.text = text;
+    await this.sendCommand("paste", Object.keys(params).length > 0 ? params : undefined);
+  }
+
+  /** Get clipboard text contents. */
+  async getClipboard(): Promise<ClipboardResult> {
+    const resp = await this.sendCommand("get_clipboard");
+    return { text: (resp.result as ClipboardResult | undefined)?.text ?? "" };
+  }
+
+  /** Set clipboard to the given text. */
+  async setClipboard(text: string): Promise<void> {
+    await this.sendCommand("set_clipboard", { text });
   }
 
   /** Press the Back button. */
@@ -221,19 +239,45 @@ export class ScreenMCPClient extends EventEmitter {
   }
 
   /**
-   * Take a photo with the device camera.
-   * @param facing - "front" or "rear" (default: "rear")
+   * List available cameras on the device.
+   * Returns camera IDs with facing direction.
    */
-  async camera(facing?: CameraFacing): Promise<CameraResult> {
+  async listCameras(): Promise<ListCamerasResult> {
+    const resp = await this.sendCommand("list_cameras");
+    return { cameras: (resp.result as ListCamerasResult | undefined)?.cameras ?? [] };
+  }
+
+  /**
+   * Take a photo with the device camera.
+   * @param cameraId - Camera ID string (use listCameras() to discover). Default: "0".
+   */
+  async camera(cameraId?: string): Promise<CameraResult> {
     const params: Record<string, unknown> = {};
-    if (facing !== undefined) {
-      params.camera = facing === "front" ? "1" : "0";
-    }
+    if (cameraId !== undefined) params.camera = cameraId;
     const resp = await this.sendCommand(
       "camera",
       Object.keys(params).length > 0 ? params : undefined,
     );
     return { image: (resp.result as CameraResult | undefined)?.image ?? "" };
+  }
+
+  // -----------------------------------------------------------------------
+  // Keyboard commands (desktop only)
+  // -----------------------------------------------------------------------
+
+  /** Press and hold a key (desktop only). Use with releaseKey() for combos like Alt+Tab. */
+  async holdKey(key: string): Promise<void> {
+    await this.sendCommand("hold_key", { key });
+  }
+
+  /** Release a held key (desktop only). */
+  async releaseKey(key: string): Promise<void> {
+    await this.sendCommand("release_key", { key });
+  }
+
+  /** Press and release a key in one action (desktop only). */
+  async pressKey(key: string): Promise<void> {
+    await this.sendCommand("press_key", { key });
   }
 
   // -----------------------------------------------------------------------

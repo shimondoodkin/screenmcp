@@ -131,18 +131,18 @@ program
   });
 
 program
-  .command("camera [facing]")
-  .description("Capture photo (facing: front or rear)")
+  .command("camera [camera-id]")
+  .description("Capture photo (camera ID, e.g. 0, 1, front, rear)")
   .option("-q, --quality <n>", "WebP quality (1-100)", parseInt)
   .option("--max-width <n>", "Max width in pixels", parseInt)
   .option("--max-height <n>", "Max height in pixels", parseInt)
   .option("-o, --output <file>", "Output filename")
-  .action(async (facing: string | undefined, opts: { quality?: number; maxWidth?: number; maxHeight?: number; output?: string }) => {
+  .action(async (cameraId: string | undefined, opts: { quality?: number; maxWidth?: number; maxHeight?: number; output?: string }) => {
     const client = createClient();
     try {
       await client.connect();
       const params: Record<string, unknown> = {};
-      if (facing !== undefined) params.camera = facing === "front" ? "1" : "0";
+      if (cameraId !== undefined) params.camera = cameraId;
       if (opts.quality !== undefined) params.quality = opts.quality;
       if (opts.maxWidth !== undefined) params.max_width = opts.maxWidth;
       if (opts.maxHeight !== undefined) params.max_height = opts.maxHeight;
@@ -280,14 +280,34 @@ program
               await client.selectAll();
               console.log("Selected all");
               break;
-            case "copy":
-              await client.copy();
-              console.log("Copied");
+            case "copy": {
+              const returnText = parts.includes("--return-text");
+              const copyResult = await client.copy({ returnText });
+              if (returnText && copyResult.text !== undefined) {
+                console.log(`Copied: ${copyResult.text}`);
+              } else {
+                console.log("Copied");
+              }
               break;
-            case "paste":
-              await client.paste();
-              console.log("Pasted");
+            }
+            case "paste": {
+              const pasteText = parts.length > 1 ? parts.slice(1).join(" ") : undefined;
+              await client.paste(pasteText);
+              console.log(pasteText ? `Pasted: ${pasteText}` : "Pasted");
               break;
+            }
+            case "get_clipboard": {
+              const clip = await client.getClipboard();
+              console.log(`Clipboard: ${clip.text}`);
+              break;
+            }
+            case "set_clipboard": {
+              const clipText = parts.slice(1).join(" ");
+              if (!clipText) { console.log("Usage: set_clipboard <text>"); break; }
+              await client.setClipboard(clipText);
+              console.log(`Clipboard set to: ${clipText}`);
+              break;
+            }
             case "scroll": {
               const dir = parts[1] as "up" | "down" | "left" | "right";
               const amt = parts[2] ? parseInt(parts[2]) : undefined;
@@ -318,10 +338,21 @@ program
               console.log(`Mouse scroll at (${msx}, ${msy}) by (${msdx}, ${msdy})`, (msResp.result as Record<string, unknown>)?.unsupported ? "(unsupported on this device)" : "");
               break;
             }
+            case "list_cameras": {
+              const lcResult = await client.listCameras();
+              if (lcResult.cameras.length === 0) {
+                console.log("No cameras available");
+              } else {
+                for (const cam of lcResult.cameras) {
+                  console.log(`  ${cam.id}: ${cam.facing}`);
+                }
+              }
+              break;
+            }
             case "camera": {
               const camParams: Record<string, unknown> = {};
               let camFile: string | undefined;
-              const startIdx = (parts[1] && !parts[1].startsWith("-")) ? (camParams.camera = parts[1] === "front" ? "1" : "0", 2) : 1;
+              const startIdx = (parts[1] && !parts[1].startsWith("-")) ? (camParams.camera = parts[1], 2) : 1;
               for (let i = startIdx; i < parts.length; i++) {
                 if (parts[i] === "--quality" || parts[i] === "-q") camParams.quality = parseInt(parts[++i]);
                 else if (parts[i] === "--max-width") camParams.max_width = parseInt(parts[++i]);
@@ -344,10 +375,11 @@ program
               console.log(
                 "Commands: screenshot [file] [--quality N] [--max-width N] [--max-height N], " +
                 "click <x> <y> [duration], long_click <x> <y>, drag <sx> <sy> <ex> <ey>, " +
-                "scroll <direction> [amount], type <text>, get_text, select_all, copy, paste, " +
+                "scroll <direction> [amount], type <text>, get_text, select_all, " +
+                "copy [--return-text], paste [text], get_clipboard, set_clipboard <text>, " +
                 "tree, back, home, recents, right_click <x> <y>, middle_click <x> <y>, " +
-                "mouse_scroll <x> <y> <dx> <dy>, camera [front|rear] [--quality N] [--max-width N] " +
-                "[--max-height N] [-o file], quit"
+                "mouse_scroll <x> <y> <dx> <dy>, list_cameras, camera [id] [--quality N] " +
+                "[--max-width N] [--max-height N] [-o file], quit"
               );
               break;
             case "quit":

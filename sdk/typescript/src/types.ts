@@ -39,9 +39,30 @@ export interface CameraResult {
   image: string;
 }
 
+export interface ClipboardResult {
+  /** Clipboard text contents */
+  text: string;
+}
+
+export interface CopyResult {
+  /** Copied text (only present when return_text was true) */
+  text?: string;
+}
+
+export interface CameraInfo {
+  /** Camera ID string */
+  id: string;
+  /** Camera facing direction */
+  facing: "back" | "front" | "external" | "unknown";
+}
+
+export interface ListCamerasResult {
+  /** Available cameras on the device */
+  cameras: CameraInfo[];
+}
+
 export type ScrollDirection = "up" | "down" | "left" | "right";
 
-export type CameraFacing = "front" | "rear";
 
 // ---------------------------------------------------------------------------
 // Wire protocol types (internal)

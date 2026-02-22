@@ -2,6 +2,7 @@ package com.doodkin.screenmcp
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
+import android.hardware.camera2.CameraManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
@@ -386,13 +387,35 @@ class WebSocketClient(
             }
             "copy" -> {
                 val ok = service.copy()
-                sendResponse(ws, id, if (ok) "ok" else "error",
-                    error = if (!ok) "copy failed" else null)
+                if (!ok) {
+                    sendResponse(ws, id, "error", error = "copy failed")
+                } else {
+                    val returnText = params?.optBoolean("return_text", false) ?: false
+                    if (returnText) {
+                        val text = service.getClipboard() ?: ""
+                        sendResponse(ws, id, "ok", JSONObject().put("text", text))
+                    } else {
+                        sendResponse(ws, id, "ok")
+                    }
+                }
             }
             "paste" -> {
+                val text = params?.optString("text", "") ?: ""
+                if (text.isNotEmpty()) {
+                    service.setClipboard(text)
+                }
                 val ok = service.paste()
                 sendResponse(ws, id, if (ok) "ok" else "error",
                     error = if (!ok) "paste failed" else null)
+            }
+            "get_clipboard" -> {
+                val text = service.getClipboard()
+                sendResponse(ws, id, "ok", JSONObject().put("text", text ?: ""))
+            }
+            "set_clipboard" -> {
+                val text = params?.optString("text", "") ?: ""
+                service.setClipboard(text)
+                sendResponse(ws, id, "ok")
             }
 
             "scroll" -> {
@@ -415,6 +438,27 @@ class WebSocketClient(
 
             "right_click", "middle_click", "mouse_scroll" -> {
                 sendResponse(ws, id, "ok", JSONObject().put("unsupported", true))
+            }
+
+            "list_cameras" -> {
+                val cameraManager = service.getSystemService(android.content.Context.CAMERA_SERVICE) as CameraManager
+                val cameras = org.json.JSONArray()
+                try {
+                    for (camId in cameraManager.cameraIdList) {
+                        val characteristics = cameraManager.getCameraCharacteristics(camId)
+                        val lensFacing = characteristics.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+                        val facing = when (lensFacing) {
+                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK -> "back"
+                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT -> "front"
+                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_EXTERNAL -> "external"
+                            else -> "unknown"
+                        }
+                        cameras.put(JSONObject().put("id", camId).put("facing", facing))
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to list cameras: ${e.message}")
+                }
+                sendResponse(ws, id, "ok", JSONObject().put("cameras", cameras))
             }
 
             "camera" -> {

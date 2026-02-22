@@ -3,6 +3,8 @@ package com.doodkin.screenmcp
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.app.KeyguardManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageFormat
@@ -12,6 +14,8 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.params.OutputConfiguration
+import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
 import android.os.Bundle
 import android.os.Handler
@@ -180,6 +184,21 @@ class ScreenMcpService : AccessibilityService() {
         return focusedNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
     }
 
+    // --- Clipboard ---
+
+    fun getClipboard(): String? {
+        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        if (!clipboardManager.hasPrimaryClip()) return null
+        val item = clipboardManager.primaryClip?.getItemAt(0) ?: return null
+        return item.text?.toString()
+    }
+
+    fun setClipboard(text: String) {
+        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipData = ClipData.newPlainText("text", text)
+        clipboardManager.setPrimaryClip(clipData)
+    }
+
     // --- UI Tree ---
 
     fun getUiTree(): String {
@@ -326,8 +345,10 @@ class ScreenMcpService : AccessibilityService() {
                         captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
                         captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, 0)
 
-                        camera.createCaptureSession(
-                            listOf(imageReader.surface),
+                        val sessionConfig = SessionConfiguration(
+                            SessionConfiguration.SESSION_REGULAR,
+                            listOf(OutputConfiguration(imageReader.surface)),
+                            cameraHandler::post,
                             object : CameraCaptureSession.StateCallback() {
                                 override fun onConfigured(session: CameraCaptureSession) {
                                     imageReader.setOnImageAvailableListener({ reader ->
@@ -358,9 +379,9 @@ class ScreenMcpService : AccessibilityService() {
                                     handlerThread.quitSafely()
                                     callback(null)
                                 }
-                            },
-                            cameraHandler
+                            }
                         )
+                        camera.createCaptureSession(sessionConfig)
                     } catch (e: Exception) {
                         Log.e(TAG, "Camera capture error: ${e.message}")
                         camera.close()

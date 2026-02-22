@@ -219,14 +219,42 @@ class ScreenMCPClient:
         resp = await self.send_command("select_all")
         return resp.result
 
-    async def copy(self) -> dict[str, Any]:
-        """Copy the current selection to the clipboard."""
-        resp = await self.send_command("copy")
+    async def copy(self, *, return_text: bool = False) -> dict[str, Any]:
+        """Copy the current selection to the clipboard.
+
+        Parameters
+        ----------
+        return_text:
+            If ``True``, the response includes ``text`` with the copied content.
+        """
+        params: dict[str, Any] = {}
+        if return_text:
+            params["return_text"] = True
+        resp = await self.send_command("copy", params or None)
         return resp.result
 
-    async def paste(self) -> dict[str, Any]:
-        """Paste from the clipboard."""
-        resp = await self.send_command("paste")
+    async def paste(self, text: str | None = None) -> dict[str, Any]:
+        """Paste into the focused field.
+
+        Parameters
+        ----------
+        text:
+            If provided, sets clipboard to this text before pasting.
+        """
+        params: dict[str, Any] = {}
+        if text is not None:
+            params["text"] = text
+        resp = await self.send_command("paste", params or None)
+        return resp.result
+
+    async def get_clipboard(self) -> dict[str, Any]:
+        """Get the current clipboard text contents.  Returns dict with ``text``."""
+        resp = await self.send_command("get_clipboard")
+        return resp.result
+
+    async def set_clipboard(self, text: str) -> dict[str, Any]:
+        """Set the clipboard to the given text."""
+        resp = await self.send_command("set_clipboard", {"text": text})
         return resp.result
 
     async def back(self) -> dict[str, Any]:
@@ -249,24 +277,32 @@ class ScreenMCPClient:
         resp = await self.send_command("ui_tree")
         return resp.result
 
+    async def list_cameras(self) -> dict[str, Any]:
+        """List available cameras on the device.
+
+        Returns dict with ``cameras`` — a list of ``{id, facing}`` objects.
+        Desktop clients return an empty list.
+        """
+        resp = await self.send_command("list_cameras")
+        return resp.result
+
     async def camera(
         self,
-        facing: str = "rear",
+        camera_id: str = "0",
         *,
         quality: int | None = None,
         max_width: int | None = None,
         max_height: int | None = None,
     ) -> dict[str, Any]:
-        """Take a photo with the phone camera.  Returns dict with ``image`` (base64).
+        """Take a photo with the device camera.  Returns dict with ``image`` (base64).
 
         Parameters
         ----------
-        facing:
-            ``"rear"`` (default) or ``"front"``.
+        camera_id:
+            Camera ID string (use ``list_cameras()`` to discover).
+            Default ``"0"``.
         """
-        params: dict[str, Any] = {
-            "camera": "0" if facing == "rear" else "1",
-        }
+        params: dict[str, Any] = {"camera": camera_id}
         if quality is not None:
             params["quality"] = quality
         if max_width is not None:
@@ -274,6 +310,23 @@ class ScreenMCPClient:
         if max_height is not None:
             params["max_height"] = max_height
         resp = await self.send_command("camera", params)
+        return resp.result
+
+    # ── Keyboard commands (desktop only) ──────────────────────────────
+
+    async def hold_key(self, key: str) -> dict[str, Any]:
+        """Press and hold a key (desktop only).  Use with ``release_key``."""
+        resp = await self.send_command("hold_key", {"key": key})
+        return resp.result
+
+    async def release_key(self, key: str) -> dict[str, Any]:
+        """Release a held key (desktop only)."""
+        resp = await self.send_command("release_key", {"key": key})
+        return resp.result
+
+    async def press_key(self, key: str) -> dict[str, Any]:
+        """Press and release a key in one action (desktop only)."""
+        resp = await self.send_command("press_key", {"key": key})
         return resp.result
 
     # ── Generic command ──────────────────────────────────────────────────
