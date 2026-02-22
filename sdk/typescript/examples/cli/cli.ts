@@ -166,6 +166,96 @@ program
   });
 
 program
+  .command("find <selector>")
+  .description("Find UI elements matching a selector query")
+  .option("-t, --timeout <ms>", "Timeout in ms (default: 3000)", parseInt)
+  .action(async (selector: string, opts: { timeout?: number }) => {
+    const client = createClient();
+    try {
+      await client.connect();
+      const elements = await client.findAll(selector, { timeout: opts.timeout ?? 3000 });
+      if (elements.length === 0) {
+        console.log("No elements found");
+      } else {
+        for (const el of elements) {
+          console.log(`  (${el.x}, ${el.y})  ${el.className ?? el.text ?? el.resourceId ?? "(unknown)"}`);
+          if (el.text) console.log(`    text: ${el.text}`);
+          if (el.className) console.log(`    role: ${el.className}`);
+          if (el.resourceId) console.log(`    id: ${el.resourceId}`);
+          if (el.contentDescription) console.log(`    desc: ${el.contentDescription}`);
+          console.log(`    bounds: [${el.bounds.left}, ${el.bounds.top}, ${el.bounds.right}, ${el.bounds.bottom}]`);
+        }
+        console.log(`Found ${elements.length} element(s)`);
+      }
+    } catch (e) {
+      console.error("Error:", (e as Error).message);
+      process.exit(1);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+program
+  .command("run <steps-file>")
+  .description("Execute a steps file (YAML or JSON)")
+  .option("-i, --input <json>", "Input variables as JSON string")
+  .option("-v, --verbose", "Print step-by-step execution")
+  .option("--from <step-id>", "Start execution from this step")
+  .option("--dry-run", "Parse and validate without executing")
+  .action(async (stepsFile: string, opts: { input?: string; verbose?: boolean; from?: string; dryRun?: boolean }) => {
+    const { StepsRunner } = await import("@screenmcp/sdk");
+    const client = createClient();
+    try {
+      let inputData: Record<string, unknown> | undefined;
+      if (opts.input) {
+        inputData = JSON.parse(opts.input);
+      }
+
+      if (opts.dryRun) {
+        // Just parse and validate the steps file
+        const content = fs.readFileSync(stepsFile, "utf-8");
+        let def;
+        if (stepsFile.endsWith(".json")) {
+          def = JSON.parse(content);
+        } else {
+          const yaml = await import("js-yaml");
+          def = yaml.load(content);
+        }
+        console.log(`Name: ${def.name}`);
+        console.log(`Steps: ${def.steps.length}`);
+        if (def.input) {
+          console.log(`Input schema:`);
+          for (const [k, v] of Object.entries(def.input)) {
+            const info = v as { type: string; description?: string };
+            console.log(`  ${k}: ${info.type}${info.description ? ` — ${info.description}` : ""}`);
+          }
+        }
+        console.log("\nDry run — no commands executed.");
+        return;
+      }
+
+      await client.connect();
+      console.log(`Connected to ${client.workerUrl}. Phone: ${client.phoneConnected ? "online" : "offline"}`);
+
+      const runner = new StepsRunner(client, { verbose: opts.verbose ?? false });
+      const result = await runner.runFile(stepsFile, inputData);
+
+      if (result.status === "ok") {
+        console.log(`\nCompleted: ${result.steps_completed}/${result.steps_total} steps in ${result.duration_ms}ms`);
+      } else {
+        console.error(`\nFailed at step [${result.last_step}]: ${result.error}`);
+        console.error(`Completed: ${result.steps_completed}/${result.steps_total} steps in ${result.duration_ms}ms`);
+        process.exit(1);
+      }
+    } catch (e) {
+      console.error("Error:", (e as Error).message);
+      process.exit(1);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+program
   .command("shell")
   .description("Interactive REPL for sending commands")
   .action(async () => {
@@ -371,6 +461,53 @@ program
               }
               break;
             }
+            case "find": {
+              const findSelector = parts.slice(1).join(" ");
+              if (!findSelector) { console.log("Usage: find <selector>"); break; }
+              const findTimeout = 3000;
+              const elements = await client.findAll(findSelector, { timeout: findTimeout });
+              if (elements.length === 0) {
+                console.log("No elements found");
+              } else {
+                for (const el of elements) {
+                  console.log(`  (${el.x}, ${el.y})  ${el.className ?? el.text ?? "(unknown)"}`);
+                  if (el.text) console.log(`    text: ${el.text}`);
+                  if (el.resourceId) console.log(`    id: ${el.resourceId}`);
+                }
+                console.log(`Found ${elements.length} element(s)`);
+              }
+              break;
+            }
+            case "click_on": {
+              // Click on element by selector (syntactic sugar)
+              const clickSelector = parts.slice(1).join(" ");
+              if (!clickSelector) { console.log("Usage: click_on <selector>"); break; }
+              try {
+                await client.find(clickSelector, { timeout: 3000 }).click();
+                console.log(`Clicked on: ${clickSelector}`);
+              } catch (e) {
+                console.error("Error:", (e as Error).message);
+              }
+              break;
+            }
+            case "run": {
+              const runFile = parts[1];
+              if (!runFile) { console.log("Usage: run <steps.yml> [--input '{...}']"); break; }
+              const { StepsRunner } = await import("@screenmcp/sdk");
+              let runInput: Record<string, unknown> | undefined;
+              const inputIdx = parts.indexOf("--input");
+              if (inputIdx !== -1 && parts[inputIdx + 1]) {
+                runInput = JSON.parse(parts.slice(inputIdx + 1).join(" "));
+              }
+              const runner = new StepsRunner(client, { verbose: true });
+              const runResult = await runner.runFile(runFile, runInput);
+              if (runResult.status === "ok") {
+                console.log(`Completed: ${runResult.steps_completed}/${runResult.steps_total} steps in ${runResult.duration_ms}ms`);
+              } else {
+                console.log(`Failed at [${runResult.last_step}]: ${runResult.error}`);
+              }
+              break;
+            }
             case "help":
               console.log(
                 "Commands: screenshot [file] [--quality N] [--max-width N] [--max-height N], " +
@@ -379,7 +516,8 @@ program
                 "copy [--return-text], paste [text], get_clipboard, set_clipboard <text>, " +
                 "tree, back, home, recents, right_click <x> <y>, middle_click <x> <y>, " +
                 "mouse_scroll <x> <y> <dx> <dy>, list_cameras, camera [id] [--quality N] " +
-                "[--max-width N] [--max-height N] [-o file], quit"
+                "[--max-width N] [--max-height N] [-o file], find <selector>, " +
+                "click_on <selector>, run <steps.yml> [--input '{...}'], quit"
               );
               break;
             case "quit":

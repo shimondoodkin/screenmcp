@@ -12,6 +12,7 @@ import httpx
 import websockets
 from websockets.asyncio.client import ClientConnection
 
+from .selector import ElementHandle, FoundElement, find_elements
 from .types import (
     AuthMessage,
     CommandResponse,
@@ -328,6 +329,59 @@ class ScreenMCPClient:
         """Press and release a key in one action (desktop only)."""
         resp = await self.send_command("press_key", {"key": key})
         return resp.result
+
+    # ── Selector-based element interaction ─────────────────────────────
+
+    def find(self, selector: str, *, timeout: float = 3.0) -> ElementHandle:
+        """Find element by selector. Returns fluent ElementHandle."""
+        return ElementHandle(self, selector, timeout)
+
+    async def find_all(
+        self, selector: str, *, timeout: float = 3.0
+    ) -> list[FoundElement]:
+        """Find all matching elements."""
+        deadline = time.monotonic() + timeout
+        while True:
+            result = await self.ui_tree()
+            tree = result.get("tree", [])
+            found = find_elements(tree, selector)
+            if found:
+                return found
+            if time.monotonic() >= deadline:
+                return []
+            await asyncio.sleep(0.5)
+
+    async def exists(self, selector: str, *, timeout: float = 2.0) -> bool:
+        """Check if element exists."""
+        deadline = time.monotonic() + timeout
+        while True:
+            result = await self.ui_tree()
+            tree = result.get("tree", [])
+            if find_elements(tree, selector):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(0.5)
+
+    async def wait_for(
+        self, selector: str, *, timeout: float = 10.0
+    ) -> FoundElement:
+        """Wait for element to appear."""
+        return await self.find(selector, timeout=timeout).element()
+
+    async def wait_for_gone(
+        self, selector: str, *, timeout: float = 10.0
+    ) -> None:
+        """Wait for element to disappear."""
+        deadline = time.monotonic() + timeout
+        while True:
+            result = await self.ui_tree()
+            tree = result.get("tree", [])
+            if not find_elements(tree, selector):
+                return
+            if time.monotonic() >= deadline:
+                raise ScreenMCPError(f"Element still present: {selector}")
+            await asyncio.sleep(0.5)
 
     # ── Generic command ──────────────────────────────────────────────────
 

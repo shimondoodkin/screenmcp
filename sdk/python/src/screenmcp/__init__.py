@@ -7,6 +7,7 @@ from .client import (
     ScreenMCPClient,
     ScreenMCPError,
 )
+from .selector import ElementHandle, FoundElement, find_elements, parse_selector
 from .types import CommandResponse, ScrollDirection
 
 __all__ = [
@@ -14,9 +15,13 @@ __all__ = [
     "CommandError",
     "CommandResponse",
     "ConnectionError",
+    "ElementHandle",
+    "FoundElement",
     "ScreenMCPClient",
     "ScreenMCPError",
     "ScrollDirection",
+    "find_elements",
+    "parse_selector",
 ]
 
 __version__ = "0.1.0"

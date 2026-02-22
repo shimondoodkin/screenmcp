@@ -24,7 +24,11 @@
   "dependencies": {
     "ws": "^8.18.0"
   },
+  "optionalDependencies": {
+    "js-yaml": "^4.1.0"
+  },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
     "@types/ws": "^8.5.0",
     "typescript": "^5.7.0"

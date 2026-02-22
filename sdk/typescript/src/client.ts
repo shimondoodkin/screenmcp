@@ -1,5 +1,7 @@
 import WebSocket from "ws";
 import { EventEmitter } from "events";
+import { ElementHandle, findElements } from "./selector.js";
+import type { FoundElement } from "./selector.js";
 import type {
   AuthMessage,
   CameraResult,
@@ -278,6 +280,83 @@ export class ScreenMCPClient extends EventEmitter {
   /** Press and release a key in one action (desktop only). */
   async pressKey(key: string): Promise<void> {
     await this.sendCommand("press_key", { key });
+  }
+
+  // -----------------------------------------------------------------------
+  // Selector-based element methods
+  // -----------------------------------------------------------------------
+
+  /** Find an element by selector. Returns a fluent object with .click(), .type(), .longClick(). */
+  find(selector: string, options?: { timeout?: number }): ElementHandle {
+    return new ElementHandle(this, selector, options?.timeout ?? 3000);
+  }
+
+  /** Find all matching elements. */
+  async findAll(
+    selector: string,
+    options?: { timeout?: number },
+  ): Promise<FoundElement[]> {
+    const timeout = options?.timeout ?? 3000;
+    const deadline = Date.now() + timeout;
+    while (true) {
+      const { tree } = await this.uiTree();
+      const found = findElements(tree, selector);
+      if (found.length > 0) return found;
+      if (Date.now() >= deadline) return [];
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  /** Check if an element matching the selector exists. */
+  async exists(
+    selector: string,
+    options?: { timeout?: number },
+  ): Promise<boolean> {
+    const timeout = options?.timeout ?? 0;
+    const deadline = Date.now() + timeout;
+    while (true) {
+      const { tree } = await this.uiTree();
+      const found = findElements(tree, selector);
+      if (found.length > 0) return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  /** Wait for an element to appear. Throws if not found within timeout. */
+  async waitFor(
+    selector: string,
+    options?: { timeout?: number },
+  ): Promise<FoundElement> {
+    const timeout = options?.timeout ?? 3000;
+    const deadline = Date.now() + timeout;
+    while (true) {
+      const { tree } = await this.uiTree();
+      const found = findElements(tree, selector);
+      if (found.length > 0) return found[0];
+      if (Date.now() >= deadline) {
+        throw new Error(`waitFor timed out: ${selector}`);
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  /** Wait for an element to disappear. Throws if still present after timeout. */
+  async waitForGone(
+    selector: string,
+    options?: { timeout?: number },
+  ): Promise<void> {
+    const timeout = options?.timeout ?? 3000;
+    const deadline = Date.now() + timeout;
+    while (true) {
+      const { tree } = await this.uiTree();
+      const found = findElements(tree, selector);
+      if (found.length === 0) return;
+      if (Date.now() >= deadline) {
+        throw new Error(`waitForGone timed out: ${selector}`);
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
   }
 
   // -----------------------------------------------------------------------
