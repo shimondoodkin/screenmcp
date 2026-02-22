@@ -1,94 +1,81 @@
-# ScreenMCP AI Agent Skill
+# ScreenMCP Skill
 
-A vision-based AI agent that controls an Android phone using natural language instructions. The agent takes screenshots, analyzes the screen with Claude, and executes UI actions in a loop until the task is complete.
+Control Android phones and desktops from any AI coding agent (Claude Code, Cursor, Cline, etc.) via MCP.
 
-## Prerequisites
+## Quick Start
 
-- Python 3.10+
-- A ScreenMCP account with an API key (get one from the dashboard)
-- An Anthropic API key
-- An Android phone connected to ScreenMCP (with the ScreenMCP app installed and running)
-
-## Setup
-
-1. Install dependencies:
+### Claude Code
 
 ```bash
-cd skill
-pip install -r requirements.txt
+# Clone and cd into the skill directory
+git clone https://github.com/nicedoctor/screenmcp.git
+cd screenmcp/skill
+
+# Set your API key (get one at https://screenmcp.com)
+export SCREENMCP_API_KEY=pk_your_key_here
+
+# Claude Code auto-detects .mcp.json and SKILL.md
+claude
+> take a screenshot of my phone
 ```
 
-2. Set environment variables:
+Or add the MCP server manually:
 
 ```bash
-export SCREENMCP_API_KEY="pk_your_api_key_here"
-export ANTHROPIC_API_KEY="sk-ant-your_key_here"
-
-# Optional:
-export SCREENMCP_API_URL="https://server10.doodkin.com"   # default
-export SCREENMCP_DEVICE_ID="your-device-uuid"              # optional, uses first device
-export SCREENMCP_MAX_STEPS="15"                            # default: 15
+claude mcp add screenmcp --transport streamable-http --url https://screenmcp.com/mcp --header "Authorization: Bearer pk_your_key"
 ```
 
-## Usage
+### Other Agents (Cursor, Cline, etc.)
 
-Run the agent with a natural language task:
+Add to your MCP config:
 
-```bash
-python screenmcp_agent.py "Open the Settings app and check battery level"
-```
-
-The agent will:
-1. Connect to your phone via the ScreenMCP platform
-2. Take a screenshot
-3. Send the screenshot to Claude for analysis
-4. Execute the recommended action (tap, type, scroll, etc.)
-5. Repeat until the task is done or max steps are reached
-
-## Examples
-
-```bash
-# Basic navigation
-python screenmcp_agent.py "Open Chrome and go to example.com"
-
-# App interaction
-python screenmcp_agent.py "Open the calculator and compute 123 + 456"
-
-# Settings
-python screenmcp_agent.py "Go to Settings and enable dark mode"
-
-# Messaging
-python screenmcp_agent.py "Open Messages and send 'Hello' to the first conversation"
+```json
+{
+  "mcpServers": {
+    "screenmcp": {
+      "type": "streamable-http",
+      "url": "https://screenmcp.com/mcp",
+      "headers": {
+        "Authorization": "Bearer pk_your_key_here"
+      }
+    }
+  }
+}
 ```
 
 ## How It Works
 
-The agent uses a simple loop architecture:
-
 ```
-Screenshot -> Claude Vision Analysis -> Action Decision -> Execute -> Repeat
-```
-
-Each iteration, Claude receives:
-- The current screenshot of the phone
-- The original task instruction
-- A history of all previous actions and their results
-
-Claude responds with a structured JSON action, which the agent executes on the phone. This continues until Claude signals the task is complete or the maximum number of steps is reached.
-
-## Troubleshooting
-
-- **"Phone is not currently connected"**: Make sure the ScreenMCP Android app is running and connected on your phone.
-- **"Screenshot failed"**: The phone may be unresponsive. Try restarting the ScreenMCP app.
-- **Agent gets stuck in a loop**: The max steps limit (default 15) will stop it. You can adjust with `SCREENMCP_MAX_STEPS`.
-- **Authentication errors**: Verify your `SCREENMCP_API_KEY` is correct and active.
-
-## Claude Code Integration
-
-To use this as a Claude Code skill, you can invoke it directly:
-
-```bash
-python /path/to/skill/screenmcp_agent.py "your instruction here"
+AI Agent (Claude Code / Cursor)
+    │
+    │  MCP tools (screenshot, click, type, ui_tree, ...)
+    ▼
+ScreenMCP Server (screenmcp.com/mcp)
+    │
+    │  WebSocket relay
+    ▼
+Phone / Desktop (ScreenMCP app)
 ```
 
-Or reference the `SKILL.md` file for the full skill definition.
+1. Agent calls MCP tools like `screenshot`, `click`, `ui_tree`
+2. Server relays commands to your connected device via WebSocket
+3. Device executes and returns results (screenshots, UI trees, etc.)
+
+## Getting an API Key
+
+1. Go to [screenmcp.com](https://screenmcp.com) and sign in with Google
+2. Dashboard → API Keys → Create New Key
+3. Copy the `pk_...` key
+
+## Connecting a Phone
+
+1. Download the ScreenMCP app from the Dashboard
+2. Open it, enable "Open Source Server" mode
+3. Enter your User ID and server URL
+4. Grant Accessibility and Screen Capture permissions
+
+## Available Tools
+
+`list_devices`, `screenshot`, `ui_tree`, `click`, `long_click`, `scroll`, `drag`, `type`, `get_text`, `select_all`, `copy`, `paste`, `get_clipboard`, `set_clipboard`, `back`, `home`, `recents`, `camera`, `list_cameras`, `hold_key`, `release_key`, `press_key`, `right_click`, `middle_click`, `mouse_scroll`
+
+See [SKILL.md](SKILL.md) for full documentation.

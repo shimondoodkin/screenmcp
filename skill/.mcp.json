@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "screenmcp": {
+      "type": "streamable-http",
+      "url": "https://screenmcp.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SCREENMCP_API_KEY}"
+      }
+    }
+  }
+}
