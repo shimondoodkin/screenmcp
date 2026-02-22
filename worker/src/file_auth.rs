@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::{info, warn};
 
-use super::AuthBackend;
+use crate::AuthBackend;
 
 #[derive(Debug, Deserialize)]
 pub struct FileConfig {

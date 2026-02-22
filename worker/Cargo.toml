@@ -3,10 +3,6 @@ name = "screenmcp-worker"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = []
-api = ["dep:redis", "dep:reqwest"]
-
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.24"
@@ -18,8 +14,6 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
-redis = { version = "0.27", features = ["tokio-comp"], optional = true }
-reqwest = { version = "0.12", features = ["json"], optional = true }
 
 [profile.release]
 opt-level = 3

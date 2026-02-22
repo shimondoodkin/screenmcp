@@ -1,10 +1,7 @@
-#[cfg(feature = "api")]
-pub mod api_auth;
-#[cfg(feature = "api")]
-pub mod api_state;
-#[cfg(not(feature = "api"))]
+pub mod connections;
+pub mod protocol;
+pub mod ws;
 pub mod file_auth;
-#[cfg(not(feature = "api"))]
 pub mod file_state;
 
 use async_trait::async_trait;

@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use crate::protocol::Command;
-use super::{BackendError, StateBackend};
+use crate::{BackendError, StateBackend};
 
 /// Per-device state held in memory.
 struct DeviceState {
