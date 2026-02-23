@@ -44,6 +44,7 @@ fn main() {
 
     // Start tokio runtime in background thread
     let config_clone = config.clone();
+    let ws_cmd_tx_bg = ws_cmd_tx.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -60,7 +61,7 @@ fn main() {
                 info!("opensource server mode enabled, starting SSE listener");
                 let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
                 let sse_config = config_clone.clone();
-                let sse_ws_tx = ws_cmd_tx.clone();
+                let sse_ws_tx = ws_cmd_tx_bg.clone();
                 tokio::spawn(async move {
                     sse::run_sse_listener(sse_config, sse_ws_tx, shutdown_rx).await;
                 });
