@@ -1,57 +1,45 @@
 use tokio::sync::{mpsc, watch};
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
+use crate::auth::{self, LocalServerEvent};
 use crate::config::Config;
 use crate::ws::{ConnectionStatus, WsCommand};
-
-/// Wrapper to move non-Send types into a single background thread.
-/// Safety: the wrapped value must only be accessed from that thread.
-struct SendWrapper<T>(T);
-unsafe impl<T> Send for SendWrapper<T> {}
-
-/// Truncate a string for display, appending "..." if it exceeds max_len.
-fn truncate_display(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len])
-    }
-}
 
 /// Custom events sent to the winit event loop.
 #[derive(Debug)]
 pub enum TrayEvent {
     StatusChanged(ConnectionStatus),
+    AuthTokenReceived { token: String, email: String },
+    RegistrationResult(Result<bool, String>),
     Quit,
 }
 
 /// IDs for menu items.
 struct MenuItems {
-    connect: MenuItem,
-    disconnect: MenuItem,
+    about: MenuItem,
     status: MenuItem,
-    settings: MenuItem,
-    opensource_enabled: CheckMenuItem,
-    opensource_user_id: MenuItem,
-    opensource_api_url: MenuItem,
+    sign_in: MenuItem,
+    sign_out: MenuItem,
+    test_connection: MenuItem,
+    register_device: MenuItem,
+    unregister_device: MenuItem,
     quit: MenuItem,
 }
 
-/// Create RGBA bytes for a simple colored circle icon (green or red).
 fn create_icon_rgba(connected: bool) -> Vec<u8> {
     let size = 32u32;
     let mut rgba = Vec::with_capacity((size * size * 4) as usize);
 
     let (r, g, b) = if connected {
-        (0x00u8, 0xC8u8, 0x00u8) // green
+        (0x00u8, 0xC8u8, 0x00u8)
     } else {
-        (0xC8u8, 0x00u8, 0x00u8) // red
+        (0xC8u8, 0x00u8, 0x00u8)
     };
 
     for y in 0..size {
@@ -78,9 +66,103 @@ fn create_icon_rgba(connected: bool) -> Vec<u8> {
     rgba
 }
 
-/// Create an Icon from a connected/disconnected state.
 fn create_icon(connected: bool) -> Icon {
     Icon::from_rgba(create_icon_rgba(connected), 32, 32).expect("failed to create icon")
+}
+
+fn hex_to_uuid(hex: &str) -> String {
+    if hex.len() == 32 && !hex.contains('-') {
+        format!(
+            "{}-{}-{}-{}-{}",
+            &hex[0..8],
+            &hex[8..12],
+            &hex[12..16],
+            &hex[16..20],
+            &hex[20..32]
+        )
+    } else {
+        hex.to_string()
+    }
+}
+
+async fn do_register_device(api_url: &str, token: &str, device_id: &str) -> Result<(), String> {
+    let hostname = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "Mac Desktop".to_string());
+    let uuid_id = hex_to_uuid(device_id);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{api_url}/api/devices/register"))
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "deviceId": uuid_id,
+            "deviceName": hostname,
+            "deviceModel": "Mac Desktop",
+            "role": "phone"
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("register request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("register failed ({status}): {body}"));
+    }
+
+    Ok(())
+}
+
+async fn do_unregister_device(api_url: &str, token: &str, device_id: &str) -> Result<(), String> {
+    let uuid_id = hex_to_uuid(device_id);
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{api_url}/api/devices/delete"))
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({"deviceId": uuid_id}))
+        .send()
+        .await
+        .map_err(|e| format!("unregister request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("unregister failed ({status}): {body}"));
+    }
+
+    Ok(())
+}
+
+/// Update menu items based on current config and registration state.
+fn update_menu_labels(items: &MenuItems, config: &Config, is_registered: bool) {
+    let signed_in = !config.token.is_empty() || !config.email.is_empty();
+    let oss_ready = config.opensource_server_enabled
+        && !config.opensource_user_id.is_empty()
+        && !config.opensource_api_url.is_empty();
+    let is_signed_in = signed_in || oss_ready;
+
+    if is_signed_in {
+        let label = if oss_ready {
+            format!("Signed in: {}", config.opensource_user_id)
+        } else if !config.email.is_empty() {
+            format!("Signed in: {}", config.email)
+        } else {
+            format!("Signed in: {}...", &config.token[..config.token.len().min(11)])
+        };
+        let _ = items.sign_in.set_text(&label);
+        items.sign_in.set_enabled(false);
+    } else {
+        let _ = items.sign_in.set_text("Sign in");
+        items.sign_in.set_enabled(true);
+    }
+
+    items.sign_out.set_enabled(is_signed_in);
+    items.register_device.set_enabled(is_signed_in && !is_registered);
+    items.unregister_device.set_enabled(is_signed_in && is_registered);
+    items.test_connection.set_enabled(is_registered);
 }
 
 struct App {
@@ -88,8 +170,11 @@ struct App {
     menu_items: Option<MenuItems>,
     ws_cmd_tx: mpsc::Sender<WsCommand>,
     status_rx: watch::Receiver<ConnectionStatus>,
+    auth_event_rx: Option<mpsc::Receiver<LocalServerEvent>>,
     last_status: ConnectionStatus,
     proxy: EventLoopProxy<TrayEvent>,
+    local_port: u16,
+    is_registered: bool,
 }
 
 impl App {
@@ -104,20 +189,13 @@ impl App {
 
         if let Some(ref items) = self.menu_items {
             let _ = items.status.set_text(&format!("Status: {status}"));
-            match status {
-                ConnectionStatus::Connected => {
-                    items.connect.set_enabled(false);
-                    items.disconnect.set_enabled(true);
-                }
-                ConnectionStatus::Disconnected | ConnectionStatus::Error(_) => {
-                    items.connect.set_enabled(true);
-                    items.disconnect.set_enabled(false);
-                }
-                ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => {
-                    items.connect.set_enabled(false);
-                    items.disconnect.set_enabled(true);
-                }
-            }
+        }
+    }
+
+    fn refresh_labels(&self) {
+        let config = Config::load();
+        if let Some(ref items) = self.menu_items {
+            update_menu_labels(items, &config, self.is_registered);
         }
     }
 }
@@ -125,58 +203,56 @@ impl App {
 impl ApplicationHandler<TrayEvent> for App {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
         if self.tray.is_some() {
-            return; // Already initialized
+            return;
         }
 
-        // Load current config to set initial state of opensource items
-        let current_config = Config::load();
-        let oss_enabled = current_config.opensource_server_enabled;
+        let config = Config::load();
+        let oss_ready = config.opensource_server_enabled
+            && !config.opensource_user_id.is_empty()
+            && !config.opensource_api_url.is_empty();
+        let has_token = !config.token.is_empty() || !config.email.is_empty();
+        let is_signed_in = has_token || oss_ready;
 
         // Build menu
-        let connect = MenuItem::new("Connect", true, None);
-        let disconnect = MenuItem::new("Disconnect", false, None);
+        let about = MenuItem::new("About ScreenMCP.com", true, None);
         let status = MenuItem::new("Status: Disconnected", false, None);
-        let settings = MenuItem::new("Open Config File", true, None);
 
-        // Open Source Server submenu items
-        let opensource_enabled = CheckMenuItem::new("Open Source Server", true, oss_enabled, None);
-        let user_id_label = if oss_enabled && !current_config.opensource_user_id.is_empty() {
-            format!("User ID: {}", truncate_display(&current_config.opensource_user_id, 30))
+        let sign_in_label = if is_signed_in {
+            if oss_ready {
+                format!("Signed in: {}", config.opensource_user_id)
+            } else if !config.email.is_empty() {
+                format!("Signed in: {}", config.email)
+            } else {
+                format!("Signed in: {}...", &config.token[..config.token.len().min(11)])
+            }
         } else {
-            "User ID: (not set)".to_string()
+            "Sign in".to_string()
         };
-        let api_url_label = if oss_enabled && !current_config.opensource_api_url.is_empty() {
-            format!("API URL: {}", truncate_display(&current_config.opensource_api_url, 40))
-        } else {
-            "API URL: (not set)".to_string()
-        };
-        let opensource_user_id = MenuItem::new(&user_id_label, oss_enabled, None);
-        let opensource_api_url = MenuItem::new(&api_url_label, oss_enabled, None);
-
-        let opensource_submenu = Submenu::new("Open Source Server", true);
-        let _ = opensource_submenu.append(&opensource_enabled);
-        let _ = opensource_submenu.append(&opensource_user_id);
-        let _ = opensource_submenu.append(&opensource_api_url);
-
+        let sign_in = MenuItem::new(&sign_in_label, !is_signed_in, None);
+        let sign_out = MenuItem::new("Sign Out", is_signed_in, None);
+        let test_connection = MenuItem::new("Test Connection", false, None);
+        let register_device = MenuItem::new("Register Device", is_signed_in, None);
+        let unregister_device = MenuItem::new("Unregister Device", false, None);
         let quit = MenuItem::new("Quit", true, None);
 
         let menu = Menu::new();
-        let _ = menu.append(&connect);
-        let _ = menu.append(&disconnect);
+        let _ = menu.append(&about);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&status);
         let _ = menu.append(&PredefinedMenuItem::separator());
-        let _ = menu.append(&settings);
-        let _ = menu.append(&opensource_submenu);
+        let _ = menu.append(&sign_in);
+        let _ = menu.append(&sign_out);
+        let _ = menu.append(&PredefinedMenuItem::separator());
+        let _ = menu.append(&test_connection);
+        let _ = menu.append(&register_device);
+        let _ = menu.append(&unregister_device);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&quit);
-
-        let icon = create_icon(false);
 
         match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("ScreenMCP Mac - Disconnected")
-            .with_icon(icon)
+            .with_icon(create_icon(false))
             .with_title("ScreenMCP")
             .build()
         {
@@ -189,20 +265,18 @@ impl ApplicationHandler<TrayEvent> for App {
             }
         }
 
-        // Store menu item references for later updates
-        let menu_items = MenuItems {
-            connect,
-            disconnect,
+        self.menu_items = Some(MenuItems {
+            about,
             status,
-            settings,
-            opensource_enabled,
-            opensource_user_id,
-            opensource_api_url,
+            sign_in,
+            sign_out,
+            test_connection,
+            register_device,
+            unregister_device,
             quit,
-        };
-        self.menu_items = Some(menu_items);
+        });
 
-        // Spawn a task to watch for status changes and forward them to the event loop
+        // Spawn status watcher
         let mut status_rx = self.status_rx.clone();
         let proxy = self.proxy.clone();
         std::thread::spawn(move || {
@@ -221,109 +295,120 @@ impl ApplicationHandler<TrayEvent> for App {
             });
         });
 
-        // Spawn a thread to handle menu events
+        // Spawn auth event listener
+        if let Some(auth_rx) = self.auth_event_rx.take() {
+            let proxy = self.proxy.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async move {
+                    let mut rx = auth_rx;
+                    while let Some(event) = rx.recv().await {
+                        match event {
+                            LocalServerEvent::TokenReceived { token, email } => {
+                                let _ = proxy.send_event(TrayEvent::AuthTokenReceived { token, email });
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        // Spawn menu event handler
         let ws_tx = self.ws_cmd_tx.clone();
         let proxy2 = self.proxy.clone();
-        let connect_id = self.menu_items.as_ref().unwrap().connect.id().clone();
-        let disconnect_id = self.menu_items.as_ref().unwrap().disconnect.id().clone();
-        let settings_id = self.menu_items.as_ref().unwrap().settings.id().clone();
-        let opensource_enabled_id = self.menu_items.as_ref().unwrap().opensource_enabled.id().clone();
-        let opensource_user_id_id = self.menu_items.as_ref().unwrap().opensource_user_id.id().clone();
-        let opensource_api_url_id = self.menu_items.as_ref().unwrap().opensource_api_url.id().clone();
-        let quit_id = self.menu_items.as_ref().unwrap().quit.id().clone();
-
-        // Clone the menu items so the background thread can read/update state.
-        // Wrapped in SendWrapper because muda's menu items use Rc internally.
-        let oss_check_ref = SendWrapper(self.menu_items.as_ref().unwrap().opensource_enabled.clone());
-        let oss_userid_ref = SendWrapper(self.menu_items.as_ref().unwrap().opensource_user_id.clone());
-        let oss_apiurl_ref = SendWrapper(self.menu_items.as_ref().unwrap().opensource_api_url.clone());
+        let local_port = self.local_port;
+        let menu_ref = self.menu_items.as_ref().unwrap();
+        let about_id = menu_ref.about.id().clone();
+        let sign_in_id = menu_ref.sign_in.id().clone();
+        let sign_out_id = menu_ref.sign_out.id().clone();
+        let test_connection_id = menu_ref.test_connection.id().clone();
+        let register_id = menu_ref.register_device.id().clone();
+        let unregister_id = menu_ref.unregister_device.id().clone();
+        let quit_id = menu_ref.quit.id().clone();
 
         std::thread::spawn(move || {
-            // Force the closure to capture the SendWrappers as whole values
-            // (Rust 2021 captures fields individually, which would bypass SendWrapper).
-            let oss_check_ref = oss_check_ref;
-            let oss_userid_ref = oss_userid_ref;
-            let oss_apiurl_ref = oss_apiurl_ref;
-
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
             loop {
                 if let Ok(event) = MenuEvent::receiver().recv() {
-                    if event.id() == &connect_id {
-                        info!("menu: connect clicked");
-                        // Reload config before connecting
+                    if event.id() == &about_id {
+                        info!("menu: about clicked");
+                        let _ = open::that("https://screenmcp.com");
+                    } else if event.id() == &sign_in_id {
+                        info!("menu: sign in clicked");
+                        let config = Config::load();
+                        auth::open_google_sign_in(local_port, &config.api_url);
+                    } else if event.id() == &sign_out_id {
+                        info!("menu: sign out clicked");
+                        let mut cfg = Config::load();
+                        cfg.token.clear();
+                        cfg.email.clear();
+                        if let Err(e) = cfg.save() {
+                            error!("failed to save config: {e}");
+                        }
+                        let _ = proxy2.send_event(TrayEvent::RegistrationResult(Ok(false)));
+                    } else if event.id() == &test_connection_id {
+                        info!("menu: test connection clicked");
                         let new_config = Config::load();
                         let _ = rt.block_on(ws_tx.send(WsCommand::UpdateConfig(new_config)));
                         let _ = rt.block_on(ws_tx.send(WsCommand::Connect));
-                    } else if event.id() == &disconnect_id {
-                        info!("menu: disconnect clicked");
-                        let _ = rt.block_on(ws_tx.send(WsCommand::Disconnect));
-                    } else if event.id() == &settings_id {
-                        info!("menu: settings clicked");
-                        let config_path = Config::config_path();
-                        // Ensure config file exists
-                        if !config_path.exists() {
-                            let config = Config::load();
-                            if let Err(e) = config.save() {
-                                error!("failed to save default config: {e}");
-                            }
-                        }
-                        // Open config file in default editor (uses `open` on macOS)
-                        if let Err(e) = open::that(&config_path) {
-                            error!("failed to open config: {e}");
-                        }
-                    } else if event.id() == &opensource_enabled_id {
-                        // CheckMenuItem auto-toggles its checked state on click
-                        let is_checked = oss_check_ref.0.is_checked();
-                        info!("menu: open source server toggled to {is_checked}");
-
-                        // Update config and save
-                        let mut config = Config::load();
-                        config.opensource_server_enabled = is_checked;
-                        if let Err(e) = config.save() {
-                            error!("failed to save config: {e}");
-                        }
-
-                        // Enable/disable the User ID and API URL items
-                        oss_userid_ref.0.set_enabled(is_checked);
-                        oss_apiurl_ref.0.set_enabled(is_checked);
-
-                        // Update display labels
-                        if is_checked {
-                            let uid = if config.opensource_user_id.is_empty() {
-                                "(not set)".to_string()
-                            } else {
-                                truncate_display(&config.opensource_user_id, 30)
-                            };
-                            let aurl = if config.opensource_api_url.is_empty() {
-                                "(not set)".to_string()
-                            } else {
-                                truncate_display(&config.opensource_api_url, 40)
-                            };
-                            let _ = oss_userid_ref.0.set_text(&format!("User ID: {uid}"));
-                            let _ = oss_apiurl_ref.0.set_text(&format!("API URL: {aurl}"));
-                        } else {
-                            let _ = oss_userid_ref.0.set_text("User ID: (disabled)");
-                            let _ = oss_apiurl_ref.0.set_text("API URL: (disabled)");
-                        }
-
-                        // Notify WS manager of config change
-                        let _ = rt.block_on(ws_tx.send(WsCommand::UpdateConfig(config)));
-                    } else if event.id() == &opensource_user_id_id || event.id() == &opensource_api_url_id {
-                        // Clicking User ID or API URL opens config file for editing
-                        info!("menu: opensource setting clicked, opening config file");
-                        let config_path = Config::config_path();
-                        if !config_path.exists() {
-                            let config = Config::load();
-                            if let Err(e) = config.save() {
-                                error!("failed to save default config: {e}");
-                            }
-                        }
-                        if let Err(e) = open::that(&config_path) {
-                            error!("failed to open config: {e}");
-                        }
+                    } else if event.id() == &register_id {
+                        info!("menu: register device clicked");
+                        let cfg = Config::load();
+                        let api_url = cfg.effective_api_url().to_string();
+                        let token = cfg.effective_token().to_string();
+                        let did = cfg.device_id.clone();
+                        let proxy3 = proxy2.clone();
+                        std::thread::spawn(move || {
+                            let rt = tokio::runtime::Builder::new_current_thread()
+                                .enable_all()
+                                .build()
+                                .unwrap();
+                            rt.block_on(async {
+                                let res = match do_register_device(&api_url, &token, &did).await {
+                                    Ok(()) => {
+                                        info!("device registered successfully");
+                                        Ok(true)
+                                    }
+                                    Err(e) => {
+                                        error!("device registration failed: {e}");
+                                        Err(e)
+                                    }
+                                };
+                                let _ = proxy3.send_event(TrayEvent::RegistrationResult(res));
+                            });
+                        });
+                    } else if event.id() == &unregister_id {
+                        info!("menu: unregister device clicked");
+                        let cfg = Config::load();
+                        let api_url = cfg.effective_api_url().to_string();
+                        let token = cfg.effective_token().to_string();
+                        let did = cfg.device_id.clone();
+                        let proxy3 = proxy2.clone();
+                        std::thread::spawn(move || {
+                            let rt = tokio::runtime::Builder::new_current_thread()
+                                .enable_all()
+                                .build()
+                                .unwrap();
+                            rt.block_on(async {
+                                let res = match do_unregister_device(&api_url, &token, &did).await {
+                                    Ok(()) => {
+                                        info!("device unregistered successfully");
+                                        Ok(false)
+                                    }
+                                    Err(e) => {
+                                        error!("device unregistration failed: {e}");
+                                        Err(e)
+                                    }
+                                };
+                                let _ = proxy3.send_event(TrayEvent::RegistrationResult(res));
+                            });
+                        });
                     } else if event.id() == &quit_id {
                         info!("menu: quit clicked");
                         let _ = rt.block_on(ws_tx.send(WsCommand::Shutdown));
@@ -341,6 +426,43 @@ impl ApplicationHandler<TrayEvent> for App {
                     info!("status changed: {} -> {}", self.last_status, status);
                     self.update_tray_for_status(&status);
                     self.last_status = status;
+                }
+            }
+            TrayEvent::AuthTokenReceived { token, email } => {
+                info!("auth token received, email: {email}");
+                self.refresh_labels();
+
+                // Push updated config to WS manager
+                let new_config = Config::load();
+                let _ = self.ws_cmd_tx.try_send(WsCommand::UpdateConfig(new_config));
+
+                let _ = token;
+            }
+            TrayEvent::RegistrationResult(result) => {
+                match result {
+                    Ok(registered) => {
+                        self.is_registered = registered;
+                        if registered {
+                            info!("device registered — updating menu");
+                        } else {
+                            info!("device unregistered — updating menu");
+                        }
+                        self.refresh_labels();
+                        if let Some(ref items) = self.menu_items {
+                            let msg = if registered {
+                                "Status: Registered"
+                            } else {
+                                "Status: Unregistered"
+                            };
+                            let _ = items.status.set_text(msg);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("registration operation failed: {e}");
+                        if let Some(ref items) = self.menu_items {
+                            let _ = items.status.set_text(&format!("Error: {e}"));
+                        }
+                    }
                 }
             }
             TrayEvent::Quit => {
@@ -365,6 +487,8 @@ impl ApplicationHandler<TrayEvent> for App {
 pub fn run_tray(
     ws_cmd_tx: mpsc::Sender<WsCommand>,
     status_rx: watch::Receiver<ConnectionStatus>,
+    local_port: u16,
+    auth_event_rx: mpsc::Receiver<LocalServerEvent>,
 ) {
     let event_loop: EventLoop<TrayEvent> = EventLoop::with_user_event()
         .build()
@@ -377,8 +501,11 @@ pub fn run_tray(
         menu_items: None,
         ws_cmd_tx,
         status_rx,
+        auth_event_rx: Some(auth_event_rx),
         last_status: ConnectionStatus::Disconnected,
         proxy,
+        local_port,
+        is_registered: false,
     };
 
     event_loop.run_app(&mut app).expect("event loop failed");

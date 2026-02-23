@@ -15,6 +15,10 @@ pub struct Config {
     #[serde(default)]
     pub token: String,
 
+    /// Email from Google sign-in (display only)
+    #[serde(default)]
+    pub email: String,
+
     /// Auto-connect on startup
     #[serde(default = "default_true")]
     pub auto_connect: bool,
@@ -66,6 +70,7 @@ impl Default for Config {
             api_url: default_api_url(),
             worker_url: None,
             token: String::new(),
+            email: String::new(),
             auto_connect: true,
             screenshot_quality: default_quality(),
             max_screenshot_width: None,
@@ -130,16 +135,20 @@ impl Config {
 
     /// Check if the config has enough info to connect.
     pub fn is_ready(&self) -> bool {
-        if self.opensource_server_enabled {
-            !self.opensource_user_id.is_empty() && !self.opensource_api_url.is_empty()
+        if self.opensource_server_enabled
+            && !self.opensource_user_id.is_empty()
+            && !self.opensource_api_url.is_empty()
+        {
+            true
         } else {
             !self.token.is_empty()
         }
     }
 
     /// Get the effective auth token (opensource user_id or normal token).
+    /// Falls back to cloud token if OSS is enabled but user_id is empty.
     pub fn effective_token(&self) -> &str {
-        if self.opensource_server_enabled {
+        if self.opensource_server_enabled && !self.opensource_user_id.is_empty() {
             &self.opensource_user_id
         } else {
             &self.token
@@ -147,8 +156,9 @@ impl Config {
     }
 
     /// Get the effective API URL (opensource or normal).
+    /// Falls back to cloud API URL if OSS is enabled but api_url is empty.
     pub fn effective_api_url(&self) -> &str {
-        if self.opensource_server_enabled {
+        if self.opensource_server_enabled && !self.opensource_api_url.is_empty() {
             &self.opensource_api_url
         } else {
             &self.api_url

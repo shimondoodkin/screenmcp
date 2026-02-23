@@ -15,6 +15,9 @@ pub struct Config {
     #[serde(default)]
     pub token: String,
 
+    #[serde(default)]
+    pub email: String,
+
     /// Auto-connect on startup
     #[serde(default = "default_true")]
     pub auto_connect: bool,
@@ -66,6 +69,7 @@ impl Default for Config {
             api_url: default_api_url(),
             worker_url: None,
             token: String::new(),
+            email: String::new(),
             auto_connect: true,
             screenshot_quality: default_quality(),
             max_screenshot_width: None,
@@ -148,7 +152,7 @@ impl Config {
 
     /// Get the effective auth token (opensource user_id or normal token).
     pub fn effective_token(&self) -> &str {
-        if self.opensource_server_enabled {
+        if self.opensource_server_enabled && !self.opensource_user_id.is_empty() {
             &self.opensource_user_id
         } else {
             &self.token
@@ -157,7 +161,7 @@ impl Config {
 
     /// Get the effective API URL (opensource or normal).
     pub fn effective_api_url(&self) -> &str {
-        if self.opensource_server_enabled {
+        if self.opensource_server_enabled && !self.opensource_api_url.is_empty() {
             &self.opensource_api_url
         } else {
             &self.api_url

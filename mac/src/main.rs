@@ -1,3 +1,4 @@
+mod auth;
 mod commands;
 mod config;
 mod tray;
@@ -34,11 +35,13 @@ fn main() {
         );
     }
 
-    // Create channels for communication between tray and WS manager
+    // Create channels
     let (ws_cmd_tx, ws_cmd_rx) = mpsc::channel::<WsCommand>(32);
     let (status_tx, status_rx) = watch::channel(ConnectionStatus::Disconnected);
+    let (auth_event_tx, auth_event_rx) = mpsc::channel(4);
+    let (port_tx, port_rx) = std::sync::mpsc::channel();
 
-    // Start the tokio runtime for the WS manager in a background thread
+    // Start tokio runtime in background thread
     let config_clone = config.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -47,16 +50,23 @@ fn main() {
             .expect("failed to build tokio runtime");
 
         rt.block_on(async {
+            // Start local HTTP server for auth callbacks
+            let local_port = auth::start_local_server(auth_event_tx).await;
+            let _ = port_tx.send(local_port);
+
             ws::run_ws_manager(ws_cmd_rx, status_tx, config_clone).await;
         });
 
         info!("ws manager thread exiting");
-        // Force exit when WS manager shuts down (tray may have already exited)
         std::process::exit(0);
     });
 
+    // Wait for the local server port
+    let local_port = port_rx.recv().expect("failed to get local server port");
+    info!("local server on port {local_port}");
+
     // Run the tray on the main thread (required by macOS for AppKit/menu bar)
-    tray::run_tray(ws_cmd_tx, status_rx);
+    tray::run_tray(ws_cmd_tx, status_rx, local_port, auth_event_rx);
 
     info!("ScreenMCP Mac shutting down");
 }
