@@ -40,7 +40,7 @@ await phone.disconnect();
 ```typescript
 new ScreenMCPClient(options: {
   apiKey: string;         // Required. Your API key (pk_... format).
-  apiUrl?: string;        // API server URL. Defaults to https://server10.doodkin.com
+  apiUrl?: string;        // API server URL. Defaults to https://screenmcp.com
   deviceId?: string;      // Target device's cryptographic ID (32 hex chars). Get from /api/devices/status.
   commandTimeout?: number; // Per-command timeout in ms. Defaults to 30000.
   autoReconnect?: boolean; // Auto-reconnect on disconnect. Defaults to true.

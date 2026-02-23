@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 use crate::error::{Result, ScreenMCPError};
 use crate::types::*;
 
-const DEFAULT_API_URL: &str = "https://server10.doodkin.com";
+const DEFAULT_API_URL: &str = "https://screenmcp.com";
 const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 30_000;
 
 /// Internal command sent to the writer task.

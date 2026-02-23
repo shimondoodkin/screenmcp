@@ -104,9 +104,9 @@ Device registration via API persists back to this file. Empty `allowed` list = a
 
 ## Deployment
 
-- **Server**: server10.doodkin.com
+- **Server**: screenmcp.com
 - **SSL**: socat terminates TLS on :443 → localhost:3000 and :8443 → localhost:8080
-- **Certs**: Let's Encrypt at `/etc/letsencrypt/live/server10.doodkin.com/`
+- **Certs**: Let's Encrypt at `/etc/letsencrypt/live/screenmcp.com/`
 - **Start**: `screen -dmS screenmcp bash start-server.sh`
 - Docker ports bound to 127.0.0.1 only; socat handles public access
 

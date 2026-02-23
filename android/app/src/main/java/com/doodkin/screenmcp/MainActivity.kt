@@ -118,7 +118,7 @@ class MainActivity : AppCompatActivity() {
             return getOpenSourceApiUrl()
         }
         val custom = etApiUrl.text.toString().trim()
-        return custom.ifEmpty { "https://server10.doodkin.com" }
+        return custom.ifEmpty { "https://screenmcp.com" }
     }
 
     /** Get or create a persistent cryptographically secure device ID in SharedPreferences */

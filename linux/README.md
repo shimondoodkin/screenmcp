@@ -40,7 +40,7 @@ The config file is located at:
 A default config file is created automatically on first run. Edit it to add your API token:
 
 ```toml
-api_url = "https://server10.doodkin.com"
+api_url = "https://screenmcp.com"
 token = "pk_your_api_key_here"
 auto_connect = true
 screenshot_quality = 80
@@ -50,7 +50,7 @@ screenshot_quality = 80
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `api_url` | API server URL for worker discovery | `https://server10.doodkin.com` |
+| `api_url` | API server URL for worker discovery | `https://screenmcp.com` |
 | `worker_url` | Direct worker WebSocket URL (bypasses discovery) | none |
 | `token` | Auth token (API key starting with `pk_` or Firebase ID token) | empty |
 | `auto_connect` | Connect automatically on startup | `true` |

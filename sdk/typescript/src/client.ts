@@ -19,7 +19,7 @@ import type {
   UiTreeResult,
 } from "./types.js";
 
-const DEFAULT_API_URL = "https://server10.doodkin.com";
+const DEFAULT_API_URL = "https://screenmcp.com";
 
 interface PendingCommand {
   resolve: (resp: CommandResponse) => void;

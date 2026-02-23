@@ -7,7 +7,7 @@ class SettingsManager: ObservableObject {
     private static let serverURLKey = "screenmcp_server_url"
     private static let apiKeyKey = "screenmcp_api_key"
     private static let deviceNameKey = "screenmcp_device_name"
-    private static let defaultServerURL = "https://server10.doodkin.com"
+    private static let defaultServerURL = "https://screenmcp.com"
 
     @Published var serverURL: String {
         didSet { UserDefaults.standard.set(serverURL, forKey: Self.serverURLKey) }

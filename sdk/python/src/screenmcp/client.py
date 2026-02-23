@@ -23,7 +23,7 @@ from .types import (
 
 logger = logging.getLogger("screenmcp")
 
-_DEFAULT_API_URL = "https://server10.doodkin.com"
+_DEFAULT_API_URL = "https://screenmcp.com"
 _DEFAULT_COMMAND_TIMEOUT = 30.0  # seconds
 
 

@@ -6,7 +6,7 @@ pub struct ClientOptions {
     /// API key (pk_... format) for authentication.
     pub api_key: String,
     /// Base URL of the ScreenMCP API server.
-    /// Defaults to "https://server10.doodkin.com".
+    /// Defaults to "https://screenmcp.com".
     pub api_url: Option<String>,
     /// Target device ID. If omitted, the server picks the first available device.
     pub device_id: Option<String>,

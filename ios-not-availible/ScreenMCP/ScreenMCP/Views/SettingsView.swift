@@ -16,7 +16,7 @@ struct SettingsView: View {
                         Text("Server URL")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        TextField("https://server10.doodkin.com", text: $settingsManager.serverURL)
+                        TextField("https://screenmcp.com", text: $settingsManager.serverURL)
                             .textContentType(.URL)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)

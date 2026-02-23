@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// API server URL for worker discovery (e.g. https://server10.doodkin.com)
+    /// API server URL for worker discovery (e.g. https://screenmcp.com)
     #[serde(default = "default_api_url")]
     pub api_url: String,
 
@@ -49,7 +49,7 @@ pub struct Config {
 }
 
 fn default_api_url() -> String {
-    "https://server10.doodkin.com".to_string()
+    "https://screenmcp.com".to_string()
 }
 
 fn default_true() -> bool {

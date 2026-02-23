@@ -2,8 +2,8 @@
 # ScreenMCP server startup script
 # Starts socat SSL terminators + Docker Compose
 
-CERT=/etc/letsencrypt/live/server10.doodkin.com/fullchain.pem
-KEY=/etc/letsencrypt/live/server10.doodkin.com/privkey.pem
+CERT=/etc/letsencrypt/live/screenmcp.com/fullchain.pem
+KEY=/etc/letsencrypt/live/screenmcp.com/privkey.pem
 
 echo 'Stopping old socat...'
 pkill -f 'socat OPENSSL-LISTEN:443' 2>/dev/null

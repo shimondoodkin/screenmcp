@@ -19,7 +19,7 @@ use screenmcp::{ScreenMCPClient, ClientOptions};
 async fn main() -> screenmcp::Result<()> {
     let mut phone = ScreenMCPClient::new(ClientOptions {
         api_key: "pk_your_api_key_here".into(),
-        api_url: None, // defaults to https://server10.doodkin.com
+        api_url: None, // defaults to https://screenmcp.com
         device_id: None, // server picks first available
         command_timeout_ms: None, // defaults to 30000
         auto_reconnect: None, // defaults to true
@@ -43,7 +43,7 @@ async fn main() -> screenmcp::Result<()> {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `api_key` | `String` | required | API key (`pk_` + 64 hex chars) |
-| `api_url` | `Option<String>` | `https://server10.doodkin.com` | API server URL |
+| `api_url` | `Option<String>` | `https://screenmcp.com` | API server URL |
 | `device_id` | `Option<String>` | `None` | Target device hex ID. Server picks first available if omitted |
 | `command_timeout_ms` | `Option<u64>` | `30000` | Per-command timeout in milliseconds |
 | `auto_reconnect` | `Option<bool>` | `true` | Auto-reconnect on connection drop |
