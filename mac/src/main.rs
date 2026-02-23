@@ -1,6 +1,8 @@
 mod auth;
 mod commands;
 mod config;
+mod login_window;
+mod test_window;
 mod tray;
 mod ws;
 
