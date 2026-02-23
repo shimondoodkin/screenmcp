@@ -228,7 +228,7 @@ pub async fn handle_connection(
 
     // Use client-provided device_id for routing (required for phones, optional for controllers)
     let device_id = match auth_msg.device_id {
-        Some(ref id) if !id.is_empty() => id.clone(),
+        Some(ref id) if !id.is_empty() => id.replace('-', ""),
         _ => firebase_uid.clone(), // fallback for backwards compat
     };
 
@@ -246,7 +246,7 @@ pub async fn handle_connection(
 
     match role.as_str() {
         "controller" => {
-            let target_device_id = auth_msg.target_device_id.unwrap_or_else(|| device_id.clone());
+            let target_device_id = auth_msg.target_device_id.map(|id| id.replace('-', "")).unwrap_or_else(|| device_id.clone());
             handle_controller_connection(ws_tx, ws_rx, addr, &device_id, &target_device_id, state, connections)
                 .await;
         }

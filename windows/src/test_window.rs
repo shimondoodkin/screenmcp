@@ -64,6 +64,11 @@ pub struct TestState {
     screenshot_texture: Option<egui::TextureHandle>,
     screenshot_size: (f32, f32),
 
+    // Camera
+    camera_texture: Option<egui::TextureHandle>,
+    camera_size: (f32, f32),
+    camera_id: String,
+
     // Click
     click_x: String,
     click_y: String,
@@ -93,6 +98,9 @@ impl TestState {
         let mut s = Self {
             screenshot_texture: None,
             screenshot_size: (0.0, 0.0),
+            camera_texture: None,
+            camera_size: (0.0, 0.0),
+            camera_id: "0".to_string(),
             click_x: String::new(),
             click_y: String::new(),
             drag_sx: String::new(),
@@ -162,6 +170,24 @@ impl TestState {
                             self.load_screenshot(ctx, image_b64);
                         }
                     }
+                    if cmd == "camera" {
+                        if let Some(image_b64) = value
+                            .get("result")
+                            .and_then(|r| r.get("image"))
+                            .and_then(|i| i.as_str())
+                        {
+                            self.load_camera_image(ctx, image_b64);
+                        }
+                    }
+                    if cmd == "list_cameras" {
+                        if let Some(cameras) = value
+                            .get("result")
+                            .and_then(|r| r.get("cameras"))
+                        {
+                            let pretty = serde_json::to_string_pretty(cameras).unwrap_or_default();
+                            self.add_log(&format!("cameras: {pretty}"), false);
+                        }
+                    }
                     if cmd == "ui_tree" {
                         if let Some(tree) = value.get("result").and_then(|r| r.get("tree")) {
                             let pretty = serde_json::to_string_pretty(tree).unwrap_or_default();
@@ -205,6 +231,36 @@ impl TestState {
             egui::TextureOptions::LINEAR,
         ));
         self.screenshot_size = (size[0] as f32, size[1] as f32);
+    }
+
+    fn load_camera_image(&mut self, ctx: &egui::Context, b64: &str) {
+        use base64::Engine;
+        let bytes = match base64::engine::general_purpose::STANDARD.decode(b64) {
+            Ok(b) => b,
+            Err(e) => {
+                self.add_log(&format!("camera decode error: {e}"), true);
+                return;
+            }
+        };
+
+        let img = match image::load_from_memory(&bytes) {
+            Ok(img) => img.to_rgba8(),
+            Err(e) => {
+                self.add_log(&format!("camera image error: {e}"), true);
+                return;
+            }
+        };
+
+        let size = [img.width() as usize, img.height() as usize];
+        let pixels = img.into_raw();
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+
+        self.camera_texture = Some(ctx.load_texture(
+            "camera",
+            color_image,
+            egui::TextureOptions::LINEAR,
+        ));
+        self.camera_size = (size[0] as f32, size[1] as f32);
     }
 
     /// Render the test window UI.
@@ -430,6 +486,49 @@ impl TestState {
                                         .desired_width(f32::INFINITY),
                                 );
                             });
+                    }
+                });
+
+                ui.add_space(4.0);
+
+                // Camera
+                ui.group(|ui| {
+                    ui.label(
+                        egui::RichText::new("CAMERA")
+                            .small()
+                            .color(egui::Color32::GRAY),
+                    );
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label("Camera ID:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.camera_id)
+                                .desired_width(40.0)
+                                .hint_text("0"),
+                        );
+                        if ui.button("List Cameras").clicked() {
+                            self.add_log("Listing cameras...", false);
+                            self.execute_command("list_cameras", None);
+                        }
+                        if ui.button("Take Photo").clicked() {
+                            let id = self.camera_id.clone();
+                            self.add_log(&format!("Capturing camera {id}..."), false);
+                            self.execute_command(
+                                "camera",
+                                Some(json!({"camera": id})),
+                            );
+                        }
+                    });
+                    if let Some(ref texture) = self.camera_texture {
+                        let max_preview = 300.0_f32;
+                        let aspect = self.camera_size.1 / self.camera_size.0.max(1.0);
+                        let display_width = max_preview.min(self.camera_size.0);
+                        let display_height = (display_width * aspect).min(max_preview);
+                        let display_width = display_height / aspect;
+                        ui.image(egui::load::SizedTexture::new(
+                            texture.id(),
+                            egui::vec2(display_width, display_height),
+                        ));
                     }
                 });
 

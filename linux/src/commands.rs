@@ -5,7 +5,11 @@ use enigo::{
     Enigo, Key, Keyboard, Mouse, Settings,
 };
 use image::codecs::png::PngEncoder;
+use image::codecs::webp::WebPEncoder;
 use image::ImageEncoder;
+use nokhwa::pixel_format::RgbFormat;
+use nokhwa::utils::{ApiBackend, CameraIndex, RequestedFormat, RequestedFormatType};
+use nokhwa::Camera;
 use serde_json::{json, Value};
 use std::io::Cursor;
 use std::thread;
@@ -38,23 +42,12 @@ pub fn execute_command(
         "home" => handle_home(),
         "recents" => handle_recents(),
         "ui_tree" => handle_ui_tree(),
-        "camera" => {
-            return json!({
-                "id": id,
-                "status": "ok",
-                "result": { "unsupported": true }
-            });
-        }
-        "list_cameras" => {
-            return json!({
-                "id": id,
-                "status": "ok",
-                "result": { "cameras": [] }
-            });
-        }
+        "camera" => handle_camera(params),
+        "list_cameras" => handle_list_cameras(),
         "right_click" => handle_right_click(params),
         "middle_click" => handle_middle_click(params),
         "mouse_scroll" => handle_mouse_scroll(params),
+        "play_audio" => return json!({"status": "ok", "unsupported": true}),
         "hold_key" => handle_hold_key(params),
         "release_key" => handle_release_key(params),
         "press_key" => handle_press_key(params),
@@ -157,6 +150,108 @@ fn handle_screenshot(
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
 
+    Ok(json!({ "image": b64 }))
+}
+
+fn handle_list_cameras() -> Result<Value, String> {
+    let cameras = nokhwa::query(ApiBackend::Auto).unwrap_or_else(|_| vec![]);
+    let list: Vec<Value> = cameras
+        .iter()
+        .map(|cam| {
+            let id = match cam.index() {
+                CameraIndex::Index(i) => i.to_string(),
+                CameraIndex::String(s) => s.clone(),
+            };
+            json!({ "id": id, "facing": "external" })
+        })
+        .collect();
+    Ok(json!({ "cameras": list }))
+}
+
+fn handle_camera(params: Option<&Value>) -> Result<Value, String> {
+    let camera_id = params
+        .and_then(|p| p.get("camera"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("0");
+    let quality = params
+        .and_then(|p| p.get("quality"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(80) as u8;
+    let max_w = params
+        .and_then(|p| p.get("max_width"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    let max_h = params
+        .and_then(|p| p.get("max_height"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+
+    let idx: usize = camera_id
+        .parse()
+        .map_err(|_| format!("invalid camera id: {camera_id}"))?;
+    let index = CameraIndex::Index(idx as u32);
+
+    let requested =
+        RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
+    let mut camera = Camera::new(index, requested)
+        .map_err(|e| format!("failed to open camera {camera_id}: {e}"))?;
+
+    camera
+        .open_stream()
+        .map_err(|e| format!("failed to start camera stream: {e}"))?;
+    let frame = camera
+        .frame()
+        .map_err(|e| format!("failed to capture frame: {e}"))?;
+    let _ = camera.stop_stream();
+
+    let rgb_img = frame
+        .decode_image::<RgbFormat>()
+        .map_err(|e| format!("failed to decode frame: {e}"))?;
+
+    let img = image::DynamicImage::ImageRgb8(rgb_img);
+
+    // Apply max dimensions (same pattern as handle_screenshot)
+    let width = img.width();
+    let height = img.height();
+    let img = if let (Some(mw), Some(mh)) = (max_w, max_h) {
+        if width > mw || height > mh {
+            img.resize(mw, mh, image::imageops::FilterType::Triangle)
+        } else {
+            img
+        }
+    } else if let Some(mw) = max_w {
+        if width > mw {
+            let ratio = mw as f64 / width as f64;
+            let new_h = (height as f64 * ratio) as u32;
+            img.resize_exact(mw, new_h, image::imageops::FilterType::Triangle)
+        } else {
+            img
+        }
+    } else if let Some(mh) = max_h {
+        if height > mh {
+            let ratio = mh as f64 / height as f64;
+            let new_w = (width as f64 * ratio) as u32;
+            img.resize_exact(new_w, mh, image::imageops::FilterType::Triangle)
+        } else {
+            img
+        }
+    } else {
+        img
+    };
+
+    let rgba = img.to_rgba8();
+    let mut buf = Cursor::new(Vec::new());
+    let _ = quality; // image crate's WebP encoder is lossless-only
+    WebPEncoder::new_lossless(&mut buf)
+        .write_image(
+            rgba.as_raw(),
+            rgba.width(),
+            rgba.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|e| format!("WebP encode failed: {e}"))?;
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
     Ok(json!({ "image": b64 }))
 }
 

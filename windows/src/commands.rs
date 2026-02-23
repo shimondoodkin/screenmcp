@@ -5,7 +5,11 @@ use enigo::{
     Enigo, Key, Keyboard, Mouse, Settings,
 };
 use image::codecs::png::PngEncoder;
+use image::codecs::webp::WebPEncoder;
 use image::ImageEncoder;
+use nokhwa::pixel_format::RgbFormat;
+use nokhwa::utils::{ApiBackend, CameraIndex, RequestedFormat, RequestedFormatType};
+use nokhwa::Camera;
 use serde_json::{json, Value};
 use std::io::Cursor;
 use std::thread;
@@ -38,26 +42,15 @@ pub fn execute_command(
         "home" => handle_home(),
         "recents" => handle_recents(),
         "ui_tree" => handle_ui_tree(),
-        "camera" => {
-            return json!({
-                "id": id,
-                "status": "ok",
-                "result": { "unsupported": true }
-            });
-        }
-        "list_cameras" => {
-            return json!({
-                "id": id,
-                "status": "ok",
-                "result": { "cameras": [] }
-            });
-        }
+        "camera" => handle_camera(params),
+        "list_cameras" => handle_list_cameras(),
         "right_click" => handle_right_click(params),
         "middle_click" => handle_middle_click(params),
         "mouse_scroll" => handle_mouse_scroll(params),
         "hold_key" => handle_hold_key(params),
         "release_key" => handle_release_key(params),
         "press_key" => handle_press_key(params),
+        "play_audio" => handle_play_audio(params),
         _ => {
             return json!({
                 "id": id,
@@ -157,6 +150,111 @@ fn handle_screenshot(
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
 
+    Ok(json!({ "image": b64 }))
+}
+
+fn handle_list_cameras() -> Result<Value, String> {
+    let cameras = nokhwa::query(ApiBackend::Auto).unwrap_or_else(|_| vec![]);
+    let list: Vec<Value> = cameras
+        .iter()
+        .map(|cam| {
+            let id = match cam.index() {
+                CameraIndex::Index(i) => i.to_string(),
+                CameraIndex::String(s) => s.clone(),
+            };
+            json!({ "id": id, "facing": "external" })
+        })
+        .collect();
+    Ok(json!({ "cameras": list }))
+}
+
+fn handle_camera(params: Option<&Value>) -> Result<Value, String> {
+    let camera_id = params
+        .and_then(|p| p.get("camera"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("0");
+    let quality = params
+        .and_then(|p| p.get("quality"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(80) as u8;
+    let max_w = params
+        .and_then(|p| p.get("max_width"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    let max_h = params
+        .and_then(|p| p.get("max_height"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+
+    let idx: usize = camera_id
+        .parse()
+        .map_err(|_| format!("invalid camera id: {camera_id}"))?;
+    let index = CameraIndex::Index(idx as u32);
+
+    let requested =
+        RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
+    let mut camera = Camera::new(index, requested)
+        .map_err(|e| format!("failed to open camera {camera_id}: {e}"))?;
+
+    camera
+        .open_stream()
+        .map_err(|e| format!("failed to start camera stream: {e}"))?;
+    let frame = camera
+        .frame()
+        .map_err(|e| format!("failed to capture frame: {e}"))?;
+    let _ = camera.stop_stream();
+
+    let rgb_img = frame
+        .decode_image::<RgbFormat>()
+        .map_err(|e| format!("failed to decode frame: {e}"))?;
+
+    let img = image::DynamicImage::ImageRgb8(rgb_img);
+
+    // Apply max dimensions (same pattern as handle_screenshot)
+    let width = img.width();
+    let height = img.height();
+    let img = if let (Some(mw), Some(mh)) = (max_w, max_h) {
+        if width > mw || height > mh {
+            img.resize(mw, mh, image::imageops::FilterType::Triangle)
+        } else {
+            img
+        }
+    } else if let Some(mw) = max_w {
+        if width > mw {
+            let ratio = mw as f64 / width as f64;
+            let new_h = (height as f64 * ratio) as u32;
+            img.resize_exact(mw, new_h, image::imageops::FilterType::Triangle)
+        } else {
+            img
+        }
+    } else if let Some(mh) = max_h {
+        if height > mh {
+            let ratio = mh as f64 / height as f64;
+            let new_w = (width as f64 * ratio) as u32;
+            img.resize_exact(new_w, mh, image::imageops::FilterType::Triangle)
+        } else {
+            img
+        }
+    } else {
+        img
+    };
+
+    let rgba = img.to_rgba8();
+    let mut buf = Cursor::new(Vec::new());
+    // image crate's WebP encoder is lossless-only; quality param is accepted
+    // but not used (lossy would require libwebp). Lossless WebP is still smaller
+    // than PNG for camera frames and the format matches the Android client.
+    let _ = quality;
+    WebPEncoder::new_lossless(&mut buf)
+        .write_image(
+            rgba.as_raw(),
+            rgba.width(),
+            rgba.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|e| format!("WebP encode failed: {e}"))?;
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
     Ok(json!({ "image": b64 }))
 }
 
@@ -521,6 +619,71 @@ fn handle_press_key(params: Option<&Value>) -> Result<Value, String> {
     let key = parse_key(key_name)?;
     let mut enigo = new_enigo()?;
     enigo.key(key, Click).map_err(|e| format!("press_key failed: {e}"))?;
+    Ok(json!({}))
+}
+
+fn handle_play_audio(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let audio_data_b64 = p
+        .get("audio_data")
+        .and_then(|v| v.as_str())
+        .ok_or("missing audio_data")?;
+    let volume = p
+        .get("volume")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0) as f32;
+
+    // Decode base64 audio data
+    let audio_bytes = base64::engine::general_purpose::STANDARD
+        .decode(audio_data_b64)
+        .map_err(|e| format!("base64 decode failed: {e}"))?;
+
+    if audio_bytes.len() < 4 {
+        return Err("audio data too short to detect format".to_string());
+    }
+
+    // Detect format from magic bytes: WAV starts with "RIFF", MP3 with 0xFF 0xFB or "ID3"
+    let extension = if audio_bytes.starts_with(b"RIFF") {
+        "wav"
+    } else if audio_bytes.starts_with(b"ID3")
+        || (audio_bytes[0] == 0xFF && audio_bytes[1] == 0xFB)
+    {
+        "mp3"
+    } else {
+        return Err("unsupported audio format: expected WAV (RIFF) or MP3 (ID3/0xFFFB)".to_string());
+    };
+
+    // Write to temp file
+    let temp_path = std::env::temp_dir().join(format!("screenmcp_audio.{extension}"));
+    std::fs::write(&temp_path, &audio_bytes)
+        .map_err(|e| format!("failed to write temp audio file: {e}"))?;
+
+    // Play audio using rodio
+    let play_result = (|| -> Result<(), String> {
+        let (_stream, stream_handle) = rodio::OutputStream::try_default()
+            .map_err(|e| format!("failed to open audio output: {e}"))?;
+
+        let file = std::fs::File::open(&temp_path)
+            .map_err(|e| format!("failed to open temp audio file: {e}"))?;
+        let buf_reader = std::io::BufReader::new(file);
+
+        let source = rodio::Decoder::new(buf_reader)
+            .map_err(|e| format!("failed to decode audio: {e}"))?;
+
+        let sink = rodio::Sink::try_new(&stream_handle)
+            .map_err(|e| format!("failed to create audio sink: {e}"))?;
+
+        sink.set_volume(volume.clamp(0.0, 1.0));
+        sink.append(source);
+        sink.sleep_until_end();
+
+        Ok(())
+    })();
+
+    // Clean up temp file regardless of playback outcome
+    let _ = std::fs::remove_file(&temp_path);
+
+    play_result?;
     Ok(json!({}))
 }
 

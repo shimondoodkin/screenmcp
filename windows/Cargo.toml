@@ -27,6 +27,8 @@ getrandom = "0.2"
 eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts"] }
 hostname = "0.4"
 regex = "1"
+nokhwa = { version = "0.10", features = ["input-msmf"] }
+rodio = "0.20"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

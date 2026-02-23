@@ -17,6 +17,7 @@ import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -44,6 +45,8 @@ class ScreenMcpService : AccessibilityService() {
 
     /** Listeners for status changes (ConnectionService registers here for notifications) */
     var onConnectionStatusChange: ((String) -> Unit)? = null
+    /** Log callback for timing/debug messages */
+    var onLog: ((String) -> Unit)? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -88,11 +91,14 @@ class ScreenMcpService : AccessibilityService() {
 
     private fun ensureClient() {
         if (wsClient == null) {
-            wsClient = WebSocketClient { status ->
-                connectionStatus = status
-                Log.i(TAG, "Worker status: $status")
-                onConnectionStatusChange?.invoke(status)
-            }
+            wsClient = WebSocketClient(
+                onStatusChange = { status ->
+                    connectionStatus = status
+                    Log.i(TAG, "Worker status: $status")
+                    onConnectionStatusChange?.invoke(status)
+                },
+                onLog = { msg -> onLog?.invoke(msg) }
+            )
         }
     }
 
@@ -443,5 +449,65 @@ class ScreenMcpService : AccessibilityService() {
             bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, quality, baos)
         }
         return baos.toByteArray()
+    }
+
+    // --- Audio Playback ---
+
+    fun playAudio(audioDataBase64: String, volume: Float, callback: (Boolean, String?) -> Unit) {
+        var tempFile: java.io.File? = null
+        try {
+            val audioBytes = android.util.Base64.decode(audioDataBase64, android.util.Base64.DEFAULT)
+            if (audioBytes.isEmpty()) {
+                callback(false, "empty audio data")
+                return
+            }
+
+            // Detect format from header bytes — only accept WAV and MP3
+            val extension = when {
+                audioBytes.size >= 4 && audioBytes[0] == 'R'.code.toByte() &&
+                    audioBytes[1] == 'I'.code.toByte() && audioBytes[2] == 'F'.code.toByte() &&
+                    audioBytes[3] == 'F'.code.toByte() -> ".wav"
+                audioBytes.size >= 3 && audioBytes[0] == 'I'.code.toByte() &&
+                    audioBytes[1] == 'D'.code.toByte() && audioBytes[2] == '3'.code.toByte() -> ".mp3"
+                audioBytes.size >= 2 && (audioBytes[0].toInt() and 0xFF) == 0xFF &&
+                    (audioBytes[1].toInt() and 0xE0) == 0xE0 -> ".mp3"
+                else -> {
+                    callback(false, "unsupported audio format (only WAV and MP3 accepted)")
+                    return
+                }
+            }
+
+            tempFile = java.io.File(cacheDir, "play_audio_${System.currentTimeMillis()}$extension")
+            tempFile.writeBytes(audioBytes)
+
+            val mediaPlayer = MediaPlayer()
+            val file = tempFile  // capture for cleanup in listeners
+            mediaPlayer.setDataSource(tempFile.absolutePath)
+            mediaPlayer.setVolume(volume, volume)
+
+            mediaPlayer.setOnPreparedListener { mp ->
+                mp.start()
+            }
+
+            mediaPlayer.setOnCompletionListener { mp ->
+                mp.release()
+                file.delete()
+                callback(true, null)
+            }
+
+            mediaPlayer.setOnErrorListener { mp, what, extra ->
+                Log.e(TAG, "MediaPlayer error: what=$what extra=$extra")
+                mp.release()
+                file.delete()
+                callback(false, "playback error: what=$what extra=$extra")
+                true
+            }
+
+            mediaPlayer.prepareAsync()
+        } catch (e: Exception) {
+            Log.e(TAG, "playAudio error: ${e.message}")
+            tempFile?.delete()
+            callback(false, e.message ?: "unknown error")
+        }
     }
 }

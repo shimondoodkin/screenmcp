@@ -332,6 +332,16 @@ impl ScreenMCPClient {
         Ok(result)
     }
 
+    /// Play audio on the device.
+    pub async fn play_audio(&mut self, audio_base64: &str, volume: Option<f64>) -> Result<()> {
+        let mut params = serde_json::json!({ "audio_data": audio_base64 });
+        if let Some(v) = volume {
+            params["volume"] = serde_json::json!(v);
+        }
+        self.send_command("play_audio", Some(params)).await?;
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // Keyboard commands (desktop only)
     // -----------------------------------------------------------------------

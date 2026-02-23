@@ -68,6 +68,7 @@ class SseService : Service() {
     private var eventSource: EventSource? = null
     private var userId: String? = null
     private var apiUrl: String? = null
+    private var firebaseMode = false
     private val handler = Handler(Looper.getMainLooper())
     private var reconnectDelay = INITIAL_RECONNECT_DELAY_MS
     private var shouldReconnect = true
@@ -88,6 +89,8 @@ class SseService : Service() {
         val newApiUrl = intent?.getStringExtra("api_url")
 
         startForeground(NOTIFICATION_ID, buildNotification("Connecting to SSE..."))
+
+        firebaseMode = intent?.getBooleanExtra("firebase_mode", false) ?: false
 
         if (newUserId != null && newApiUrl != null) {
             // Disconnect existing SSE if parameters changed
@@ -116,9 +119,35 @@ class SseService : Service() {
 
     private fun connectSse() {
         val url = apiUrl ?: return
-        val token = userId ?: return
         val deviceId = getDeviceUUID()
 
+        if (firebaseMode) {
+            // Refresh Firebase token before connecting
+            val user = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            if (user == null) {
+                Log.w(TAG, "No Firebase user, cannot refresh token for SSE")
+                updateNotification("SSE: not signed in")
+                return
+            }
+            user.getIdToken(false).addOnSuccessListener { result ->
+                val freshToken = result.token
+                if (freshToken == null) {
+                    Log.w(TAG, "Failed to get Firebase token")
+                    return@addOnSuccessListener
+                }
+                userId = freshToken
+                doConnectSse(url, freshToken, deviceId)
+            }.addOnFailureListener { e ->
+                Log.e(TAG, "Firebase token refresh failed: ${e.message}")
+                scheduleReconnect()
+            }
+        } else {
+            val token = userId ?: return
+            doConnectSse(url, token, deviceId)
+        }
+    }
+
+    private fun doConnectSse(url: String, token: String, deviceId: String) {
         Log.i(TAG, "Discovering worker URL via $url/api/discover")
         updateNotification("Connecting to SSE...")
 
@@ -234,7 +263,7 @@ class SseService : Service() {
             return
         }
 
-        Log.i(TAG, "SSE connect request: wsUrl=$wsUrl")
+        Log.i(TAG, "SSE connect event received: wsUrl=$wsUrl")
 
         val token = userId ?: return
         val api = apiUrl ?: return
@@ -242,9 +271,12 @@ class SseService : Service() {
         // Skip if already connected to the same worker
         val mcpService = ScreenMcpService.instance
         if (mcpService != null && mcpService.isWorkerConnectedTo(wsUrl)) {
-            Log.i(TAG, "Already connected to $wsUrl, ignoring SSE connect")
+            Log.i(TAG, "SKIP: Already connected to $wsUrl (no reconnect needed)")
             return
         }
+
+        val wasConnected = mcpService?.isWorkerConnected() == true
+        Log.i(TAG, "CONNECT: Not connected to $wsUrl (wasConnected=$wasConnected), initiating connection...")
 
         // Start ConnectionService for foreground notification + connection
         handler.post {

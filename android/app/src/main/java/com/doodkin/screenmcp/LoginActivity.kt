@@ -24,6 +24,7 @@ class LoginActivity : AppCompatActivity() {
 
     private lateinit var auth: FirebaseAuth
     private lateinit var tvStatus: TextView
+    private lateinit var cbUseSse: CheckBox
     private lateinit var cbOpenSourceServer: CheckBox
     private lateinit var etOpenSourceUserId: EditText
     private lateinit var etOpenSourceApiUrl: EditText
@@ -58,18 +59,22 @@ class LoginActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_login)
         tvStatus = findViewById(R.id.tvLoginStatus)
+        cbUseSse = findViewById(R.id.cbUseSse)
         cbOpenSourceServer = findViewById(R.id.cbOpenSourceServer)
         etOpenSourceUserId = findViewById(R.id.etOpenSourceUserId)
         etOpenSourceApiUrl = findViewById(R.id.etOpenSourceApiUrl)
         btnOpenSourceContinue = findViewById(R.id.btnOpenSourceContinue)
 
-        // Restore saved open source settings
+        // Restore saved settings
+        cbUseSse.isChecked = prefs.getBoolean("use_sse", false)
         cbOpenSourceServer.isChecked = prefs.getBoolean("opensource_server_enabled", false)
         etOpenSourceUserId.setText(prefs.getString("opensource_user_id", ""))
         etOpenSourceApiUrl.setText(prefs.getString("opensource_api_url", ""))
         updateOpenSourceFieldsEnabled(cbOpenSourceServer.isChecked)
 
         findViewById<Button>(R.id.btnGoogleSignIn).setOnClickListener {
+            // Save SSE preference before sign-in
+            prefs.edit().putBoolean("use_sse", cbUseSse.isChecked).apply()
             signInWithGoogle()
         }
 

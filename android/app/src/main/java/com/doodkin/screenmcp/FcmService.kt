@@ -34,10 +34,14 @@ class FcmService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         Log.i(TAG, "FCM message received: ${message.data}")
 
-        // Skip FCM handling in open source mode — SSE handles events instead
+        // Skip FCM handling when SSE is used instead
         val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
         if (prefs.getBoolean("opensource_server_enabled", false)) {
             Log.i(TAG, "Open source mode enabled, ignoring FCM message")
+            return
+        }
+        if (prefs.getBoolean("use_sse", false)) {
+            Log.i(TAG, "SSE mode enabled, ignoring FCM message")
             return
         }
 

@@ -313,6 +313,23 @@ class ScreenMCPClient:
         resp = await self.send_command("camera", params)
         return resp.result
 
+    async def play_audio(
+        self, audio_base64: str, volume: float | None = None
+    ) -> None:
+        """Play audio on the device.
+
+        Parameters
+        ----------
+        audio_base64:
+            Base64-encoded audio data.
+        volume:
+            Optional playback volume (0.0 to 1.0).
+        """
+        params: dict[str, Any] = {"audio_data": audio_base64}
+        if volume is not None:
+            params["volume"] = volume
+        await self.send_command("play_audio", params)
+
     # ── Keyboard commands (desktop only) ──────────────────────────────
 
     async def hold_key(self, key: str) -> dict[str, Any]:

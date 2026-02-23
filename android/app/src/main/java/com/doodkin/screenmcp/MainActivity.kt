@@ -1,8 +1,11 @@
 package com.doodkin.screenmcp
 
+import android.Manifest
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,6 +17,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
 import okhttp3.MediaType.Companion.toMediaType
@@ -35,14 +40,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutRegister: LinearLayout
     private lateinit var ivScreenshot: ImageView
     private lateinit var screenshotManager: ScreenshotManager
-    private lateinit var etApiUrl: EditText
 
     private val handler = Handler(Looper.getMainLooper())
     private val httpClient = OkHttpClient()
+    private var lastLogVersion = 0L
     private val statusChecker = object : Runnable {
         override fun run() {
             updateServiceStatus()
             updateConnectionStatus()
+            updateWorkerLog()
             handler.postDelayed(this, 1000)
         }
     }
@@ -50,6 +56,26 @@ class MainActivity : AppCompatActivity() {
     private fun isOpenSourceMode(): Boolean {
         val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
         return prefs.getBoolean("opensource_server_enabled", false)
+    }
+
+    private fun isUseSse(): Boolean {
+        val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+        return prefs.getBoolean("use_sse", false)
+    }
+
+    /** Start SSE service using Firebase ID token (for Firebase + SSE mode) */
+    private fun startSseWithFirebaseToken() {
+        val user = FirebaseAuth.getInstance().currentUser ?: return
+        user.getIdToken(false).addOnSuccessListener { result ->
+            val token = result.token ?: return@addOnSuccessListener
+            val apiUrl = getApiUrl()
+            val intent = android.content.Intent(this, SseService::class.java).apply {
+                putExtra("user_id", token)
+                putExtra("api_url", apiUrl)
+                putExtra("firebase_mode", true)
+            }
+            startForegroundService(intent)
+        }
     }
 
     private fun getOpenSourceUserId(): String {
@@ -74,12 +100,11 @@ class MainActivity : AppCompatActivity() {
         tvRegistrationStatus = findViewById(R.id.tvRegistrationStatus)
         layoutRegister = findViewById(R.id.layoutRegister)
         ivScreenshot = findViewById(R.id.ivScreenshot)
-        etApiUrl = findViewById(R.id.etApiUrl)
 
         setupUserInfo()
         setupAccessibilityButton()
+        setupPermissionsButton()
         setupRegistration()
-        setupConnectionControls()
         setupScreenshotButton()
         setupClickButton()
         setupDragButton()
@@ -89,16 +114,18 @@ class MainActivity : AppCompatActivity() {
         setupUiTreeButton()
 
         if (isOpenSourceMode()) {
-            // In open source mode, hide registration section and pre-fill API URL
+            // In open source mode, hide registration section
             tvRegistrationStatus.visibility = View.GONE
             layoutRegister.visibility = View.GONE
-            etApiUrl.setText(getOpenSourceApiUrl())
-            etApiUrl.isEnabled = false
 
             // Start SSE service
             SseService.start(this)
         } else {
-            // Check registration on load (Firebase mode)
+            // Firebase mode
+            if (isUseSse()) {
+                startSseWithFirebaseToken()
+            }
+            // Check registration on load
             checkRegistration()
         }
     }
@@ -106,6 +133,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         handler.post(statusChecker)
+        updatePermissionsButton(findViewById(R.id.btnEnablePermissions))
     }
 
     override fun onPause() {
@@ -117,8 +145,7 @@ class MainActivity : AppCompatActivity() {
         if (isOpenSourceMode()) {
             return getOpenSourceApiUrl()
         }
-        val custom = etApiUrl.text.toString().trim()
-        return custom.ifEmpty { "https://screenmcp.com" }
+        return "https://screenmcp.com"
     }
 
     /** Get or create a persistent cryptographically secure device ID in SharedPreferences */
@@ -147,15 +174,30 @@ class MainActivity : AppCompatActivity() {
     private fun updateConnectionStatus() {
         val svc = ConnectionService.instance
         if (svc != null) {
-            tvConnectionStatus.text = "Worker: ${svc.getStatus()}"
+            val status = svc.getStatus()
+            tvConnectionStatus.text = "Worker: $status"
             if (svc.isConnected()) {
-                tvConnectionStatus.setBackgroundColor(0xFFC8E6C9.toInt())
+                tvConnectionStatus.setBackgroundColor(0xFFC8E6C9.toInt()) // green
+            } else if (status.contains("Disconnected", ignoreCase = true) ||
+                       status.contains("failed", ignoreCase = true) ||
+                       status.contains("Auth failed", ignoreCase = true)) {
+                tvConnectionStatus.setBackgroundColor(0xFFFFCDD2.toInt()) // red
             } else {
-                tvConnectionStatus.setBackgroundColor(0xFFFFF9C4.toInt())
+                tvConnectionStatus.setBackgroundColor(0xFFFFF9C4.toInt()) // yellow = connecting/reconnecting
             }
         } else {
             tvConnectionStatus.text = "Worker: Not started"
             tvConnectionStatus.setBackgroundColor(0xFFFFCDD2.toInt())
+        }
+    }
+
+    /** Pull timing logs from ConnectionService into the log window */
+    private fun updateWorkerLog() {
+        val svc = ConnectionService.instance ?: return
+        if (svc.logVersion != lastLogVersion) {
+            lastLogVersion = svc.logVersion
+            val entries = svc.getLogEntries()
+            tvLog.text = entries.takeLast(30).joinToString("\n")
         }
     }
 
@@ -204,6 +246,83 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    companion object {
+        private const val PERMISSIONS_REQUEST_CODE = 1001
+    }
+
+    private fun setupPermissionsButton() {
+        val btn = findViewById<Button>(R.id.btnEnablePermissions)
+        updatePermissionsButton(btn)
+        btn.setOnClickListener {
+            requestMissingPermissions()
+        }
+    }
+
+    private fun getMissingPermissions(): List<String> {
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.CAMERA)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        return needed
+    }
+
+    private fun updatePermissionsButton(btn: Button) {
+        val missing = getMissingPermissions()
+        if (missing.isEmpty()) {
+            btn.text = "Permissions: All Granted"
+            btn.isEnabled = false
+        } else {
+            val names = missing.map {
+                when (it) {
+                    Manifest.permission.CAMERA -> "Camera"
+                    Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
+                    else -> it
+                }
+            }
+            btn.text = "Enable Permissions (${names.joinToString(", ")})"
+            btn.isEnabled = true
+        }
+    }
+
+    private fun requestMissingPermissions() {
+        val missing = getMissingPermissions()
+        if (missing.isEmpty()) {
+            log("All permissions already granted")
+            return
+        }
+        ActivityCompat.requestPermissions(this, missing.toTypedArray(), PERMISSIONS_REQUEST_CODE)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSIONS_REQUEST_CODE) {
+            for (i in permissions.indices) {
+                val name = when (permissions[i]) {
+                    Manifest.permission.CAMERA -> "Camera"
+                    Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
+                    else -> permissions[i]
+                }
+                if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+                    log("$name permission granted")
+                } else {
+                    log("$name permission denied")
+                }
+            }
+            updatePermissionsButton(findViewById(R.id.btnEnablePermissions))
+        }
+    }
+
     // --- Registration ---
 
     private fun checkRegistration() {
@@ -241,14 +360,13 @@ class MainActivity : AppCompatActivity() {
                     val registered = json.optBoolean("registered", false)
 
                     runOnUiThread {
+                        layoutRegister.visibility = View.VISIBLE
                         if (registered) {
                             tvRegistrationStatus.text = "Phone registered"
                             tvRegistrationStatus.setBackgroundColor(0xFFC8E6C9.toInt())
-                            layoutRegister.visibility = View.GONE
                         } else {
                             tvRegistrationStatus.text = "Phone not registered"
                             tvRegistrationStatus.setBackgroundColor(0xFFFFCDD2.toInt())
-                            layoutRegister.visibility = View.VISIBLE
                         }
                     }
                 } catch (e: Exception) {
@@ -266,6 +384,9 @@ class MainActivity : AppCompatActivity() {
     private fun setupRegistration() {
         findViewById<Button>(R.id.btnRegister).setOnClickListener {
             registerPhone()
+        }
+        findViewById<Button>(R.id.btnUnregister).setOnClickListener {
+            unregisterPhone()
         }
     }
 
@@ -311,7 +432,6 @@ class MainActivity : AppCompatActivity() {
                                 log("Phone registered successfully")
                                 tvRegistrationStatus.text = "Phone registered"
                                 tvRegistrationStatus.setBackgroundColor(0xFFC8E6C9.toInt())
-                                layoutRegister.visibility = View.GONE
 
                                 // Also set the API URL for FcmService
                                 FcmService.apiBaseUrl = apiUrl
@@ -333,66 +453,58 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- Connection ---
-
-    private fun setupConnectionControls() {
-        val btnConnect = findViewById<Button>(R.id.btnConnect)
-        val btnDisconnect = findViewById<Button>(R.id.btnDisconnect)
-
-        btnConnect.setOnClickListener {
-            if (isOpenSourceMode()) {
-                // Open source mode: use opensource_user_id as token
-                val token = getOpenSourceUserId()
-                val apiUrl = getOpenSourceApiUrl()
-
-                if (token.isEmpty() || apiUrl.isEmpty()) {
-                    log("Open source settings not configured")
-                    return@setOnClickListener
-                }
-
-                log("Discovering worker via $apiUrl (open source mode)...")
-                val intent = Intent(this, ConnectionService::class.java).apply {
-                    putExtra(ConnectionService.EXTRA_API_URL, apiUrl)
-                    putExtra(ConnectionService.EXTRA_TOKEN, token)
-                    putExtra(ConnectionService.EXTRA_DEVICE_ID, getDeviceUUID())
-                }
-                startForegroundService(intent)
-            } else {
-                // Firebase mode
-                val user = FirebaseAuth.getInstance().currentUser
-                if (user == null) {
-                    log("Not signed in")
-                    return@setOnClickListener
-                }
-
-                val apiUrl = getApiUrl()
-                log("Getting auth token...")
-
-                user.getIdToken(false).addOnSuccessListener { result ->
-                    val token = result.token
-                    if (token == null) {
-                        log("Failed to get token")
-                        return@addOnSuccessListener
-                    }
-
-                    log("Discovering worker via $apiUrl...")
-                    val intent = Intent(this, ConnectionService::class.java).apply {
-                        putExtra(ConnectionService.EXTRA_API_URL, apiUrl)
-                        putExtra(ConnectionService.EXTRA_TOKEN, token)
-                        putExtra(ConnectionService.EXTRA_DEVICE_ID, getDeviceUUID())
-                    }
-                    startForegroundService(intent)
-                }
-            }
+    private fun unregisterPhone() {
+        if (isOpenSourceMode()) {
+            log("Unregister not needed in open source mode")
+            return
         }
 
-        btnDisconnect.setOnClickListener {
-            ConnectionService.instance?.disconnect()
-            log("Disconnected from worker")
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null) {
+            log("Not signed in")
+            return
+        }
+
+        log("Unregistering phone...")
+        tvRegistrationStatus.text = "Unregistering..."
+        tvRegistrationStatus.setBackgroundColor(0xFFFFF9C4.toInt())
+
+        user.getIdToken(false).addOnSuccessListener { result ->
+            val idToken = result.token ?: return@addOnSuccessListener
+            val apiUrl = getApiUrl()
+
+            Thread {
+                try {
+                    val body = JSONObject().apply {
+                        put("deviceId", getDeviceUUID())
+                    }
+
+                    val request = Request.Builder()
+                        .url("$apiUrl/api/devices/unregister")
+                        .post(body.toString().toRequestBody("application/json".toMediaType()))
+                        .addHeader("Authorization", "Bearer $idToken")
+                        .build()
+
+                    val response = httpClient.newCall(request).execute()
+                    runOnUiThread {
+                        if (response.isSuccessful) {
+                            log("Phone unregistered")
+                            tvRegistrationStatus.text = "Phone not registered"
+                            tvRegistrationStatus.setBackgroundColor(0xFFFFCDD2.toInt())
+                        } else {
+                            log("Unregister failed: ${response.code}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        log("Unregister error: ${e.message}")
+                    }
+                }
+            }.start()
         }
     }
 
-    // --- Rest of the UI (unchanged) ---
+    // --- Rest of the UI ---
 
     private fun setupScreenshotButton() {
         findViewById<Button>(R.id.btnScreenshot).setOnClickListener {
@@ -495,9 +607,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun log(message: String) {
-        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         val current = tvLog.text.toString()
-        val lines = current.split("\n").takeLast(20)
+        val lines = current.split("\n").takeLast(30)
         tvLog.text = (lines + "[$time] $message").joinToString("\n")
     }
 }

@@ -275,6 +275,18 @@ const phoneTools = [
       return (await phone.sendCommand('mouse_scroll', params)).result;
     },
   },
+  {
+    name: 'play_audio',
+    description: 'Play an audio file (WAV or MP3) on the device speaker',
+    inputSchema: {
+      device_id: deviceIdParam,
+      audio_data: z.string().describe('Base64-encoded audio file (WAV or MP3)'),
+      volume: z.number().min(0).max(1).optional().describe('Playback volume'),
+    },
+    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('play_audio', params)).result;
+    },
+  },
 ];
 
 export function createMcpHandler(

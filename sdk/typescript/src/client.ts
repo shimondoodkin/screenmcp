@@ -263,6 +263,17 @@ export class ScreenMCPClient extends EventEmitter {
     return { image: (resp.result as CameraResult | undefined)?.image ?? "" };
   }
 
+  /**
+   * Play audio on the device.
+   * @param audioBase64 - Base64-encoded audio data.
+   * @param volume      - Optional playback volume (0.0 to 1.0).
+   */
+  async playAudio(audioBase64: string, volume?: number): Promise<void> {
+    const params: Record<string, unknown> = { audio_data: audioBase64 };
+    if (volume !== undefined) params.volume = volume;
+    await this.sendCommand("play_audio", params);
+  }
+
   // -----------------------------------------------------------------------
   // Keyboard commands (desktop only)
   // -----------------------------------------------------------------------

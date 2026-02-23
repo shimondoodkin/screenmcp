@@ -16,11 +16,15 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class WebSocketClient(
-    private val onStatusChange: (String) -> Unit
+    private val onStatusChange: (String) -> Unit,
+    private val onLog: ((String) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "WebSocketClient"
@@ -38,6 +42,9 @@ class WebSocketClient(
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
+
+    /** Timestamp when the current connection sequence started */
+    private var connectStartMs = 0L
 
     private val isConnected = AtomicBoolean(false)
     private val isConnecting = AtomicBoolean(false)
@@ -101,13 +108,21 @@ class WebSocketClient(
 
     fun isConnectedTo(url: String): Boolean = isConnected.get() && lastWorkerUrl == url
 
+    /** Timestamped log: writes to logcat AND calls onLog callback for UI display */
+    private fun tlog(msg: String) {
+        val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+        Log.i(TAG, msg)
+        onLog?.invoke("[$ts] $msg")
+    }
+
     private fun discoverAndConnect() {
         val api = apiUrl ?: return
         val tok = token ?: return
         val myGeneration = connectionGeneration
+        connectStartMs = System.currentTimeMillis()
 
         onStatusChange("Discovering worker...")
-        Log.i(TAG, "Calling discovery API: $api/api/discover (gen=$myGeneration)")
+        tlog("Discovering worker via $api...")
 
         Thread {
             try {
@@ -126,7 +141,7 @@ class WebSocketClient(
                 if (myGeneration != connectionGeneration) return@Thread
 
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "Discovery failed: ${response.code} $responseBody")
+                    tlog("Discovery failed: ${response.code} (${System.currentTimeMillis() - connectStartMs}ms)")
                     handler.post { onStatusChange("Discovery failed") }
                     scheduleReconnect()
                     return@Thread
@@ -135,18 +150,18 @@ class WebSocketClient(
                 val json = JSONObject(responseBody)
                 val wsUrl = json.optString("wsUrl", "")
                 if (wsUrl.isEmpty()) {
-                    Log.e(TAG, "Discovery returned no wsUrl")
+                    tlog("Discovery returned no wsUrl")
                     handler.post { onStatusChange("No worker available") }
                     scheduleReconnect()
                     return@Thread
                 }
 
-                Log.i(TAG, "Discovered worker: $wsUrl")
+                tlog("Discovered worker in ${System.currentTimeMillis() - connectStartMs}ms: $wsUrl")
                 lastWorkerUrl = wsUrl
                 handler.post { doConnect(wsUrl) }
             } catch (e: Exception) {
                 if (myGeneration != connectionGeneration) return@Thread
-                Log.e(TAG, "Discovery error: ${e.message}")
+                tlog("Discovery error: ${e.message}")
                 handler.post { onStatusChange("Discovery error") }
                 scheduleReconnect()
             }
@@ -158,21 +173,22 @@ class WebSocketClient(
 
         // Prevent concurrent connection attempts
         if (!isConnecting.compareAndSet(false, true)) {
-            Log.w(TAG, "Already connecting, ignoring duplicate")
+            tlog("Already connecting, ignoring duplicate")
             return
         }
 
         val myGeneration = connectionGeneration
+        val wsConnectStartMs = System.currentTimeMillis()
 
         onStatusChange("Connecting to $wsUrl...")
-        Log.i(TAG, "Connecting to $wsUrl (gen=$myGeneration)")
+        tlog("WS connecting to $wsUrl...")
 
         val request = Request.Builder().url(wsUrl).build()
 
         webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
                 if (myGeneration != connectionGeneration) { ws.close(1000, "stale"); return }
-                Log.i(TAG, "WebSocket opened, sending auth")
+                tlog("WS opened in ${System.currentTimeMillis() - wsConnectStartMs}ms, sending auth")
                 val auth = JSONObject().apply {
                     put("type", "auth")
                     put("user_id", wsToken)
@@ -189,12 +205,12 @@ class WebSocketClient(
             }
 
             override fun onClosing(ws: WebSocket, code: Int, reason: String) {
-                Log.i(TAG, "WebSocket closing: $code $reason")
+                tlog("WS closing: $code $reason")
                 ws.close(code, reason)
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                Log.i(TAG, "WebSocket closed: $code $reason")
+                tlog("WS closed: $code $reason")
                 isConnected.set(false)
                 isConnecting.set(false)
                 if (myGeneration != connectionGeneration) return
@@ -203,11 +219,11 @@ class WebSocketClient(
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "WebSocket failure: ${t.message}")
+                tlog("WS failure: ${t.message}")
                 isConnected.set(false)
                 isConnecting.set(false)
                 if (myGeneration != connectionGeneration) return
-                handler.post { onStatusChange("Connection failed") }
+                handler.post { onStatusChange("Connection failed: ${t.message}") }
                 scheduleReconnect()
             }
         })
@@ -220,7 +236,8 @@ class WebSocketClient(
 
             when (type) {
                 "auth_ok" -> {
-                    Log.i(TAG, "Authenticated successfully")
+                    val totalMs = if (connectStartMs > 0) System.currentTimeMillis() - connectStartMs else 0
+                    tlog("Authenticated (total connect: ${totalMs}ms)")
                     isConnected.set(true)
                     isConnecting.set(false)
                     reconnectAttempt = 0
@@ -228,7 +245,7 @@ class WebSocketClient(
                     resetIdleTimer()
                 }
                 "auth_fail" -> {
-                    Log.e(TAG, "Auth failed: ${json.optString("error")}")
+                    tlog("Auth failed: ${json.optString("error")}")
                     isConnected.set(false)
                     shouldReconnect.set(false)
                     handler.post { onStatusChange("Auth failed") }
@@ -238,7 +255,7 @@ class WebSocketClient(
                     resetIdleTimer()
                 }
                 "error" -> {
-                    Log.e(TAG, "Server error: ${json.optString("error")}")
+                    tlog("Server error: ${json.optString("error")}")
                 }
                 else -> {
                     if (json.has("id") && json.has("cmd")) {
@@ -256,8 +273,9 @@ class WebSocketClient(
         val id = json.getLong("id")
         val cmd = json.getString("cmd")
         val params = json.optJSONObject("params")
+        val cmdStartMs = System.currentTimeMillis()
 
-        Log.i(TAG, "Executing command $id: $cmd")
+        tlog("CMD #$id $cmd received")
 
         val service = ScreenMcpService.instance
         if (service == null) {
@@ -278,6 +296,9 @@ class WebSocketClient(
                 service.takeScreenshot(object : AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
                         try {
+                            val captureMs = System.currentTimeMillis() - cmdStartMs
+                            tlog("CMD #$id captured (${captureMs}ms)")
+
                             val hwBuffer = result.hardwareBuffer
                             val colorSpace = result.colorSpace
                             val bitmap = Bitmap.wrapHardwareBuffer(hwBuffer, colorSpace)
@@ -294,13 +315,17 @@ class WebSocketClient(
                             softBitmap.recycle()
 
                             val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                            val totalMs = System.currentTimeMillis() - cmdStartMs
+                            tlog("CMD #$id done (${totalMs}ms, ${bytes.size / 1024}KB)")
                             sendResponse(ws, id, "ok", JSONObject().put("image", base64))
                         } catch (e: Exception) {
+                            tlog("CMD #$id error: ${e.message} (${System.currentTimeMillis() - cmdStartMs}ms)")
                             sendResponse(ws, id, "error", error = e.message)
                         }
                     }
 
                     override fun onFailure(errorCode: Int) {
+                        tlog("CMD #$id screenshot failed: $errorCode (${System.currentTimeMillis() - cmdStartMs}ms)")
                         sendResponse(ws, id, "error", error = "screenshot failed: $errorCode")
                     }
                 })
@@ -484,6 +509,27 @@ class WebSocketClient(
                 }
             }
 
+            "play_audio" -> {
+                val audioData = params?.optString("audio_data", "") ?: ""
+                if (audioData.isEmpty()) {
+                    sendResponse(ws, id, "error", error = "missing audio_data param")
+                    return
+                }
+                val volume = params?.optDouble("volume", 1.0)?.toFloat() ?: 1.0f
+                val clampedVolume = volume.coerceIn(0.0f, 1.0f)
+
+                service.playAudio(audioData, clampedVolume) { success, errorMsg ->
+                    if (success) {
+                        val totalMs = System.currentTimeMillis() - cmdStartMs
+                        tlog("CMD #$id play_audio done (${totalMs}ms)")
+                        sendResponse(ws, id, "ok")
+                    } else {
+                        tlog("CMD #$id play_audio failed: $errorMsg")
+                        sendResponse(ws, id, "error", error = errorMsg)
+                    }
+                }
+            }
+
             else -> sendResponse(ws, id, "error", error = "unknown command: $cmd")
         }
     }
@@ -521,7 +567,7 @@ class WebSocketClient(
             MAX_RECONNECT_DELAY_MS
         )
         reconnectAttempt++
-        Log.i(TAG, "Reconnecting in ${delay}ms (attempt $reconnectAttempt/$MAX_RECONNECT_ATTEMPTS, gen=$myGeneration)")
+        tlog("Reconnecting in ${delay}ms (attempt $reconnectAttempt/$MAX_RECONNECT_ATTEMPTS)")
         handler.post { onStatusChange("Reconnecting in ${delay / 1000}s (attempt $reconnectAttempt/$MAX_RECONNECT_ATTEMPTS)...") }
 
         val reconnectRunnable = Runnable {
@@ -552,7 +598,7 @@ class WebSocketClient(
     private fun resetIdleTimer() {
         cancelIdleTimer()
         idleRunnable = Runnable {
-            Log.i(TAG, "Idle timeout, disconnecting")
+            tlog("Idle timeout (${IDLE_TIMEOUT_MS / 1000}s), disconnecting")
             disconnect()
         }
         handler.postDelayed(idleRunnable!!, IDLE_TIMEOUT_MS)

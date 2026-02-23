@@ -31,6 +31,13 @@ class ConnectionService : Service() {
 
     private var currentStatus = "Disconnected"
 
+    /** Log buffer for timing/debug messages from WebSocketClient */
+    private val _logEntries = mutableListOf<String>()
+    @Volatile var logVersion = 0L
+        private set
+
+    fun getLogEntries(): List<String> = synchronized(_logEntries) { _logEntries.toList() }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -59,6 +66,15 @@ class ConnectionService : Service() {
             updateNotification(status)
         }
 
+        // Register for timing/debug log messages
+        service.onLog = { msg ->
+            synchronized(_logEntries) {
+                _logEntries.add(msg)
+                if (_logEntries.size > 100) _logEntries.removeAt(0)
+                logVersion++
+            }
+        }
+
         if (token != null) {
             // Skip if already connected to the same worker
             if (wsUrl != null && service.isWorkerConnectedTo(wsUrl)) {
@@ -82,6 +98,7 @@ class ConnectionService : Service() {
 
     override fun onDestroy() {
         ScreenMcpService.instance?.onConnectionStatusChange = null
+        ScreenMcpService.instance?.onLog = null
         instance = null
         super.onDestroy()
     }

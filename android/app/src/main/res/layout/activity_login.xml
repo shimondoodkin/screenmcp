@@ -30,6 +30,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Sign in with Google"
+            android:layout_marginBottom="8dp" />
+
+        <CheckBox
+            android:id="@+id/cbUseSse"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Use SSE instead of push notifications"
+            android:textSize="14sp"
             android:layout_marginBottom="16dp" />
 
         <TextView

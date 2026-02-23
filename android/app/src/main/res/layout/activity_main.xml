@@ -51,16 +51,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Open Accessibility Settings"
-            android:layout_marginBottom="8dp" />
+            android:layout_marginBottom="4dp" />
 
-        <!-- API Server URL -->
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etApiUrl"
+        <Button
+            android:id="@+id/btnEnablePermissions"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="API URL (http://10.0.2.2:3000)"
-            android:inputType="textUri"
-            android:layout_marginBottom="8dp" />
+            android:text="Enable Permissions (Camera, Notifications)"
+            android:layout_marginBottom="8dp"
+            style="?attr/materialButtonOutlinedStyle" />
 
         <!-- Registration Status -->
         <TextView
@@ -78,15 +77,24 @@
             android:id="@+id/layoutRegister"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
+            android:orientation="horizontal"
             android:layout_marginBottom="8dp">
 
             <Button
                 android:id="@+id/btnRegister"
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="Register Phone" />
+                android:layout_weight="1"
+                android:text="Register Phone"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btnUnregister"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Unregister"
+                style="?attr/materialButtonOutlinedStyle" />
         </LinearLayout>
 
         <!-- Worker Connection -->
@@ -99,30 +107,7 @@
             android:textStyle="bold"
             android:padding="12dp"
             android:background="#FFCDD2"
-            android:layout_marginBottom="4dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="16dp">
-
-            <Button
-                android:id="@+id/btnConnect"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Connect"
-                android:layout_marginEnd="4dp" />
-
-            <Button
-                android:id="@+id/btnDisconnect"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Disconnect"
-                style="?attr/materialButtonOutlinedStyle" />
-        </LinearLayout>
+            android:layout_marginBottom="16dp" />
 
         <!-- Screenshot Section -->
         <TextView
