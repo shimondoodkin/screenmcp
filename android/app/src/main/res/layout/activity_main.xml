@@ -347,6 +347,45 @@
                 android:text="Recents" />
         </LinearLayout>
 
+        <!-- Camera Section -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Camera"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="4dp">
+
+            <Button
+                android:id="@+id/btnListCameras"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="List Cameras"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btnTakePhoto"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Take Photo" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/ivCamera"
+            android:layout_width="300dp"
+            android:layout_height="300dp"
+            android:scaleType="fitCenter"
+            android:background="#E0E0E0"
+            android:layout_marginBottom="16dp" />
+
         <!-- UI Tree -->
         <Button
             android:id="@+id/btnGetUiTree"
