@@ -588,6 +588,17 @@ impl ScreenMCPClient {
                     }
                     ServerMessage::Error { error } => {
                         warn!("server error: {}", error);
+                        // Resolve the pending command (if any) with this error
+                        let mut st = state.lock().await;
+                        let temp_id = st.last_temp_id;
+                        if let Some(sender) = st.pending.remove(&temp_id) {
+                            let _ = sender.send(CommandResponse {
+                                id: 0,
+                                status: "error".into(),
+                                result: None,
+                                error: Some(error),
+                            });
+                        }
                     }
                 }
             }

@@ -8,7 +8,7 @@ use tokio::time::{interval, timeout};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
-use crate::{AuthBackend, StateBackend};
+use crate::{AuthBackend, StateBackend, UsageBackend, UsageCheck};
 use crate::connections::Connections;
 use crate::protocol::{
     parse_controller_message, parse_phone_message, PhoneMessage, ServerMessage,
@@ -87,6 +87,7 @@ pub async fn handle_connection(
     state: Arc<dyn StateBackend>,
     connections: Arc<Connections>,
     auth: Arc<dyn AuthBackend>,
+    usage: Arc<dyn UsageBackend>,
 ) {
     // Peek at the first bytes to check if this is a WebSocket upgrade
     let mut buf = [0u8; 2048];
@@ -247,7 +248,7 @@ pub async fn handle_connection(
     match role.as_str() {
         "controller" => {
             let target_device_id = auth_msg.target_device_id.map(|id| id.replace('-', "")).unwrap_or_else(|| device_id.clone());
-            handle_controller_connection(ws_tx, ws_rx, addr, &device_id, &target_device_id, state, connections)
+            handle_controller_connection(ws_tx, ws_rx, addr, &device_id, &target_device_id, &token, &firebase_uid, state, connections, usage)
                 .await;
         }
         _ => {
@@ -412,8 +413,11 @@ async fn handle_controller_connection(
     addr: SocketAddr,
     device_id: &str,
     target_device_id: &str,
+    api_key: &str,
+    firebase_uid: &str,
     state: Arc<dyn StateBackend>,
     connections: Arc<Connections>,
+    usage: Arc<dyn UsageBackend>,
 ) {
     // Check if phone is connected
     let phone_connected = connections.is_phone_connected(target_device_id).await;
@@ -447,6 +451,20 @@ async fn handle_controller_connection(
                         // Try to parse as controller command
                         match parse_controller_message(&text) {
                             Ok(ctrl_cmd) => {
+                                // Check usage limit before enqueuing
+                                match usage.check_and_record(api_key, firebase_uid, &ctrl_cmd.cmd, Some(&target_device_id_owned)).await {
+                                    UsageCheck::Allowed => {}
+                                    UsageCheck::LimitReached { current, limit } => {
+                                        let err = ServerMessage::error(format!(
+                                            "Daily usage limit reached ({}/{}). Please upgrade your plan.",
+                                            current, limit
+                                        ));
+                                        let json = serde_json::to_string(&err).unwrap();
+                                        let _ = ws_tx.send(Message::Text(json.into())).await;
+                                        continue;
+                                    }
+                                }
+
                                 // Enqueue command in state backend
                                 match state.enqueue_command(&target_device_id_owned, ctrl_cmd.cmd, ctrl_cmd.params).await {
                                     Ok(command) => {
@@ -531,6 +549,9 @@ async fn handle_controller_connection(
             }
         }
     }
+
+    // Flush any buffered usage data for this controller's API key
+    usage.flush_key(api_key).await;
 
     // Cleanup — note: we can't easily get the pointer to unregister a specific controller,
     // but the channel will be dropped which effectively removes it

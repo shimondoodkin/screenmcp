@@ -10,6 +10,50 @@ use crate::protocol::Command;
 
 pub type BackendError = Box<dyn std::error::Error + Send + Sync>;
 
+// ---------------------------------------------------------------------------
+// Usage backend — extensible trait for command-level usage tracking
+// ---------------------------------------------------------------------------
+
+/// Result of a usage check.
+#[derive(Debug, Clone)]
+pub enum UsageCheck {
+    Allowed,
+    LimitReached { current: i64, limit: i64 },
+}
+
+/// Pluggable usage tracking.  The open-source worker ships with `NoopUsage`;
+/// the cloud worker overrides with real limit checking + logging.
+#[async_trait]
+pub trait UsageBackend: Send + Sync + 'static {
+    /// Check whether the command is allowed and, if so, record it.
+    async fn check_and_record(
+        &self,
+        api_key: &str,
+        firebase_uid: &str,
+        command: &str,
+        device_id: Option<&str>,
+    ) -> UsageCheck;
+
+    /// Flush any buffered usage data for the given API key (e.g. on disconnect).
+    async fn flush_key(&self, _api_key: &str) {}
+}
+
+/// No-op usage backend — always allows, never records.
+pub struct NoopUsage;
+
+#[async_trait]
+impl UsageBackend for NoopUsage {
+    async fn check_and_record(
+        &self,
+        _api_key: &str,
+        _firebase_uid: &str,
+        _command: &str,
+        _device_id: Option<&str>,
+    ) -> UsageCheck {
+        UsageCheck::Allowed
+    }
+}
+
 #[async_trait]
 pub trait AuthBackend: Send + Sync + 'static {
     /// Verify a token/API key, returning a user ID on success.
