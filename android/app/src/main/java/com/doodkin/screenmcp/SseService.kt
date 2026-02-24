@@ -93,10 +93,8 @@ class SseService : Service() {
         firebaseMode = intent?.getBooleanExtra("firebase_mode", false) ?: false
 
         if (newUserId != null && newApiUrl != null) {
-            // Disconnect existing SSE if parameters changed
-            if (newUserId != userId || newApiUrl != apiUrl) {
-                disconnectSse()
-            }
+            // Always disconnect existing SSE before reconnecting
+            disconnectSse()
             userId = newUserId
             apiUrl = newApiUrl
             shouldReconnect = true

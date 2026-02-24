@@ -549,7 +549,7 @@ async fn handle_sse(
     use tokio::io::AsyncWriteExt;
 
     let device_id = match req.query.get("device_id") {
-        Some(id) if !id.is_empty() => id.clone(),
+        Some(id) if !id.is_empty() => id.replace('-', ""),
         _ => {
             let body = r#"{"error":"missing device_id query parameter"}"#;
             let resp = format!(
@@ -705,7 +705,7 @@ async fn handle_notify(
     };
 
     let device_id = match parsed.get("device_id").and_then(|v| v.as_str()) {
-        Some(id) if !id.is_empty() => id.to_string(),
+        Some(id) if !id.is_empty() => id.replace('-', ""),
         _ => {
             let resp_body = r#"{"error":"missing device_id"}"#;
             let resp = format!(

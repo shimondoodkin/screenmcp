@@ -20,6 +20,11 @@ function emitEvent(type: string, data: Record<string, unknown>) {
   eventBus.emit('event', { type, ...data, timestamp: Date.now() });
 }
 
+/** Strip UUID dashes so device IDs are always compared as raw hex. */
+function normalizeDeviceId(id: string): string {
+  return id.replace(/-/g, '');
+}
+
 /** Verify a token against config. Accepts user_id (phones) or API keys (controllers/MCP). */
 function verifyToken(token: string): string | null {
   if (token === config.user.id) {
@@ -105,11 +110,12 @@ const server = createServer(async (req, res) => {
         return;
       }
       const body = JSON.parse(await readBody(req) || '{}');
-      const targetDeviceId = body.device_id || null;
-      if (!targetDeviceId) {
+      const rawDeviceId = body.device_id || null;
+      if (!rawDeviceId) {
         json(res, { error: 'device_id is required' }, 400);
         return;
       }
+      const targetDeviceId = normalizeDeviceId(rawDeviceId);
       emitEvent('connect', { wsUrl: config.server.worker_url, target_device_id: targetDeviceId });
 
       // Also notify the worker's SSE stream so devices connected there get the event
@@ -144,7 +150,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       const body = JSON.parse(await readBody(req));
-      const deviceId = body.deviceId || body.device_id;
+      const deviceId = normalizeDeviceId(body.deviceId || body.device_id || '');
       if (!deviceId) {
         json(res, { error: 'deviceId is required' }, 400);
         return;
@@ -185,7 +191,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       const body = JSON.parse(await readBody(req));
-      const deviceId = body.deviceId || body.device_id;
+      const deviceId = normalizeDeviceId(body.deviceId || body.device_id || '');
       if (!deviceId) {
         json(res, { error: 'deviceId is required' }, 400);
         return;
@@ -207,7 +213,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       const body = JSON.parse(await readBody(req));
-      const deviceId = body.deviceId || body.device_id;
+      const deviceId = normalizeDeviceId(body.deviceId || body.device_id || '');
       const idx = config.devices.allowed.findIndex(d => d.id === deviceId);
       if (idx >= 0) {
         config.devices.allowed.splice(idx, 1);
@@ -227,7 +233,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       const body = JSON.parse(await readBody(req));
-      const deviceId = body.deviceId || body.device_id;
+      const deviceId = normalizeDeviceId(body.deviceId || body.device_id || '');
       const idx = config.devices.allowed.findIndex(d => d.id === deviceId);
       if (idx < 0) {
         json(res, { error: 'Device not found' }, 404);

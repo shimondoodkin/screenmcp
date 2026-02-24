@@ -38,8 +38,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvConnectionStatus: TextView
     private lateinit var tvRegistrationStatus: TextView
     private lateinit var layoutRegister: LinearLayout
+    private lateinit var btnRegister: Button
+    private lateinit var btnUnregister: Button
     private lateinit var ivScreenshot: ImageView
     private lateinit var screenshotManager: ScreenshotManager
+    private var isRegistered = false
 
     private val handler = Handler(Looper.getMainLooper())
     private val httpClient = OkHttpClient()
@@ -111,6 +114,7 @@ class MainActivity : AppCompatActivity() {
         setupTypeButton()
         setupClipboardButtons()
         setupGlobalActionButtons()
+        setupCameraButtons()
         setupUiTreeButton()
 
         if (isOpenSourceMode()) {
@@ -361,6 +365,7 @@ class MainActivity : AppCompatActivity() {
 
                     runOnUiThread {
                         layoutRegister.visibility = View.VISIBLE
+                        isRegistered = registered
                         if (registered) {
                             tvRegistrationStatus.text = "Phone registered"
                             tvRegistrationStatus.setBackgroundColor(0xFFC8E6C9.toInt())
@@ -368,6 +373,7 @@ class MainActivity : AppCompatActivity() {
                             tvRegistrationStatus.text = "Phone not registered"
                             tvRegistrationStatus.setBackgroundColor(0xFFFFCDD2.toInt())
                         }
+                        updateRegistrationButtons()
                     }
                 } catch (e: Exception) {
                     runOnUiThread {
@@ -382,12 +388,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRegistration() {
-        findViewById<Button>(R.id.btnRegister).setOnClickListener {
-            registerPhone()
-        }
-        findViewById<Button>(R.id.btnUnregister).setOnClickListener {
-            unregisterPhone()
-        }
+        btnRegister = findViewById(R.id.btnRegister)
+        btnUnregister = findViewById(R.id.btnUnregister)
+        btnRegister.setOnClickListener { registerPhone() }
+        btnUnregister.setOnClickListener { unregisterPhone() }
+        updateRegistrationButtons()
+    }
+
+    private fun updateRegistrationButtons() {
+        btnRegister.isEnabled = !isRegistered
+        btnUnregister.isEnabled = isRegistered
     }
 
     private fun registerPhone() {
@@ -430,11 +440,10 @@ class MainActivity : AppCompatActivity() {
                         runOnUiThread {
                             if (response.isSuccessful) {
                                 log("Phone registered successfully")
-                                tvRegistrationStatus.text = "Phone registered"
-                                tvRegistrationStatus.setBackgroundColor(0xFFC8E6C9.toInt())
-
                                 // Also set the API URL for FcmService
                                 FcmService.apiBaseUrl = apiUrl
+                                // Verify registration status from server
+                                checkRegistration()
                             } else {
                                 log("Registration failed: ${response.code}")
                                 tvRegistrationStatus.text = "Registration failed"
@@ -480,7 +489,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     val request = Request.Builder()
-                        .url("$apiUrl/api/devices/unregister")
+                        .url("$apiUrl/api/devices/delete")
                         .post(body.toString().toRequestBody("application/json".toMediaType()))
                         .addHeader("Authorization", "Bearer $idToken")
                         .build()
@@ -489,11 +498,11 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread {
                         if (response.isSuccessful) {
                             log("Phone unregistered")
-                            tvRegistrationStatus.text = "Phone not registered"
-                            tvRegistrationStatus.setBackgroundColor(0xFFFFCDD2.toInt())
                         } else {
-                            log("Unregister failed: ${response.code}")
+                            log("Unregister response: ${response.code}")
                         }
+                        // Always re-check actual registration status from server
+                        checkRegistration()
                     }
                 } catch (e: Exception) {
                     runOnUiThread {
@@ -592,6 +601,46 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnBack).setOnClickListener { requireService()?.pressBack(); log("Back") }
         findViewById<Button>(R.id.btnHome).setOnClickListener { requireService()?.pressHome(); log("Home") }
         findViewById<Button>(R.id.btnRecents).setOnClickListener { requireService()?.pressRecents(); log("Recents") }
+    }
+
+    private fun setupCameraButtons() {
+        val ivCamera = findViewById<ImageView>(R.id.ivCamera)
+
+        findViewById<Button>(R.id.btnListCameras).setOnClickListener {
+            val service = requireService() ?: return@setOnClickListener
+            val cameraManager = service.getSystemService(android.content.Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+            try {
+                val ids = cameraManager.cameraIdList
+                val info = ids.map { id ->
+                    val chars = cameraManager.getCameraCharacteristics(id)
+                    val facing = when (chars.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)) {
+                        android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK -> "back"
+                        android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT -> "front"
+                        android.hardware.camera2.CameraCharacteristics.LENS_FACING_EXTERNAL -> "external"
+                        else -> "unknown"
+                    }
+                    "$id ($facing)"
+                }
+                log("Cameras: ${info.joinToString(", ")}")
+            } catch (e: Exception) {
+                log("List cameras failed: ${e.message}")
+            }
+        }
+
+        findViewById<Button>(R.id.btnTakePhoto).setOnClickListener {
+            val service = requireService() ?: return@setOnClickListener
+            log("Capturing camera 0...")
+            service.captureCamera("0") { bitmap ->
+                runOnUiThread {
+                    if (bitmap != null) {
+                        ivCamera.setImageBitmap(bitmap)
+                        log("Camera capture OK (${bitmap.width}x${bitmap.height})")
+                    } else {
+                        log("Camera capture failed")
+                    }
+                }
+            }
+        }
     }
 
     private fun setupUiTreeButton() {

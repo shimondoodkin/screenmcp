@@ -104,26 +104,10 @@ fn update_menu_labels(items: &MenuItems, config: &Config, is_registered: bool) {
     items.test_connection.set_enabled(is_registered);
 }
 
-fn hex_to_uuid(hex: &str) -> String {
-    if hex.len() == 32 && !hex.contains('-') {
-        format!(
-            "{}-{}-{}-{}-{}",
-            &hex[0..8],
-            &hex[8..12],
-            &hex[12..16],
-            &hex[16..20],
-            &hex[20..32]
-        )
-    } else {
-        hex.to_string()
-    }
-}
-
 async fn do_register_device(api_url: &str, token: &str, device_id: &str) -> Result<(), String> {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_else(|_| "Linux Desktop".to_string());
-    let uuid_id = hex_to_uuid(device_id);
 
     let client = reqwest::Client::new();
     let resp = client
@@ -131,7 +115,7 @@ async fn do_register_device(api_url: &str, token: &str, device_id: &str) -> Resu
         .header("Authorization", format!("Bearer {token}"))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
-            "deviceId": uuid_id,
+            "deviceId": device_id,
             "deviceName": hostname,
             "deviceModel": "Linux Desktop",
             "role": "phone"
@@ -150,13 +134,12 @@ async fn do_register_device(api_url: &str, token: &str, device_id: &str) -> Resu
 }
 
 async fn do_unregister_device(api_url: &str, token: &str, device_id: &str) -> Result<(), String> {
-    let uuid_id = hex_to_uuid(device_id);
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{api_url}/api/devices/delete"))
         .header("Authorization", format!("Bearer {token}"))
         .header("Content-Type", "application/json")
-        .json(&serde_json::json!({"deviceId": uuid_id}))
+        .json(&serde_json::json!({"deviceId": device_id}))
         .send()
         .await
         .map_err(|e| format!("unregister request failed: {e}"))?;
