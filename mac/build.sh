@@ -22,7 +22,7 @@ docker run --rm \
     --volume "${PROJECT_ROOT}":/root/src \
     --workdir /root/src/mac \
     "$DOCKER_IMAGE" \
-    sh -c "CC=o64-clang CXX=o64-clang++ cargo build --release --target x86_64-apple-darwin 2>&1"
+    sh -c "rustup install 1.88.0 && rustup target add x86_64-apple-darwin --toolchain 1.88.0 && CC=o64-clang CXX=o64-clang++ cargo +1.88.0 build --release --target x86_64-apple-darwin 2>&1"
 
 # Fix ownership (Docker runs as root)
 sudo chown -R "$(id -u):$(id -g)" target/ 2>/dev/null || true

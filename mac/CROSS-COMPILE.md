@@ -59,12 +59,17 @@ ScreenMCP.app/Contents/
 
 ### Compile the binary
 
+> **Note:** The Docker image ships Rust 1.87, but eframe 0.33 requires Rust 1.88+.
+> The commands below install Rust 1.88 inside the container before building.
+> Also note: Rust 1.93+ has a type inference regression that breaks winit 0.30.12,
+> so use 1.88 specifically (not `stable`).
+
 ```bash
 docker run --rm \
   --volume /home/user/screenmcp:/root/src \
   --workdir /root/src/mac \
   joseluisq/rust-linux-darwin-builder:2.0.0-beta.1 \
-  sh -c "CC=o64-clang CXX=o64-clang++ cargo build --release --target x86_64-apple-darwin"
+  sh -c "rustup install 1.88.0 && rustup target add x86_64-apple-darwin --toolchain 1.88.0 && CC=o64-clang CXX=o64-clang++ cargo +1.88.0 build --release --target x86_64-apple-darwin"
 ```
 
 Output: `target/x86_64-apple-darwin/release/screenmcp-mac`
@@ -81,7 +86,7 @@ docker run --rm \
   --volume /home/user/screenmcp:/root/src \
   --workdir /root/src/mac \
   joseluisq/rust-linux-darwin-builder:2.0.0-beta.1 \
-  sh -c "CC=o64-clang CXX=o64-clang++ cargo build --release --target aarch64-apple-darwin"
+  sh -c "rustup install 1.88.0 && rustup target add aarch64-apple-darwin --toolchain 1.88.0 && CC=o64-clang CXX=o64-clang++ cargo +1.88.0 build --release --target aarch64-apple-darwin"
 ```
 
 ### Environment variables
