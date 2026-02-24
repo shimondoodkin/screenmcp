@@ -202,8 +202,44 @@ jobs:
           name: screenmcp-android
           path: ${{ steps.apk.outputs.path }}
 
+  build-windows-installer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis mingw-w64
+
+      - name: Install Rust toolchain (Windows GNU target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Build Windows installer (.exe)
+        working-directory: windows
+        run: ./build-installer.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Determine installer name
+        id: installer
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          file="screenmcp-setup-${version}-x86_64.exe"
+          cp "windows/target/installer/${file}" "${file}"
+          echo "path=${file}" >> "$GITHUB_OUTPUT"
+          echo "name=${file}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenmcp-windows-installer
+          path: ${{ steps.installer.outputs.path }}
+
   release:
-    needs: [build-desktop, build-android]
+    needs: [build-desktop, build-android, build-windows-installer]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -216,7 +252,7 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.apk' -o -name '*.dmg' \) -exec mv {} release/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.apk' -o -name '*.dmg' -o -name 'screenmcp-setup-*-x86_64.exe' \) -exec mv {} release/ \;
           ls -lh release/
 
       - name: Generate checksums
@@ -241,6 +277,7 @@ jobs:
             | **macOS (Apple Silicon)** | `screenmcp-mac-aarch64-apple-darwin-*.dmg` | M1/M2/M3/M4 Macs |
             | **macOS (Intel)** | `screenmcp-mac-x86_64-apple-darwin-*.dmg` | Older Intel Macs |
             | **Windows** | `screenmcp-windows-*.zip` | x86_64 |
+            | **Windows Installer** | `screenmcp-setup-*-x86_64.exe` | NSIS setup wizard |
             | **Linux** | `screenmcp-linux-*.tar.gz` | x86_64 |
             | **Android** | `screenmcp-android-*.apk` | ARM/x86 |
 

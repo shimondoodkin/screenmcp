@@ -36,6 +36,24 @@ if ! "$RUSTUP" target list --installed | grep -q "x86_64-pc-windows-gnu"; then
   "$RUSTUP" target add x86_64-pc-windows-gnu
 fi
 
+VENDOR_DIR="$SCRIPT_DIR/vendor"
+CARGO_HOME_TMP=""
+if [ -d "$VENDOR_DIR" ]; then
+  echo "    Using vendored dependencies from $VENDOR_DIR"
+  CARGO_HOME_TMP="$(mktemp -d)"
+  mkdir -p "$CARGO_HOME_TMP"
+  trap 'rm -rf "$CARGO_HOME_TMP"' EXIT
+  cat >"$CARGO_HOME_TMP/config.toml" <<EOF
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "$VENDOR_DIR"
+EOF
+  export CARGO_HOME="$CARGO_HOME_TMP"
+  export CARGO_NET_OFFLINE=true
+fi
+
 CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
   cargo build --release --target x86_64-pc-windows-gnu
 
