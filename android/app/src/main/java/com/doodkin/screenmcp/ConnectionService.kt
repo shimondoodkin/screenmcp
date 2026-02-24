@@ -55,6 +55,7 @@ class ConnectionService : Service() {
         val service = ScreenMcpService.instance
         if (service == null) {
             Log.w(TAG, "ScreenMcpService not available, accessibility not enabled?")
+            AppLog.add("Conn", "AccessibilityService not available!")
             updateNotification("Waiting for accessibility service...")
             return START_STICKY
         }
@@ -63,11 +64,13 @@ class ConnectionService : Service() {
         service.onConnectionStatusChange = { status ->
             currentStatus = status
             Log.i(TAG, "Status: $status")
+            AppLog.add("WS", status)
             updateNotification(status)
         }
 
         // Register for timing/debug log messages
         service.onLog = { msg ->
+            AppLog.add("WS", msg)
             synchronized(_logEntries) {
                 _logEntries.add(msg)
                 if (_logEntries.size > 100) _logEntries.removeAt(0)
@@ -79,6 +82,7 @@ class ConnectionService : Service() {
             // Skip if already connected to the same worker
             if (wsUrl != null && service.isWorkerConnectedTo(wsUrl)) {
                 Log.i(TAG, "Already connected to $wsUrl, skipping")
+                AppLog.add("Conn", "Already connected to $wsUrl, skipping")
                 return START_STICKY
             }
 
@@ -86,9 +90,11 @@ class ConnectionService : Service() {
 
             if (wsUrl != null) {
                 Log.i(TAG, "Direct connect to $wsUrl (fallback API: $apiUrl)")
+                AppLog.add("Conn", "Connecting → $wsUrl")
                 service.connectDirect(wsUrl, token, fallbackApiUrl = apiUrl, deviceId = deviceId)
             } else if (apiUrl != null) {
                 Log.i(TAG, "Discover via $apiUrl")
+                AppLog.add("Conn", "Discovering via $apiUrl")
                 service.connectViaApi(apiUrl, token, deviceId = deviceId)
             }
         }

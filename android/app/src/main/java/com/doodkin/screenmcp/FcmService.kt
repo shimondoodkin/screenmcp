@@ -33,15 +33,18 @@ class FcmService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         Log.i(TAG, "FCM message received: ${message.data}")
+        AppLog.add("FCM", "Received: ${message.data}")
 
         // Skip FCM handling when SSE is used instead
         val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
         if (prefs.getBoolean("opensource_server_enabled", false)) {
             Log.i(TAG, "Open source mode enabled, ignoring FCM message")
+            AppLog.add("FCM", "Ignored (open source mode)")
             return
         }
         if (prefs.getBoolean("use_sse", false)) {
             Log.i(TAG, "SSE mode enabled, ignoring FCM message")
+            AppLog.add("FCM", "Ignored (SSE mode)")
             return
         }
 
@@ -53,15 +56,18 @@ class FcmService : FirebaseMessagingService() {
             // If FCM specifies a target device, ignore if it's not us
             if (targetDeviceId != null && targetDeviceId != getDeviceUUID()) {
                 Log.i(TAG, "FCM connect not for this device (target=$targetDeviceId), ignoring")
+                AppLog.add("FCM", "Ignored (target=$targetDeviceId, not this device)")
                 return
             }
 
             Log.i(TAG, "FCM connect request: $wsUrl")
+            AppLog.add("FCM", "Connect request → $wsUrl")
 
             // Get Firebase token for auth
             val user = FirebaseAuth.getInstance().currentUser
             if (user == null) {
                 Log.w(TAG, "No signed-in user, ignoring FCM connect")
+                AppLog.add("FCM", "No signed-in user, ignoring")
                 return
             }
 
@@ -72,9 +78,11 @@ class FcmService : FirebaseMessagingService() {
                 val mcpService = ScreenMcpService.instance
                 if (mcpService != null && mcpService.isWorkerConnectedTo(wsUrl)) {
                     Log.i(TAG, "Already connected to $wsUrl, ignoring FCM")
+                    AppLog.add("FCM", "Already connected to $wsUrl, skipping")
                     return@addOnSuccessListener
                 }
 
+                AppLog.add("FCM", "Starting ConnectionService → $wsUrl")
                 // Start ConnectionService for foreground notification + connection
                 val intent = Intent(this, ConnectionService::class.java).apply {
                     putExtra(ConnectionService.EXTRA_WS_URL, wsUrl)

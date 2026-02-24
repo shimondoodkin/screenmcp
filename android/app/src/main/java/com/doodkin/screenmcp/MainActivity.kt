@@ -26,9 +26,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.security.SecureRandom
 
 class MainActivity : AppCompatActivity() {
@@ -195,12 +192,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Pull timing logs from ConnectionService into the log window */
+    /** Pull logs from AppLog into the log window */
     private fun updateWorkerLog() {
-        val svc = ConnectionService.instance ?: return
-        if (svc.logVersion != lastLogVersion) {
-            lastLogVersion = svc.logVersion
-            val entries = svc.getLogEntries()
+        if (AppLog.version != lastLogVersion) {
+            lastLogVersion = AppLog.version
+            val entries = AppLog.getEntries()
             tvLog.text = entries.takeLast(30).joinToString("\n")
         }
     }
@@ -361,7 +357,20 @@ class MainActivity : AppCompatActivity() {
                     val response = httpClient.newCall(request).execute()
                     val body = response.body?.string() ?: "{}"
                     val json = JSONObject(body)
-                    val registered = json.optBoolean("registered", false)
+
+                    // Check if THIS device is in the devices list, not just any device
+                    val myDeviceId = getDeviceUUID()
+                    val devices = json.optJSONArray("devices")
+                    var registered = false
+                    if (devices != null) {
+                        for (i in 0 until devices.length()) {
+                            val dev = devices.optJSONObject(i)
+                            if (dev != null && dev.optString("id") == myDeviceId) {
+                                registered = true
+                                break
+                            }
+                        }
+                    }
 
                     runOnUiThread {
                         layoutRegister.visibility = View.VISIBLE
@@ -656,9 +665,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun log(message: String) {
-        val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-        val current = tvLog.text.toString()
-        val lines = current.split("\n").takeLast(30)
-        tvLog.text = (lines + "[$time] $message").joinToString("\n")
+        AppLog.add("UI", message)
     }
 }

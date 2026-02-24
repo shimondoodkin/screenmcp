@@ -202,23 +202,27 @@ class SseService : Service() {
         eventSource = factory.newEventSource(request, object : EventSourceListener() {
             override fun onOpen(eventSource: EventSource, response: Response) {
                 Log.i(TAG, "SSE connected")
+                AppLog.add("SSE", "Connected to $sseUrl")
                 reconnectDelay = INITIAL_RECONNECT_DELAY_MS
                 handler.post { updateNotification("SSE connected") }
             }
 
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
                 Log.i(TAG, "SSE event: type=$type data=$data")
+                AppLog.add("SSE", "Event: type=$type")
                 handleSseEvent(data)
             }
 
             override fun onClosed(eventSource: EventSource) {
                 Log.i(TAG, "SSE closed")
+                AppLog.add("SSE", "Closed")
                 handler.post { updateNotification("SSE disconnected") }
                 scheduleReconnect()
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 Log.e(TAG, "SSE failure: ${t?.message}, response=${response?.code}")
+                AppLog.add("SSE", "Failed: ${t?.message}, HTTP ${response?.code}")
                 handler.post { updateNotification("SSE connection failed") }
                 scheduleReconnect()
             }
@@ -250,14 +254,17 @@ class SseService : Service() {
 
         if (wsUrl.isEmpty()) {
             Log.w(TAG, "SSE connect event missing wsUrl")
+            AppLog.add("SSE", "Connect event missing wsUrl")
             return
         }
 
         val myDeviceId = getDeviceUUID()
+        AppLog.add("SSE", "Connect: target=$targetDeviceId, mine=$myDeviceId, wsUrl=$wsUrl")
 
         // If target_device_id is specified and doesn't match this device, ignore
         if (targetDeviceId.isNotEmpty() && targetDeviceId != myDeviceId) {
             Log.i(TAG, "SSE connect not for this device (target=$targetDeviceId, mine=$myDeviceId), ignoring")
+            AppLog.add("SSE", "Ignored (not for this device)")
             return
         }
 
@@ -270,11 +277,13 @@ class SseService : Service() {
         val mcpService = ScreenMcpService.instance
         if (mcpService != null && mcpService.isWorkerConnectedTo(wsUrl)) {
             Log.i(TAG, "SKIP: Already connected to $wsUrl (no reconnect needed)")
+            AppLog.add("SSE", "Already connected to $wsUrl, skipping")
             return
         }
 
         val wasConnected = mcpService?.isWorkerConnected() == true
         Log.i(TAG, "CONNECT: Not connected to $wsUrl (wasConnected=$wasConnected), initiating connection...")
+        AppLog.add("SSE", "Starting ConnectionService → $wsUrl")
 
         // Start ConnectionService for foreground notification + connection
         handler.post {
