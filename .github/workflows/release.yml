@@ -86,6 +86,20 @@ jobs:
           echo "name=${name}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      - name: Sign Windows binary
+        if: matrix.client == 'windows' && env.CODE_SIGNING_PFX != ''
+        env:
+          CODE_SIGNING_PFX: ${{ secrets.CODE_SIGNING_PFX }}
+          CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+        shell: pwsh
+        run: |
+          $pfxBytes = [Convert]::FromBase64String($env:CODE_SIGNING_PFX)
+          [IO.File]::WriteAllBytes("$pwd\codesign.pfx", $pfxBytes)
+          $exe = "${{ matrix.client }}\target\${{ matrix.target }}\release\screenmcp-${{ matrix.client }}.exe"
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Filter signtool.exe | Where-Object { $_.FullName -like "*x64*" } | Select-Object -First 1 -ExpandProperty FullName
+          & $signtool sign /f codesign.pfx /p $env:CODE_SIGNING_PASSWORD /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $exe
+          Remove-Item codesign.pfx
+
       - name: Package macOS (.app + .dmg)
         if: matrix.client == 'mac'
         shell: bash
@@ -235,6 +249,26 @@ jobs:
       - name: Build Windows installer (.exe)
         working-directory: windows
         run: ./build-installer.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Sign Windows installer
+        if: env.CODE_SIGNING_PFX != ''
+        env:
+          CODE_SIGNING_PFX: ${{ secrets.CODE_SIGNING_PFX }}
+          CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+        run: |
+          sudo apt-get install -y osslsigncode
+          echo "$CODE_SIGNING_PFX" | base64 -d > codesign.pfx
+          version="${GITHUB_REF_NAME#v}"
+          file="windows/target/installer/screenmcp-setup-${version}-x86_64.exe"
+          osslsigncode sign \
+            -pkcs12 codesign.pfx \
+            -pass "$CODE_SIGNING_PASSWORD" \
+            -ts http://timestamp.digicert.com \
+            -h sha256 \
+            -in "$file" \
+            -out "${file}.signed"
+          mv "${file}.signed" "$file"
+          rm codesign.pfx
 
       - name: Determine installer name
         id: installer
