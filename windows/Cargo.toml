@@ -19,6 +19,7 @@ dirs = "5"
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 reqwest = { version = "0.12", features = ["json", "native-tls", "stream"] }
 futures-util = "0.3"
 url = "2"

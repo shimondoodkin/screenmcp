@@ -168,19 +168,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Provide google-services.json
-        env:
-          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: |
-          if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
-            echo "$GOOGLE_SERVICES_JSON_B64" | base64 -d > app/google-services.json
-            echo "Using google-services.json from secret."
-          elif [ -f "app/google-services.json" ]; then
-            echo "Using checked-in app/google-services.json."
-          else
-            echo "ERROR: app/google-services.json not found and GOOGLE_SERVICES_JSON secret is empty."
-            exit 1
-          fi
+      - name: Verify google-services.json exists
+        run: test -f app/google-services.json
 
       - name: Build release APK
         run: ./gradlew assembleRelease

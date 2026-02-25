@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod auth;
 mod commands;
 mod config;
@@ -13,12 +15,20 @@ use tracing::info;
 use ws::{ConnectionStatus, WsCommand};
 
 fn main() {
-    // Initialize tracing
+    // Initialize tracing to log file (~/.screenmcp/screenmcp-windows.log)
+    let log_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("screenmcp");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_file = std::fs::File::create(log_dir.join("screenmcp-windows.log"))
+        .expect("failed to create log file");
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "screenmcp_windows=info".into()),
         )
+        .with_writer(log_file)
+        .with_ansi(false)
         .init();
 
     info!("ScreenMCP Windows starting");
