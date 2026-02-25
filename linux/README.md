@@ -2,7 +2,17 @@
 
 A Linux system tray application that connects to the ScreenMCP worker as a "phone" device, allowing remote control of the Linux desktop (screenshots, mouse, keyboard, clipboard, window listing).
 
-## Build
+## Install from .deb package
+
+Download the `.deb` from [Releases](https://github.com/shimondoodkin/screenmcp/releases):
+
+```bash
+sudo dpkg -i screenmcp-linux_0.1.0_amd64.deb
+```
+
+This installs the binary to `/usr/bin/screenmcp-linux`, adds a desktop entry to your app launcher, and sets up the app icon.
+
+## Build from source
 
 ```bash
 cd linux
@@ -10,6 +20,15 @@ cargo build --release
 ```
 
 The binary will be at `target/release/screenmcp-linux`.
+
+### Build .deb package from source
+
+```bash
+cd linux
+bash build.sh
+# Creates screenmcp-linux_0.1.0_amd64.deb
+sudo dpkg -i screenmcp-linux_0.1.0_amd64.deb
+```
 
 ## Prerequisites
 

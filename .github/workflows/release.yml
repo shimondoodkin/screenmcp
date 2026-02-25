@@ -275,8 +275,104 @@ jobs:
           name: screenmcp-windows-installer
           path: ${{ steps.installer.outputs.path }}
 
+  build-linux-deb:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxdo-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxtst-dev \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libdbus-1-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        working-directory: linux
+        run: cargo build --release
+
+      - name: Package .deb
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          arch="amd64"
+          pkg="screenmcp_${version}_${arch}"
+          binary="linux/target/release/screenmcp-linux"
+
+          strip "$binary" 2>/dev/null || true
+
+          mkdir -p "${pkg}/DEBIAN"
+          mkdir -p "${pkg}/usr/bin"
+          mkdir -p "${pkg}/usr/share/applications"
+          mkdir -p "${pkg}/usr/share/icons/hicolor/512x512/apps"
+
+          cp "$binary" "${pkg}/usr/bin/screenmcp-linux"
+          chmod 755 "${pkg}/usr/bin/screenmcp-linux"
+          cp linux/screenmcp.desktop "${pkg}/usr/share/applications/"
+          cp linux/assets/icon-app.png "${pkg}/usr/share/icons/hicolor/512x512/apps/screenmcp.png"
+
+          installed_size=$(du -sk "${pkg}" | cut -f1)
+
+          cat > "${pkg}/DEBIAN/control" <<EOF
+          Package: screenmcp
+          Version: ${version}
+          Section: utils
+          Priority: optional
+          Architecture: ${arch}
+          Installed-Size: ${installed_size}
+          Depends: libgtk-3-0, libssl3 | libssl1.1, libxdo3, wmctrl
+          Maintainer: ScreenMCP <support@screenmcp.com>
+          Homepage: https://screenmcp.com
+          Description: AI desktop control via MCP
+           ScreenMCP gives AI assistants real-time vision and control
+           over desktop computers via the Model Context Protocol.
+           System tray app that connects to a ScreenMCP worker.
+          EOF
+
+          # Remove leading whitespace from control file (YAML indent)
+          sed -i 's/^          //' "${pkg}/DEBIAN/control"
+
+          cat > "${pkg}/DEBIAN/postinst" <<'SCRIPT'
+          #!/bin/sh
+          set -e
+          gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+          update-desktop-database /usr/share/applications 2>/dev/null || true
+          SCRIPT
+          sed -i 's/^          //' "${pkg}/DEBIAN/postinst"
+          chmod 755 "${pkg}/DEBIAN/postinst"
+
+          cat > "${pkg}/DEBIAN/postrm" <<'SCRIPT'
+          #!/bin/sh
+          set -e
+          gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+          update-desktop-database /usr/share/applications 2>/dev/null || true
+          SCRIPT
+          sed -i 's/^          //' "${pkg}/DEBIAN/postrm"
+          chmod 755 "${pkg}/DEBIAN/postrm"
+
+          dpkg-deb --build --root-owner-group "${pkg}" "screenmcp-linux-${version}-amd64.deb"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenmcp-linux-deb
+          path: screenmcp-linux-*.deb
+
   release:
-    needs: [build-desktop, build-android, build-windows-installer]
+    needs: [build-desktop, build-android, build-windows-installer, build-linux-deb]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -289,7 +385,7 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.apk' -o -name '*.dmg' -o -name 'screenmcp-setup-*-x86_64.exe' \) -exec mv {} release/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.apk' -o -name '*.dmg' -o -name '*.deb' -o -name 'screenmcp-setup-*-x86_64.exe' \) -exec mv {} release/ \;
           ls -lh release/
 
       - name: Generate checksums
@@ -315,7 +411,8 @@ jobs:
             | **macOS (Intel)** | `screenmcp-mac-x86_64-apple-darwin-*.dmg` | Older Intel Macs |
             | **Windows** | `screenmcp-windows-*.zip` | x86_64 |
             | **Windows Installer** | `screenmcp-setup-*-x86_64.exe` | NSIS setup wizard |
-            | **Linux** | `screenmcp-linux-*.tar.gz` | x86_64 |
+            | **Linux (.deb)** | `screenmcp-linux-*-amd64.deb` | Debian/Ubuntu x86_64 |
+            | **Linux (.tar.gz)** | `screenmcp-linux-*.tar.gz` | x86_64 |
             | **Android** | `screenmcp-android-*.apk` | ARM/x86 |
 
             ## macOS Installation
@@ -329,9 +426,17 @@ jobs:
             4. Launch ScreenMCP — it appears as a menu bar icon (no Dock icon)
             5. Grant **Accessibility** and **Screen Recording** permissions when prompted
 
-            ## Windows / Linux
+            ## Windows
 
-            Extract the archive and run the `screenmcp-windows.exe` or `screenmcp-linux` binary.
+            Extract the archive and run `screenmcp-windows.exe`, or use the NSIS installer.
+
+            ## Linux
+
+            Install the `.deb` package:
+            ```bash
+            sudo dpkg -i screenmcp-linux-*-amd64.deb
+            ```
+            Or extract the `.tar.gz` and run the `screenmcp-linux` binary directly.
 
             ## Android
 
