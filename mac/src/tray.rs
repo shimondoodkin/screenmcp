@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::sync::mpsc as std_mpsc;
 
 use eframe::egui;
 use tokio::sync::{mpsc, watch};
@@ -139,6 +140,7 @@ pub struct TrayApp {
     ws_cmd_tx: mpsc::Sender<WsCommand>,
     status_rx: watch::Receiver<ConnectionStatus>,
     auth_event_rx: Option<mpsc::Receiver<LocalServerEvent>>,
+    menu_event_rx: std_mpsc::Receiver<MenuEvent>,
 
     // State
     local_port: u16,
@@ -203,6 +205,7 @@ impl TrayApp {
         let unregister_device = MenuItem::new("Unregister Device", false, None);
         let test_window = MenuItem::new("Test Window", true, None);
         let quit = MenuItem::new("Quit", true, None);
+        let quit_id = quit.id().clone();
 
         let menu = Menu::new();
         let _ = menu.append(&about);
@@ -249,6 +252,17 @@ impl TrayApp {
             quit,
         };
 
+        let (menu_event_tx, menu_event_rx) = std_mpsc::channel::<MenuEvent>();
+        let ws_cmd_tx_for_handler = ws_cmd_tx.clone();
+        MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+            if event.id == quit_id {
+                info!("menu: quit clicked");
+                let _ = ws_cmd_tx_for_handler.try_send(WsCommand::Shutdown);
+                std::process::exit(0);
+            }
+            let _ = menu_event_tx.send(event);
+        }));
+
         // Auto-open login window if not signed in
         let cloud_signed_in = !config.token.is_empty();
         let oss_signed_in = config.opensource_server_enabled
@@ -266,6 +280,7 @@ impl TrayApp {
             ws_cmd_tx,
             status_rx,
             auth_event_rx: Some(auth_event_rx),
+            menu_event_rx,
             local_port,
             last_status: ConnectionStatus::Disconnected,
             is_registered: Arc::new(AtomicBool::new(false)),
@@ -299,7 +314,7 @@ impl TrayApp {
     }
 
     fn handle_menu_events(&mut self) {
-        while let Ok(event) = MenuEvent::receiver().try_recv() {
+        while let Ok(event) = self.menu_event_rx.try_recv() {
             let items = match &self.menu_items {
                 Some(items) => items,
                 None => continue,
