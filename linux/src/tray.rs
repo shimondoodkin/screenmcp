@@ -516,8 +516,9 @@ impl eframe::App for TrayApp {
         self.handle_registration_results();
 
         if self.should_quit {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            return;
+            self._tray.take();
+            self.menu_items.take();
+            std::process::exit(0);
         }
 
         // ── Login viewport ──
