@@ -114,6 +114,24 @@ jobs:
           chmod +x "${APP}/Contents/MacOS/screenmcp-mac"
           echo "APPLscmc" > "${APP}/Contents/PkgInfo"
 
+          # Build .icns from pre-made PNGs
+          ICON_DIR="mac/assets/icon-pngs"
+          if [ -d "$ICON_DIR" ]; then
+            mkdir -p /tmp/screenmcp.iconset
+            cp "$ICON_DIR/16.png"   /tmp/screenmcp.iconset/icon_16x16.png
+            cp "$ICON_DIR/32.png"   /tmp/screenmcp.iconset/icon_16x16@2x.png
+            cp "$ICON_DIR/32.png"   /tmp/screenmcp.iconset/icon_32x32.png
+            cp "$ICON_DIR/64.png"   /tmp/screenmcp.iconset/icon_32x32@2x.png
+            cp "$ICON_DIR/128.png"  /tmp/screenmcp.iconset/icon_128x128.png
+            cp "$ICON_DIR/256.png"  /tmp/screenmcp.iconset/icon_128x128@2x.png
+            cp "$ICON_DIR/256.png"  /tmp/screenmcp.iconset/icon_256x256.png
+            cp "$ICON_DIR/512.png"  /tmp/screenmcp.iconset/icon_256x256@2x.png
+            cp "$ICON_DIR/512.png"  /tmp/screenmcp.iconset/icon_512x512.png
+            cp "$ICON_DIR/1024.png" /tmp/screenmcp.iconset/icon_512x512@2x.png
+            iconutil -c icns /tmp/screenmcp.iconset -o "${APP}/Contents/Resources/AppIcon.icns"
+            rm -rf /tmp/screenmcp.iconset
+          fi
+
           # Ad-hoc sign (no developer cert needed, satisfies basic integrity checks)
           codesign --force --deep -s - "${APP}"
 

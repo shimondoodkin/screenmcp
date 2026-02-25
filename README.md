@@ -80,7 +80,20 @@ worker_url = "ws://localhost:8080"
   - Enable Accessibility Service in Android Settings
   - In the app: enable "Open Source Server", enter your server URL and `user.id` token
 
-- **Windows / Linux / macOS:** Download from [Releases](https://github.com/shimondoodkin/screenmcp/releases)
+- **Windows:** Download the `.exe` from [Releases](https://github.com/shimondoodkin/screenmcp/releases)
+  - In the app settings: enable "Open Source Server", enter your server URL and token
+
+- **Linux:** Download the `.deb` from [Releases](https://github.com/shimondoodkin/screenmcp/releases)
+  ```bash
+  sudo dpkg -i screenmcp-linux_0.1.0_amd64.deb
+  ```
+  - Launch ScreenMCP from your app launcher or run `screenmcp-linux`
+  - In the app settings: enable "Open Source Server", enter your server URL and token
+
+- **macOS:** Download the `.dmg` from [Releases](https://github.com/shimondoodkin/screenmcp/releases)
+  - Drag ScreenMCP to `/Applications`
+  - Remove quarantine: `xattr -cr /Applications/ScreenMCP.app`
+  - Grant Screen Recording and Accessibility permissions in System Settings
   - In the app settings: enable "Open Source Server", enter your server URL and token
 
 ### 4. Add to your AI client

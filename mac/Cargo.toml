@@ -15,7 +15,7 @@ regex = "1"
 screenshots = "0.8"
 enigo = { version = "0.2", features = ["serde"] }
 base64 = "0.22"
-image = { version = "0.25", features = ["png", "webp"] }
+image = { version = "0.25", features = ["png", "webp", "ico"] }
 arboard = "3"
 dirs = "5"
 toml = "0.8"

@@ -31,43 +31,18 @@ struct MenuItems {
     quit: MenuItem,
 }
 
-fn create_icon_rgba(connected: bool) -> Vec<u8> {
-    let size = 32u32;
-    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
+const ICON_GREEN: &[u8] = include_bytes!("../assets/icon-connected.ico");
+const ICON_RED: &[u8] = include_bytes!("../assets/icon-disconnected.ico");
 
-    let (r, g, b) = if connected {
-        (0x00u8, 0xC8u8, 0x00u8)
-    } else {
-        (0xC8u8, 0x00u8, 0x00u8)
-    };
-
-    for y in 0..size {
-        for x in 0..size {
-            let dx = x as f32 - size as f32 / 2.0;
-            let dy = y as f32 - size as f32 / 2.0;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let radius = size as f32 / 2.0 - 1.0;
-
-            if dist <= radius {
-                rgba.push(r);
-                rgba.push(g);
-                rgba.push(b);
-                rgba.push(0xFF);
-            } else {
-                rgba.push(0);
-                rgba.push(0);
-                rgba.push(0);
-                rgba.push(0);
-            }
-        }
-    }
-
-    rgba
+fn load_icon_from_ico(data: &[u8]) -> Icon {
+    let img = image::load_from_memory(data).expect("failed to decode ico");
+    let rgba = img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    Icon::from_rgba(rgba.into_raw(), w, h).expect("failed to create icon")
 }
 
 fn create_icon(connected: bool) -> Icon {
-    let rgba = create_icon_rgba(connected);
-    Icon::from_rgba(rgba, 32, 32).expect("failed to create icon")
+    load_icon_from_ico(if connected { ICON_GREEN } else { ICON_RED })
 }
 
 /// Update sign-in and registration menu items based on current config and registration state.
@@ -308,9 +283,7 @@ impl TrayApp {
     fn update_tray_for_status(&self, status: &ConnectionStatus) {
         if let Some(ref tray) = self._tray {
             let connected = matches!(status, ConnectionStatus::Connected);
-            if let Ok(icon) = Icon::from_rgba(create_icon_rgba(connected), 32, 32) {
-                let _ = tray.set_icon(Some(icon));
-            }
+            let _ = tray.set_icon(Some(create_icon(connected)));
             let _ = tray.set_tooltip(Some(&format!("ScreenMCP Windows - {status}")));
         }
         if let Some(ref items) = self.menu_items {

@@ -45,6 +45,33 @@ cp Info.plist "${BUNDLE_DIR}/Contents/Info.plist"
 cp "$BINARY" "${BUNDLE_DIR}/Contents/MacOS/${BINARY_NAME}"
 chmod +x "${BUNDLE_DIR}/Contents/MacOS/${BINARY_NAME}"
 
+# App icon — build .icns from pre-made PNGs
+ICON_PNG_DIR="assets/icon-pngs"
+if [ -d "$ICON_PNG_DIR" ]; then
+    mkdir -p /tmp/screenmcp.iconset
+    cp "$ICON_PNG_DIR/16.png"   /tmp/screenmcp.iconset/icon_16x16.png
+    cp "$ICON_PNG_DIR/32.png"   /tmp/screenmcp.iconset/icon_16x16@2x.png
+    cp "$ICON_PNG_DIR/32.png"   /tmp/screenmcp.iconset/icon_32x32.png
+    cp "$ICON_PNG_DIR/64.png"   /tmp/screenmcp.iconset/icon_32x32@2x.png
+    cp "$ICON_PNG_DIR/128.png"  /tmp/screenmcp.iconset/icon_128x128.png
+    cp "$ICON_PNG_DIR/256.png"  /tmp/screenmcp.iconset/icon_128x128@2x.png
+    cp "$ICON_PNG_DIR/256.png"  /tmp/screenmcp.iconset/icon_256x256.png
+    cp "$ICON_PNG_DIR/512.png"  /tmp/screenmcp.iconset/icon_256x256@2x.png
+    cp "$ICON_PNG_DIR/512.png"  /tmp/screenmcp.iconset/icon_512x512.png
+    cp "$ICON_PNG_DIR/1024.png" /tmp/screenmcp.iconset/icon_512x512@2x.png
+    if command -v iconutil &>/dev/null; then
+        iconutil -c icns /tmp/screenmcp.iconset -o "${BUNDLE_DIR}/Contents/Resources/AppIcon.icns"
+    elif command -v png2icns &>/dev/null; then
+        png2icns "${BUNDLE_DIR}/Contents/Resources/AppIcon.icns" /tmp/screenmcp.iconset/icon_*.png
+    else
+        echo "WARNING: No iconutil/png2icns found, copying 512px PNG as fallback"
+        cp "$ICON_PNG_DIR/512.png" "${BUNDLE_DIR}/Contents/Resources/AppIcon.png"
+    fi
+    rm -rf /tmp/screenmcp.iconset
+else
+    echo "WARNING: Icon PNGs not found at $ICON_PNG_DIR, skipping app icon"
+fi
+
 echo "APPLscmc" > "${BUNDLE_DIR}/Contents/PkgInfo"
 
 # Verify bundle
