@@ -1,5 +1,79 @@
 use serde::{Deserialize, Serialize};
 
+// ---------------------------------------------------------------------------
+// Version & compatibility
+// ---------------------------------------------------------------------------
+
+/// Version info sent by clients in their auth message.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ClientVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub component: String, // "android", "windows", "linux", "mac", "remote", "sdk-ts", "sdk-py", "sdk-rust"
+}
+
+impl std::fmt::Display for ClientVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} v{}.{}", self.component, self.major, self.minor)
+    }
+}
+
+/// Compatibility matrix: which major versions of each component are supported.
+/// Format: (component_name, min_major_inclusive, max_major_inclusive)
+pub const COMPATIBILITY: &[(&str, u32, u32)] = &[
+    ("android", 1, 1),
+    ("windows", 1, 1),
+    ("linux", 1, 1),
+    ("mac", 1, 1),
+    ("remote", 1, 1),
+    ("sdk-ts", 1, 1),
+    ("sdk-py", 1, 1),
+    ("sdk-rust", 1, 1),
+    ("worker", 1, 1),
+];
+
+/// The worker's own version.
+pub const WORKER_VERSION: ClientVersion = ClientVersion {
+    major: 1,
+    minor: 0,
+    component: String::new(), // "worker" — set at compile time via Display, but const requires empty
+};
+
+/// Check whether a client version is compatible with the current worker.
+/// Returns Ok(()) if compatible, or Err(message) with a human-readable explanation.
+pub fn check_version_compatible(version: &ClientVersion) -> Result<(), String> {
+    for &(component, min_major, max_major) in COMPATIBILITY {
+        if component == version.component {
+            if version.major < min_major {
+                return Err(format!(
+                    "Your {} (v{}.{}) is outdated. Please update to version {}.x or later.",
+                    version.component, version.major, version.minor, min_major
+                ));
+            }
+            if version.major > max_major {
+                return Err(format!(
+                    "Your {} (v{}.{}) is too new for this worker. Maximum supported: {}.x.",
+                    version.component, version.major, version.minor, max_major
+                ));
+            }
+            return Ok(());
+        }
+    }
+    // Unknown component — allow by default (forward compatible)
+    Ok(())
+}
+
+/// Version error codes for the error message sent to clients.
+pub mod version_error {
+    pub const OUTDATED_CLIENT: &str = "outdated_client";
+    pub const OUTDATED_REMOTE: &str = "outdated_remote";
+    pub const BOTH_OUTDATED: &str = "both_outdated";
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
 /// Messages from phone → server
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -26,6 +100,8 @@ pub struct AuthMessage {
     pub device_id: Option<String>, // phone: client-generated crypto ID for routing
     #[serde(default)]
     pub target_device_id: Option<String>, // controller: which phone to control
+    #[serde(default)]
+    pub version: Option<ClientVersion>, // client version info for compatibility checking
 }
 
 fn default_role() -> String {
@@ -70,8 +146,18 @@ pub enum ServerMessage {
     Command(Command),
     Ping(PingMessage),
     Error(ErrorMessage),
+    VersionError(VersionErrorMessage),
     CommandAccepted(CommandAcceptedMessage),
     PhoneStatus(PhoneStatusMessage),
+}
+
+#[derive(Debug, Serialize)]
+pub struct VersionErrorMessage {
+    #[serde(rename = "type")]
+    pub msg_type: String,
+    pub code: String,
+    pub message: String,
+    pub update_url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,6 +259,15 @@ impl ServerMessage {
         Self::PhoneStatus(PhoneStatusMessage {
             msg_type: "phone_status".into(),
             connected,
+        })
+    }
+
+    pub fn version_error(code: &str, message: impl Into<String>) -> Self {
+        Self::VersionError(VersionErrorMessage {
+            msg_type: "error".into(),
+            code: code.into(),
+            message: message.into(),
+            update_url: "https://screenmcp.com/download".into(),
         })
     }
 }

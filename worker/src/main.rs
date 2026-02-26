@@ -8,7 +8,7 @@ use tracing_subscriber::EnvFilter;
 
 use screenmcp_worker::file_auth::FileAuth;
 use screenmcp_worker::file_state::FileState;
-use screenmcp_worker::{AuthBackend, NoopUsage, StateBackend, UsageBackend};
+use screenmcp_worker::{AuthBackend, IpTrackingBackend, NoopIpTracking, NoopUsage, StateBackend, UsageBackend};
 
 #[tokio::main]
 async fn main() {
@@ -39,6 +39,7 @@ async fn main() {
     let auth: Arc<dyn AuthBackend> = Arc::new(file_auth);
     let state: Arc<dyn StateBackend> = Arc::new(file_state);
     let usage: Arc<dyn UsageBackend> = Arc::new(NoopUsage);
+    let ip_tracking: Arc<dyn IpTrackingBackend> = Arc::new(NoopIpTracking);
 
     // In-memory connection registry
     let connections = screenmcp_worker::connections::Connections::new();
@@ -74,8 +75,9 @@ async fn main() {
                 let connections = Arc::clone(&connections);
                 let auth = Arc::clone(&auth);
                 let usage = Arc::clone(&usage);
+                let ip_tracking = Arc::clone(&ip_tracking);
                 tokio::spawn(async move {
-                    screenmcp_worker::ws::handle_connection(stream, peer_addr, state, connections, auth, usage).await;
+                    screenmcp_worker::ws::handle_connection(stream, peer_addr, state, connections, auth, usage, ip_tracking).await;
                 });
             }
             Err(e) => {

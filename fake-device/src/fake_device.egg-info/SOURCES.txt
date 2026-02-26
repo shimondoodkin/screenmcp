@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/fake_device/__init__.py
+src/fake_device/__main__.py
+src/fake_device/client.py
+src/fake_device/commands.py
+src/fake_device/config.py
+src/fake_device/test_modes.py
+src/fake_device.egg-info/PKG-INFO
+src/fake_device.egg-info/SOURCES.txt
+src/fake_device.egg-info/dependency_links.txt
+src/fake_device.egg-info/entry_points.txt
+src/fake_device.egg-info/requires.txt
+src/fake_device.egg-info/top_level.txt

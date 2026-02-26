@@ -23,7 +23,7 @@ from .types import (
 
 logger = logging.getLogger("screenmcp")
 
-_DEFAULT_API_URL = "https://screenmcp.com"
+_DEFAULT_API_URL = "https://api.screenmcp.com"
 _DEFAULT_COMMAND_TIMEOUT = 30.0  # seconds
 
 
@@ -461,6 +461,7 @@ class ScreenMCPClient:
                     "Authorization": f"Bearer {self._api_key}",
                     "Content-Type": "application/json",
                 },
+                json={"device_id": self._device_id},
             )
         if resp.status_code != 200:
             raise ScreenMCPError(

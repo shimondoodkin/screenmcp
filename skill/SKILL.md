@@ -156,6 +156,12 @@ Every phone/desktop tool requires a `device_id` parameter (integer, starts at 1)
 | `middle_click` | Middle-click | `x`, `y` |
 | `mouse_scroll` | Raw mouse scroll | `x`, `y`, `dx`, `dy` |
 
+### Audio
+
+| Tool | Purpose | Parameters |
+|------|---------|------------|
+| `play_audio` | Play audio on device speaker | `audio_data` (base64 WAV/MP3), `volume?` |
+
 ---
 
 ## Coordinate System
@@ -200,6 +206,64 @@ Pull notifications:   drag(device_id=1, startX=540, startY=50, endX=540, endY=10
 | `unsupported: true` | Command not supported on this device type (phone vs desktop). |
 
 ---
+
+## Use Case: "Speak to User" via ScreenMCP + OpenAI TTS
+
+Use this flow when the assistant should talk out loud through the connected phone/desktop speaker.
+
+### 1) Generate speech audio with OpenAI TTS
+
+Use OpenAI TTS API and save as WAV or MP3.
+
+Example (WAV):
+
+```bash
+export OPENAI_API_KEY="<YOUR_OPENAI_KEY>"
+
+curl -sS https://api.openai.com/v1/audio/speech \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"gpt-4o-mini-tts",
+    "voice":"alloy",
+    "format":"wav",
+    "input":"Your package was delivered. Please check the door."
+  }' \
+  --output /tmp/screenmcp_tts.wav
+```
+
+### 2) Send the audio to device with `play_audio`
+
+Encode the generated file to base64 and call `play_audio`:
+
+```bash
+AUDIO_B64=$(base64 -w 0 /tmp/screenmcp_tts.wav)
+mcporter call screenmcp.play_audio device_id:1 audio_data:$AUDIO_B64 volume:0.8 --output json
+```
+
+### 3) Verify + fallback
+
+- If `play_audio` succeeds but user hears nothing: retry with `volume:1.0`.
+- If device is offline/timeouts: call `list_devices`, confirm `connected=true`, then retry.
+- Keep messages short for fast response and lower audio latency.
+
+### Security
+
+- Do **not** hardcode API keys in repo files.
+- Keep keys in env vars or local secret files only.
+- If OpenAI key is needed, read from `OPENAI_API_KEY` at runtime.
+
+### Multi-device fallback for voice delivery
+
+When `play_audio` fails on one device:
+
+1. Call `list_devices`.
+2. Build a candidate order:
+   - Prefer `connected=true` devices first.
+   - Keep original target first if still connected.
+3. Retry `play_audio` on the next candidate device.
+4. Stop after first success and report which `device_id` worked.
+5. If all fail, return a clear error summary with per-device failure reasons.
 
 ## Rules
 

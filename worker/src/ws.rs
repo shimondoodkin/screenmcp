@@ -8,10 +8,12 @@ use tokio::time::{interval, timeout};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
-use crate::{AuthBackend, StateBackend, UsageBackend, UsageCheck};
+use crate::{AuthBackend, IpTrackingBackend, StateBackend, UsageBackend, UsageCheck};
 use crate::connections::Connections;
+use crate::ip_whitelist::IpWhitelist;
 use crate::protocol::{
-    parse_controller_message, parse_phone_message, PhoneMessage, ServerMessage,
+    check_version_compatible, parse_controller_message, parse_phone_message,
+    version_error, PhoneMessage, ServerMessage,
 };
 
 use std::collections::HashMap;
@@ -80,6 +82,20 @@ fn parse_http_request(raw: &str) -> HttpRequest {
     HttpRequest { method, path, query, headers, body }
 }
 
+/// Extract the real client IP from X-Forwarded-For header, falling back to the peer address.
+fn extract_client_ip(headers: &HashMap<String, String>, peer_addr: &SocketAddr) -> String {
+    if let Some(xff) = headers.get("x-forwarded-for") {
+        // X-Forwarded-For: client, proxy1, proxy2 — take the first (original client)
+        if let Some(first) = xff.split(',').next() {
+            let trimmed = first.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    peer_addr.ip().to_string()
+}
+
 /// Handle a new connection: if it's a WebSocket upgrade, proceed; otherwise return HTTP 200.
 pub async fn handle_connection(
     stream: TcpStream,
@@ -88,6 +104,7 @@ pub async fn handle_connection(
     connections: Arc<Connections>,
     auth: Arc<dyn AuthBackend>,
     usage: Arc<dyn UsageBackend>,
+    ip_tracking: Arc<dyn IpTrackingBackend>,
 ) {
     // Peek at the first bytes to check if this is a WebSocket upgrade
     let mut buf = [0u8; 2048];
@@ -100,9 +117,13 @@ pub async fn handle_connection(
     };
 
     let request_str = String::from_utf8_lossy(&buf[..n]);
+    let peeked_headers = parse_http_request(&request_str);
     let is_websocket = request_str
         .lines()
         .any(|line| line.to_lowercase().starts_with("upgrade:") && line.to_lowercase().contains("websocket"));
+
+    // Extract real client IP from X-Forwarded-For (set by load balancer)
+    let client_ip = extract_client_ip(&peeked_headers.headers, &addr);
 
     if !is_websocket {
         // Plain HTTP request — parse and route
@@ -214,8 +235,8 @@ pub async fn handle_connection(
     };
 
     // Verify token via auth backend
-    let firebase_uid = match auth.verify_token(&token).await {
-        Ok(uid) => uid,
+    let verify_result = match auth.verify_token(&token).await {
+        Ok(r) => r,
         Err(e) => {
             warn!(%addr, "auth verification failed: {e}");
             let err = ServerMessage::auth_fail("invalid token");
@@ -225,6 +246,7 @@ pub async fn handle_connection(
             return;
         }
     };
+    let firebase_uid = verify_result.firebase_uid;
     let role = auth_msg.role.clone();
 
     // Use client-provided device_id for routing (required for phones, optional for controllers)
@@ -243,7 +265,45 @@ pub async fn handle_connection(
         return;
     }
 
-    info!(%addr, %firebase_uid, %device_id, %role, "authenticated");
+    info!(%addr, %firebase_uid, %device_id, %role, %client_ip, "authenticated");
+
+    // Check IP whitelist (uses whitelist from verify response — no extra API call)
+    let whitelist = IpWhitelist::from_text(&verify_result.ip_whitelist);
+    if let Err(e) = whitelist.check(&client_ip) {
+        warn!(%addr, %firebase_uid, %client_ip, "IP blocked by whitelist: {e}");
+        let err = ServerMessage::auth_fail("connection from this IP is not allowed");
+        let json = serde_json::to_string(&err).unwrap();
+        let _ = ws_tx.send(Message::Text(json.into())).await;
+        let _ = ws_tx.close().await;
+        return;
+    }
+
+    // Record connection IP (fire-and-forget in background)
+    {
+        let ip_tracking = Arc::clone(&ip_tracking);
+        let firebase_uid_owned = firebase_uid.clone();
+        let device_id_owned = device_id.clone();
+        let role_owned = role.clone();
+        let client_ip_owned = client_ip.clone();
+        tokio::spawn(async move {
+            ip_tracking.record_ip(&firebase_uid_owned, &device_id_owned, &client_ip_owned, &role_owned).await;
+        });
+    }
+
+    // Check client version compatibility if version info was provided
+    if let Some(ref version) = auth_msg.version {
+        info!(%addr, %device_id, %version, "client version reported");
+        if let Err(msg) = check_version_compatible(version) {
+            warn!(%addr, %device_id, %version, "version incompatible: {msg}");
+            let err = ServerMessage::version_error(version_error::OUTDATED_CLIENT, &msg);
+            let json = serde_json::to_string(&err).unwrap();
+            let _ = ws_tx.send(Message::Text(json.into())).await;
+            let _ = ws_tx.close().await;
+            return;
+        }
+        // Store version in connections registry
+        connections.set_version(&device_id, version.clone()).await;
+    }
 
     match role.as_str() {
         "controller" => {
@@ -396,6 +456,7 @@ async fn handle_phone_connection(
 
     // Cleanup
     connections.unregister_phone(device_id).await;
+    connections.remove_version(device_id).await;
     if let Err(e) = state.unregister_connection(device_id).await {
         error!(device_id, "failed to unregister: {e}");
     }
@@ -421,6 +482,39 @@ async fn handle_controller_connection(
 ) {
     // Check if phone is connected
     let phone_connected = connections.is_phone_connected(target_device_id).await;
+
+    // Check cross-version compatibility between controller and target phone
+    if phone_connected {
+        if let Some(phone_version) = connections.get_version(target_device_id).await {
+            if let Err(msg) = check_version_compatible(&phone_version) {
+                // The phone on the other end is outdated
+                let controller_version = connections.get_version(device_id).await;
+                let controller_ok = controller_version
+                    .as_ref()
+                    .map(|v| check_version_compatible(v).is_ok())
+                    .unwrap_or(true);
+
+                let (code, error_msg) = if !controller_ok {
+                    (version_error::BOTH_OUTDATED, format!(
+                        "Both your client and the target device ({}) are outdated. Please update both.",
+                        phone_version
+                    ))
+                } else {
+                    (version_error::OUTDATED_REMOTE, format!(
+                        "The target device ({}) is outdated. {}",
+                        phone_version, msg
+                    ))
+                };
+
+                warn!(%addr, %device_id, %target_device_id, "cross-version incompatible: {error_msg}");
+                let err = ServerMessage::version_error(code, &error_msg);
+                let json = serde_json::to_string(&err).unwrap();
+                let _ = ws_tx.send(Message::Text(json.into())).await;
+                let _ = ws_tx.close().await;
+                return;
+            }
+        }
+    }
 
     // Register controller
     let mut event_rx = connections.register_controller(target_device_id).await;
@@ -601,7 +695,7 @@ async fn handle_sse(
         }
     };
 
-    if let Err(e) = auth.verify_token(&token).await {
+    if let Err(e) = auth.verify_token(&token).await.map(|_| ()) {
         warn!(%addr, %device_id, "SSE auth failed: {e}");
         let body = r#"{"error":"invalid token"}"#;
         let resp = format!(

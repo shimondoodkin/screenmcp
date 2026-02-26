@@ -37,6 +37,7 @@ mac/ScreenMCP.dmg
 firebase-service-account.json
 web/secrets/
 app/google-services.json
+config/worker.toml
 
 # Claude Code
 .claude/
@@ -44,3 +45,4 @@ app/google-services.json
 # OS
 .DS_Store
 Thumbs.db
+*.venv*

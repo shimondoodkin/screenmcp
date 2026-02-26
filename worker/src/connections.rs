@@ -5,6 +5,8 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::Instant;
 use tracing::{info, warn};
 
+use crate::protocol::ClientVersion;
+
 /// In-memory connection registry for routing commands between controllers and phones.
 pub struct Connections {
     /// Phone senders: device_id -> channel to send commands to the phone
@@ -17,6 +19,8 @@ pub struct Connections {
     last_disconnect: RwLock<HashMap<String, Instant>>,
     /// SSE client senders: device_id -> channel to push SSE events
     sse_clients: RwLock<HashMap<String, mpsc::Sender<String>>>,
+    /// Version info per connection: device_id -> ClientVersion
+    versions: RwLock<HashMap<String, ClientVersion>>,
 }
 
 impl Connections {
@@ -31,6 +35,7 @@ impl Connections {
             response_tx,
             last_disconnect: RwLock::new(HashMap::new()),
             sse_clients: RwLock::new(HashMap::new()),
+            versions: RwLock::new(HashMap::new()),
         })
     }
 
@@ -155,6 +160,22 @@ impl Connections {
         } else {
             false
         }
+    }
+
+    /// Store the version info for a connected device.
+    pub async fn set_version(&self, device_id: &str, version: ClientVersion) {
+        info!(device_id, %version, "storing client version");
+        self.versions.write().await.insert(device_id.to_string(), version);
+    }
+
+    /// Get the stored version for a device, if any.
+    pub async fn get_version(&self, device_id: &str) -> Option<ClientVersion> {
+        self.versions.read().await.get(device_id).cloned()
+    }
+
+    /// Remove version info when a device disconnects.
+    pub async fn remove_version(&self, device_id: &str) {
+        self.versions.write().await.remove(device_id);
     }
 
     /// Send a message to all controllers watching this device_id.

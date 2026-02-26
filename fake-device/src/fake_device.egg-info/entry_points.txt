@@ -1,0 +1,2 @@
+[console_scripts]
+fake-device = fake_device.__main__:main

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use tracing::{info, warn};
 
-use crate::AuthBackend;
+use crate::{AuthBackend, VerifyResult};
 
 #[derive(Debug, Deserialize)]
 pub struct FileConfig {
@@ -22,6 +22,8 @@ pub struct AuthConfig {
     pub api_keys: Vec<String>,
     #[serde(default)]
     pub notify_secret: Option<String>,
+    #[serde(default)]
+    pub ip_whitelist: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -58,17 +60,20 @@ impl FileAuth {
 
 #[async_trait]
 impl AuthBackend for FileAuth {
-    async fn verify_token(&self, token: &str) -> Result<String, String> {
+    async fn verify_token(&self, token: &str) -> Result<VerifyResult, String> {
         // Accept user_id as auth token (phones send this) or API keys (controllers)
-        if token == self.config.user.id {
-            return Ok(self.config.user.id.clone());
-        }
-        if self.config.auth.api_keys.iter().any(|k| k == token) {
-            Ok(self.config.user.id.clone())
-        } else {
+        let valid = token == self.config.user.id
+            || self.config.auth.api_keys.iter().any(|k| k == token);
+
+        if !valid {
             warn!("rejected token (not user_id or API key in config)");
-            Err("invalid token — not found in worker.toml".to_string())
+            return Err("invalid token — not found in worker.toml".to_string());
         }
+
+        Ok(VerifyResult {
+            firebase_uid: self.config.user.id.clone(),
+            ip_whitelist: self.config.auth.ip_whitelist.join("\n"),
+        })
     }
 
     fn notify_secret(&self) -> Option<&str> {

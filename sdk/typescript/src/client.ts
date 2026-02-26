@@ -5,6 +5,7 @@ import type { FoundElement } from "./selector.js";
 import type {
   AuthMessage,
   CameraResult,
+  ClientVersion,
   ClipboardResult,
   CommandResponse,
   CopyResult,
@@ -19,7 +20,10 @@ import type {
   UiTreeResult,
 } from "./types.js";
 
-const DEFAULT_API_URL = "https://screenmcp.com";
+const DEFAULT_API_URL = "https://api.screenmcp.com";
+
+/** Current SDK version sent to the worker for compatibility checking. */
+export const SDK_VERSION: ClientVersion = { major: 1, minor: 0, component: "sdk-ts" };
 
 interface PendingCommand {
   resolve: (resp: CommandResponse) => void;
@@ -414,6 +418,7 @@ export class ScreenMCPClient extends EventEmitter {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
       },
+      body: JSON.stringify({ device_id: this.deviceId }),
     });
 
     if (!resp.ok) {
@@ -440,6 +445,7 @@ export class ScreenMCPClient extends EventEmitter {
           key: this.apiKey,
           role: "controller",
           last_ack: 0,
+          version: SDK_VERSION,
         };
         if (this.deviceId) {
           auth.target_device_id = this.deviceId;
@@ -536,7 +542,17 @@ export class ScreenMCPClient extends EventEmitter {
           break;
 
         case "error":
-          this.emit("error", new Error(msg.error));
+          if (msg.code && msg.message) {
+            // Version error with structured code and message
+            const versionErr = new Error(msg.message);
+            (versionErr as Error & { code: string; update_url?: string }).code = msg.code;
+            if (msg.update_url) {
+              (versionErr as Error & { update_url?: string }).update_url = msg.update_url;
+            }
+            this.emit("error", versionErr);
+          } else {
+            this.emit("error", new Error(msg.error));
+          }
           break;
       }
     }

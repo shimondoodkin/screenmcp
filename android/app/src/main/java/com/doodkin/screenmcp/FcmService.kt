@@ -15,7 +15,7 @@ class FcmService : FirebaseMessagingService() {
     companion object {
         private const val TAG = "FcmService"
         // API base URL for device registration
-        var apiBaseUrl: String = "https://screenmcp.com"
+        var apiBaseUrl: String = "https://api.screenmcp.com"
     }
 
     /** Get or create a persistent cryptographically secure device ID in SharedPreferences */

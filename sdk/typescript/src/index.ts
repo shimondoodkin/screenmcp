@@ -1,4 +1,4 @@
-export { ScreenMCPClient } from "./client.js";
+export { ScreenMCPClient, SDK_VERSION } from "./client.js";
 
 export { findElements, parseSelector, ElementHandle } from "./selector.js";
 export type {
@@ -22,6 +22,7 @@ export type {
   ListCamerasResult,
   ScrollDirection,
   CommandResponse,
+  ClientVersion,
   ScreenMCPEvents,
 } from "./types.js";
 

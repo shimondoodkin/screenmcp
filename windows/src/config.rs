@@ -53,7 +53,7 @@ pub struct Config {
 }
 
 fn default_api_url() -> String {
-    "https://screenmcp.com".to_string()
+    "https://api.screenmcp.com".to_string()
 }
 
 fn default_true() -> bool {

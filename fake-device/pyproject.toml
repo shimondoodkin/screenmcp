@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fake-device"
+version = "0.1.0"
+description = "Fake ScreenMCP device client for automated testing"
+requires-python = ">=3.10"
+dependencies = [
+    "websockets>=12.0",
+    "httpx>=0.25.0",
+    "httpx-sse>=0.4.0",
+]
+
+[project.scripts]
+fake-device = "fake_device.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

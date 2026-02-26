@@ -146,7 +146,7 @@ class MainActivity : AppCompatActivity() {
         if (isOpenSourceMode()) {
             return getOpenSourceApiUrl()
         }
-        return "https://screenmcp.com"
+        return "https://api.screenmcp.com"
     }
 
     /** Get or create a persistent cryptographically secure device ID in SharedPreferences */

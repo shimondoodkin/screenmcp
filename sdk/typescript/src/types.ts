@@ -68,6 +68,13 @@ export type ScrollDirection = "up" | "down" | "left" | "right";
 // Wire protocol types (internal)
 // ---------------------------------------------------------------------------
 
+/** Version info sent in auth messages for compatibility checking */
+export interface ClientVersion {
+  major: number;
+  minor: number;
+  component: string;
+}
+
 /** Auth message sent by controller to worker */
 export interface AuthMessage {
   type: "auth";
@@ -75,6 +82,7 @@ export interface AuthMessage {
   role: "controller";
   target_device_id?: string;
   last_ack: number;
+  version?: ClientVersion;
 }
 
 export interface AuthOkMessage {
@@ -105,6 +113,9 @@ export interface PingMessage {
 export interface ErrorMessage {
   type: "error";
   error: string;
+  code?: string;
+  message?: string;
+  update_url?: string;
 }
 
 export interface CommandResponse {

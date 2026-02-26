@@ -3,12 +3,37 @@ pub mod protocol;
 pub mod ws;
 pub mod file_auth;
 pub mod file_state;
+pub mod ip_whitelist;
 
 use async_trait::async_trait;
 
 use crate::protocol::Command;
 
 pub type BackendError = Box<dyn std::error::Error + Send + Sync>;
+
+// ---------------------------------------------------------------------------
+// IP tracking backend — extensible trait for recording connection IPs
+// ---------------------------------------------------------------------------
+
+/// Pluggable IP tracking. The open-source worker ships with `NoopIpTracking`;
+/// the cloud worker overrides with real IP recording.
+#[async_trait]
+pub trait IpTrackingBackend: Send + Sync + 'static {
+    /// Record a connection IP after successful auth.
+    async fn record_ip(
+        &self,
+        _firebase_uid: &str,
+        _device_id: &str,
+        _ip_address: &str,
+        _role: &str,
+    ) {}
+}
+
+/// No-op IP tracking backend — never records.
+pub struct NoopIpTracking;
+
+#[async_trait]
+impl IpTrackingBackend for NoopIpTracking {}
 
 // ---------------------------------------------------------------------------
 // Usage backend — extensible trait for command-level usage tracking
@@ -54,10 +79,18 @@ impl UsageBackend for NoopUsage {
     }
 }
 
+/// Result from token verification, includes user ID and optional IP whitelist.
+#[derive(Debug, Clone)]
+pub struct VerifyResult {
+    pub firebase_uid: String,
+    /// IP whitelist text (one IP/CIDR per line). Empty = whitelist disabled.
+    pub ip_whitelist: String,
+}
+
 #[async_trait]
 pub trait AuthBackend: Send + Sync + 'static {
-    /// Verify a token/API key, returning a user ID on success.
-    async fn verify_token(&self, token: &str) -> Result<String, String>;
+    /// Verify a token/API key, returning user info on success.
+    async fn verify_token(&self, token: &str) -> Result<VerifyResult, String>;
 
     /// Check if a device_id is allowed to connect.
     /// API backend always returns Ok. File backend checks against allowed list.
