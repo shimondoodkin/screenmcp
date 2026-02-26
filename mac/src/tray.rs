@@ -112,7 +112,7 @@ async fn do_register_device(api_url: &str, token: &str, device_id: &str) -> Resu
 async fn do_unregister_device(api_url: &str, token: &str, device_id: &str) -> Result<(), String> {
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{api_url}/api/devices/delete"))
+        .post(format!("{api_url}/api/devices/unregister"))
         .header("Authorization", format!("Bearer {token}"))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({"deviceId": device_id}))

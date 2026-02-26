@@ -3,10 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createMcpHandler = createMcpHandler;
 const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
 const streamableHttp_js_1 = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
-const phone_connection_js_1 = require("./lib/phone-connection.js");
+const sdk_1 = require("@screenmcp/sdk");
 const zod_1 = require("zod");
-// Per-device phone connections
-const phoneConnections = new Map();
+// Per-device SDK connections (pooled like cloud MCP server)
+const deviceConnections = new Map();
 // Common device_id parameter added to every phone tool
 const deviceIdParam = zod_1.z.number().int().describe('Device ID number. Use list_devices to see available devices.');
 // MCP tools for phone control — descriptions match web/ exactly
@@ -315,15 +315,21 @@ function createMcpHandler(config, verifyToken) {
             }
             return config.devices.allowed[index].id;
         };
-        // Get or create phone connection for a device
+        // Get or create SDK device connection for a device
         const getPhone = async (targetDeviceId) => {
-            let phone = phoneConnections.get(targetDeviceId);
-            if (!phone) {
-                phone = new phone_connection_js_1.PhoneConnection();
-                await phone.connect(config.server.worker_url, token, targetDeviceId);
-                phoneConnections.set(targetDeviceId, phone);
+            let conn = deviceConnections.get(targetDeviceId);
+            if (conn && conn.connected) {
+                return conn;
             }
-            return phone;
+            const client = new sdk_1.ScreenMCPClient({
+                apiKey: config.auth.api_keys[0],
+                apiUrl: `http://localhost:${config.server.port}`,
+                commandTimeout: 30_000,
+                autoReconnect: false,
+            });
+            conn = await client.connect({ deviceId: targetDeviceId });
+            deviceConnections.set(targetDeviceId, conn);
+            return conn;
         };
         // list_devices — reads from config file [devices].allowed, numbered by position
         server.tool('list_devices', 'List all devices registered to your account. Returns device_id numbers needed for other tools.', {}, async () => {

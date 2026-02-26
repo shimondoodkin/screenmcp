@@ -33,7 +33,7 @@
 
 ## Auth Flow
 
-Auth is based on a shared secret (`user.id`) and optional API keys, all stored in `~/.screenmcp/worker.toml`.
+Auth uses two separate token types stored in `~/.screenmcp/worker.toml`:
 
 ```toml
 [user]
@@ -43,7 +43,10 @@ id = "my-secret-token"
 api_keys = ["pk_abc123", "pk_def456"]
 ```
 
-Both `user.id` and any `api_keys` entry are accepted as Bearer tokens by the worker and mcp-server.
+- **`user.id`** — Device token. Used by phones/desktops to register and listen for SSE events. Cannot be used as an API key.
+- **`api_keys`** — Controller tokens. Used by SDKs, MCP clients, and CLI tools to send commands. Multiple keys supported.
+
+The MCP server enforces this separation: device endpoints (`/api/devices/register`, `/api/events`) only accept `user.id`, while controller endpoints (`/api/discover`, `/api/mcp`, `/api/devices/status`, etc.) only accept API keys. The worker accepts both token types for WebSocket auth (role is determined by the `role` field in the auth message).
 
 ### Phone/Desktop App
 
@@ -113,8 +116,8 @@ port = 3000
 worker_url = "ws://localhost:8080"
 ```
 
-- **user.id**: Shared secret used by phones/desktops as Bearer token
-- **auth.api_keys**: Tokens for controllers and MCP clients
+- **user.id**: Device token — used by phones/desktops for registration and SSE. Not accepted as an API key.
+- **auth.api_keys**: Controller tokens — used by SDKs, MCP clients, and CLI. Supports multiple keys.
 - **devices.allowed**: Registered devices. Format is `"hex_device_id Optional Description"`. Empty list = accept all devices (worker) or no devices registered yet (mcp-server)
 - **server.port**: MCP server listen port
 - **server.worker_url**: WebSocket URL of the worker

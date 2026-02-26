@@ -1,12 +1,12 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { PhoneConnection } from './lib/phone-connection.js';
+import { ScreenMCPClient, DeviceConnection } from '@screenmcp/sdk';
 import { Config } from './lib/config.js';
 import { z } from 'zod';
 
-// Per-device phone connections
-const phoneConnections = new Map<string, PhoneConnection>();
+// Per-device SDK connections (pooled like cloud MCP server)
+const deviceConnections = new Map<string, DeviceConnection>();
 
 // Common device_id parameter added to every phone tool
 const deviceIdParam = z.number().int().describe('Device ID number. Use list_devices to see available devices.');
@@ -22,7 +22,7 @@ const phoneTools = [
       max_width: z.number().optional().describe('Max width for scaling'),
       max_height: z.number().optional().describe('Max height for scaling'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       const res = await phone.sendCommand('screenshot', params);
       return res.result;
     },
@@ -31,7 +31,7 @@ const phoneTools = [
     name: 'ui_tree',
     description: 'Get the accessibility tree of the current screen. Returns array of UI nodes with bounds, text, clickable state, etc.',
     inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
+    handler: async (phone: DeviceConnection) => {
       const res = await phone.sendCommand('ui_tree');
       return res.result;
     },
@@ -45,7 +45,7 @@ const phoneTools = [
       y: z.number().int().describe('Y coordinate'),
       duration: z.number().optional().describe('Press duration in ms (default: 100)'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('click', params)).result;
     },
   },
@@ -57,7 +57,7 @@ const phoneTools = [
       x: z.number().int().describe('X coordinate'),
       y: z.number().int().describe('Y coordinate'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('long_click', params)).result;
     },
   },
@@ -71,7 +71,7 @@ const phoneTools = [
       dx: z.number().int().describe('Horizontal delta'),
       dy: z.number().int().describe('Vertical delta (negative = scroll content up)'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('scroll', params)).result;
     },
   },
@@ -86,7 +86,7 @@ const phoneTools = [
       endY: z.number().int(),
       duration: z.number().optional().describe('Duration in ms (default: 300)'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('drag', params)).result;
     },
   },
@@ -97,7 +97,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       text: z.string().describe('Text to type'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('type', params)).result;
     },
   },
@@ -105,7 +105,7 @@ const phoneTools = [
     name: 'get_text',
     description: 'Get text from the currently focused input field',
     inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
+    handler: async (phone: DeviceConnection) => {
       return (await phone.sendCommand('get_text')).result;
     },
   },
@@ -113,7 +113,7 @@ const phoneTools = [
     name: 'select_all',
     description: 'Select all text in the focused field',
     inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
+    handler: async (phone: DeviceConnection) => {
       return (await phone.sendCommand('select_all')).result;
     },
   },
@@ -124,7 +124,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       return_text: z.boolean().optional().describe('If true, return the copied text in the response (default: false)'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('copy', params)).result;
     },
   },
@@ -135,7 +135,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       text: z.string().optional().describe('Text to set in clipboard before pasting. If omitted, pastes current clipboard contents.'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('paste', params)).result;
     },
   },
@@ -143,7 +143,7 @@ const phoneTools = [
     name: 'get_clipboard',
     description: 'Get the current clipboard text contents.',
     inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
+    handler: async (phone: DeviceConnection) => {
       return (await phone.sendCommand('get_clipboard')).result;
     },
   },
@@ -154,7 +154,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       text: z.string().describe('Text to put in the clipboard'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('set_clipboard', params)).result;
     },
   },
@@ -162,7 +162,7 @@ const phoneTools = [
     name: 'back',
     description: 'Press the back button',
     inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
+    handler: async (phone: DeviceConnection) => {
       return (await phone.sendCommand('back')).result;
     },
   },
@@ -170,7 +170,7 @@ const phoneTools = [
     name: 'home',
     description: 'Press the home button',
     inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
+    handler: async (phone: DeviceConnection) => {
       return (await phone.sendCommand('home')).result;
     },
   },
@@ -178,7 +178,7 @@ const phoneTools = [
     name: 'recents',
     description: 'Open the recent apps view',
     inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
+    handler: async (phone: DeviceConnection) => {
       return (await phone.sendCommand('recents')).result;
     },
   },
@@ -186,7 +186,7 @@ const phoneTools = [
     name: 'list_cameras',
     description: 'List available cameras on the device. Returns camera IDs with facing direction (back/front/external). Use before camera to discover valid IDs.',
     inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: PhoneConnection) => {
+    handler: async (phone: DeviceConnection) => {
       return (await phone.sendCommand('list_cameras')).result;
     },
   },
@@ -200,7 +200,7 @@ const phoneTools = [
       max_width: z.number().optional(),
       max_height: z.number().optional(),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('camera', params)).result;
     },
   },
@@ -211,7 +211,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       key: z.string().describe('Key name: shift, ctrl, alt, meta/cmd, tab, enter, escape, space, backspace, delete, home, end, pageup, pagedown, up, down, left, right, f1-f12, or a single character'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('hold_key', params)).result;
     },
   },
@@ -222,7 +222,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       key: z.string().describe('Key name to release'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('release_key', params)).result;
     },
   },
@@ -233,7 +233,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       key: z.string().describe('Key name: shift, ctrl, alt, meta/cmd, tab, enter, escape, space, backspace, delete, home, end, pageup, pagedown, up, down, left, right, f1-f12, or a single character'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('press_key', params)).result;
     },
   },
@@ -245,7 +245,7 @@ const phoneTools = [
       x: z.number().int().describe('X coordinate'),
       y: z.number().int().describe('Y coordinate'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('right_click', params)).result;
     },
   },
@@ -257,7 +257,7 @@ const phoneTools = [
       x: z.number().int().describe('X coordinate'),
       y: z.number().int().describe('Y coordinate'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('middle_click', params)).result;
     },
   },
@@ -271,7 +271,7 @@ const phoneTools = [
       dx: z.number().int().describe('Horizontal delta'),
       dy: z.number().int().describe('Vertical delta'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('mouse_scroll', params)).result;
     },
   },
@@ -283,7 +283,7 @@ const phoneTools = [
       audio_data: z.string().describe('Base64-encoded audio file (WAV or MP3)'),
       volume: z.number().min(0).max(1).optional().describe('Playback volume'),
     },
-    handler: async (phone: PhoneConnection, params: Record<string, unknown>) => {
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('play_audio', params)).result;
     },
   },
@@ -325,15 +325,21 @@ export function createMcpHandler(
       return config.devices.allowed[index].id;
     };
 
-    // Get or create phone connection for a device
+    // Get or create SDK device connection for a device
     const getPhone = async (targetDeviceId: string) => {
-      let phone = phoneConnections.get(targetDeviceId);
-      if (!phone) {
-        phone = new PhoneConnection();
-        await phone.connect(config.server.worker_url, token, targetDeviceId);
-        phoneConnections.set(targetDeviceId, phone);
+      let conn = deviceConnections.get(targetDeviceId);
+      if (conn && conn.connected) {
+        return conn;
       }
-      return phone;
+      const client = new ScreenMCPClient({
+        apiKey: config.auth.api_keys[0],
+        apiUrl: `http://localhost:${config.server.port}`,
+        commandTimeout: 30_000,
+        autoReconnect: false,
+      });
+      conn = await client.connect({ deviceId: targetDeviceId });
+      deviceConnections.set(targetDeviceId, conn);
+      return conn;
     };
 
     // list_devices — reads from config file [devices].allowed, numbered by position

@@ -498,7 +498,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     val request = Request.Builder()
-                        .url("$apiUrl/api/devices/delete")
+                        .url("$apiUrl/api/devices/unregister")
                         .post(body.toString().toRequestBody("application/json".toMediaType()))
                         .addHeader("Authorization", "Bearer $idToken")
                         .build()

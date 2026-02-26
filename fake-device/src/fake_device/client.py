@@ -116,7 +116,7 @@ class FakeDeviceClient:
 
     async def unregister_device(self) -> None:
         """Unregister this device from the MCP server."""
-        url = f"{self.config.api_url}/api/devices/delete"
+        url = f"{self.config.api_url}/api/devices/unregister"
         headers = {
             "Authorization": f"Bearer {self.config.user_id}",
             "Content-Type": "application/json",

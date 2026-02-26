@@ -25,14 +25,22 @@ function normalizeDeviceId(id: string): string {
   return id.replace(/-/g, '');
 }
 
-/** Verify a token against config. Accepts user_id (phones) or API keys (controllers/MCP). */
+/** Verify any token (user_id or API key). Used by /api/auth/verify where the worker checks either role. */
 function verifyToken(token: string): string | null {
-  if (token === config.user.id) {
-    return config.user.id;
-  }
-  if (config.auth.api_keys.includes(token)) {
-    return config.user.id;
-  }
+  if (token === config.user.id) return config.user.id;
+  if (config.auth.api_keys.includes(token)) return config.user.id;
+  return null;
+}
+
+/** Verify a device token (user.id only). For phone/desktop endpoints: register, SSE. */
+function verifyDeviceToken(token: string): string | null {
+  if (token === config.user.id) return config.user.id;
+  return null;
+}
+
+/** Verify an API key only. For controller endpoints: discover, MCP, device management. */
+function verifyApiKey(token: string): string | null {
+  if (config.auth.api_keys.includes(token)) return config.user.id;
   return null;
 }
 
@@ -66,7 +74,7 @@ function json(res: ServerResponse, data: unknown, status = 200) {
 }
 
 // MCP handler (POST only, stateless like web/)
-const handleMcp = createMcpHandler(config, verifyToken);
+const handleMcp = createMcpHandler(config, verifyApiKey);
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -102,7 +110,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    // POST /api/discover — return worker URL, notify target device via SSE
+    // POST /api/discover — return worker URL, notify target device via SSE (both device and controller tokens accepted)
     if (path === '/api/discover' && req.method === 'POST') {
       const token = extractToken(req);
       if (!token || !verifyToken(token)) {
@@ -116,27 +124,32 @@ const server = createServer(async (req, res) => {
         return;
       }
       const targetDeviceId = normalizeDeviceId(rawDeviceId);
-      emitEvent('connect', { wsUrl: config.server.worker_url, target_device_id: targetDeviceId });
+      const isController = verifyApiKey(token) !== null;
 
-      // Also notify the worker's SSE stream so devices connected there get the event
-      const workerHttpUrl = config.server.worker_url
-        .replace(/^wss:/, 'https:')
-        .replace(/^ws:/, 'http:');
-      const notifyBody = JSON.stringify({
-        type: 'connect',
-        device_id: targetDeviceId,
-        target_device_id: targetDeviceId,
-        wsUrl: config.server.worker_url,
-      });
-      const notifyHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (config.auth.notify_secret) {
-        notifyHeaders['Authorization'] = `Bearer ${config.auth.notify_secret}`;
+      // Only signal the device to connect when called by a controller (API key)
+      if (isController) {
+        emitEvent('connect', { wsUrl: config.server.worker_url, target_device_id: targetDeviceId });
+
+        // Also notify the worker's SSE stream so devices connected there get the event
+        const workerHttpUrl = config.server.worker_url
+          .replace(/^wss:/, 'https:')
+          .replace(/^ws:/, 'http:');
+        const notifyBody = JSON.stringify({
+          type: 'connect',
+          device_id: targetDeviceId,
+          target_device_id: targetDeviceId,
+          wsUrl: config.server.worker_url,
+        });
+        const notifyHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (config.auth.notify_secret) {
+          notifyHeaders['Authorization'] = `Bearer ${config.auth.notify_secret}`;
+        }
+        fetch(`${workerHttpUrl}/notify`, {
+          method: 'POST',
+          headers: notifyHeaders,
+          body: notifyBody,
+        }).catch(err => console.error('Failed to notify worker:', err));
       }
-      fetch(`${workerHttpUrl}/notify`, {
-        method: 'POST',
-        headers: notifyHeaders,
-        body: notifyBody,
-      }).catch(err => console.error('Failed to notify worker:', err));
 
       json(res, { wsUrl: config.server.worker_url });
       return;
@@ -145,7 +158,7 @@ const server = createServer(async (req, res) => {
     // POST /api/devices/register — register a device, persist to config file
     if (path === '/api/devices/register' && req.method === 'POST') {
       const token = extractToken(req);
-      if (!token || !verifyToken(token)) {
+      if (!token || !verifyDeviceToken(token)) {
         json(res, { error: 'Unauthorized' }, 401);
         return;
       }
@@ -170,7 +183,7 @@ const server = createServer(async (req, res) => {
     // GET /api/devices/status — list devices
     if (path === '/api/devices/status' && req.method === 'GET') {
       const token = extractToken(req);
-      if (!token || !verifyToken(token)) {
+      if (!token || !verifyApiKey(token)) {
         json(res, { error: 'Unauthorized' }, 401);
         return;
       }
@@ -186,7 +199,7 @@ const server = createServer(async (req, res) => {
     // POST /api/devices/check — check if a specific device_id is registered
     if (path === '/api/devices/check' && req.method === 'POST') {
       const token = extractToken(req);
-      if (!token || !verifyToken(token)) {
+      if (!token || !verifyApiKey(token)) {
         json(res, { error: 'Unauthorized' }, 401);
         return;
       }
@@ -205,10 +218,10 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    // POST /api/devices/unregister — unregister a device, persist to config file
+    // POST /api/devices/unregister — device unregisters itself on shutdown
     if (path === '/api/devices/unregister' && req.method === 'POST') {
       const token = extractToken(req);
-      if (!token || !verifyToken(token)) {
+      if (!token || !verifyDeviceToken(token)) {
         json(res, { error: 'Unauthorized' }, 401);
         return;
       }
@@ -225,38 +238,16 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    // POST /api/devices/delete — alias for unregister
-    if (path === '/api/devices/delete' && req.method === 'POST') {
-      const token = extractToken(req);
-      if (!token || !verifyToken(token)) {
-        json(res, { error: 'Unauthorized' }, 401);
-        return;
-      }
-      const body = JSON.parse(await readBody(req));
-      const deviceId = normalizeDeviceId(body.deviceId || body.device_id || '');
-      const idx = config.devices.allowed.findIndex(d => d.id === deviceId);
-      if (idx < 0) {
-        json(res, { error: 'Device not found' }, 404);
-        return;
-      }
-      config.devices.allowed.splice(idx, 1);
-      saveDevices(config);
-      console.log(`Deleted device: ${deviceId}`);
-      emitEvent('device_deleted', { device_id: deviceId });
-      json(res, { ok: true });
-      return;
-    }
-
     // POST /api/mcp — MCP Streamable HTTP
     if (path === '/api/mcp' && req.method === 'POST') {
       await handleMcp(req, res);
       return;
     }
 
-    // GET /api/events — SSE endpoint for notifications
+    // GET /api/events — SSE endpoint for notifications (devices listen here)
     if (path === '/api/events' && req.method === 'GET') {
       const token = extractToken(req);
-      if (!token || !verifyToken(token)) {
+      if (!token || !verifyDeviceToken(token)) {
         json(res, { error: 'Unauthorized' }, 401);
         return;
       }

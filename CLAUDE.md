@@ -61,11 +61,10 @@ All clients support "Open Source Server" mode via settings: `opensource_server_e
 ## Auth System
 
 Auth from `~/.screenmcp/worker.toml`:
-- **user.id** — shared secret, acts as both user identifier and auth token for phones
-- **auth.api_keys** — list of API keys for controllers/MCP clients
-- Both `user.id` and any `api_keys` entry are accepted as Bearer tokens
+- **user.id** — device token, used by phones/desktops for registration and SSE. Not accepted as an API key.
+- **auth.api_keys** — controller tokens for SDKs, MCP clients, and CLI. Supports multiple keys.
 
-Worker (default build) and mcp-server both verify tokens locally against the TOML file.
+The MCP server enforces token separation: device endpoints (`/api/devices/register`, `/api/events`) only accept `user.id`, controller endpoints (`/api/discover`, `/api/mcp`, `/api/devices/status`, etc.) only accept API keys. The worker accepts both for WebSocket auth (role determined by the `role` field in the auth message).
 
 ## Connection Flow
 
