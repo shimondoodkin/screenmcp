@@ -1,4 +1,4 @@
-export { ScreenMCPClient, SDK_VERSION } from "./client.js";
+export { ScreenMCPClient, DeviceConnection, SDK_VERSION } from "./client.js";
 
 export { findElements, parseSelector, ElementHandle } from "./selector.js";
 export type {
@@ -12,6 +12,8 @@ export type {
 
 export type {
   ScreenMCPClientOptions,
+  ConnectOptions,
+  DeviceInfo,
   ScreenshotResult,
   TextResult,
   UiTreeResult,

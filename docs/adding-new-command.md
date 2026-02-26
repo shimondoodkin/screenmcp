@@ -72,21 +72,21 @@ The worker is a generic message relay. It does not inspect command names or para
 
 | File | Purpose |
 |------|---------|
-| `sdk/typescript/src/client.ts` | Add async method to `ScreenMCPClient` class |
+| `sdk/typescript/src/client.ts` | Add async method to `DeviceConnection` class |
 | `sdk/typescript/src/types.ts` | Add result type interface if command returns structured data |
 
 ### 9. Python SDK
 
 | File | Purpose |
 |------|---------|
-| `sdk/python/src/screenmcp/client.py` | Add async method to `ScreenMCPClient` class |
+| `sdk/python/src/screenmcp/client.py` | Add async method to `DeviceConnection` class |
 | `sdk/python/src/screenmcp/types.py` | Add dataclass if command returns structured data |
 
 ### 10. Rust SDK
 
 | File | Purpose |
 |------|---------|
-| `sdk/rust/src/client.rs` | Add async method to `ScreenMCPClient` impl |
+| `sdk/rust/src/client.rs` | Add async method to `DeviceConnection` impl |
 | `sdk/rust/src/types.rs` | Add struct if command returns structured data |
 
 ### 11. Cloud Web Playground
@@ -109,6 +109,24 @@ The worker is a generic message relay. It does not inspect command names or para
 |------|---------|
 | `remote/src/` | Add command to REPL if interactive mode lists commands |
 
+### 14. Fake Device — Test Response
+
+| File | Purpose |
+|------|---------|
+| `fake-device/src/fake_device/commands.py` | Add hardcoded response in `handle_command()` — either add to `simple_commands` set or add a new `if cmd ==` block |
+
+**Pattern**: Simple commands (no result data) go in the `simple_commands` set. Commands returning data get their own `if` block returning `{"status": "ok", "result": {...}}`.
+
+### 15. SDK Tests
+
+| File | Purpose |
+|------|---------|
+| `fake-device/test_with_sdk.py` | Add Python SDK test block in `test_with_python_sdk()` |
+| `sdk/typescript/examples/cli/test_fake_device.ts` | Add TypeScript SDK test block in `runTests()` |
+| `sdk/rust/examples/test_fake_device.rs` | Add Rust SDK test block in `main()` |
+
+Each test is a try/catch (or match in Rust) that calls the new SDK method and records pass/fail. See [testing.md](testing.md) for detailed examples.
+
 ## Checklist Template
 
 ```
@@ -119,9 +137,13 @@ The worker is a generic message relay. It does not inspect command names or para
 [ ] Linux: commands.rs — add match (implement or unsupported stub)
 [ ] MCP Server (TS): mcp.ts — add tool definition
 [ ] MCP Server (Rust): tools.rs — add ToolDef
-[ ] SDK TypeScript: client.ts — add method
-[ ] SDK Python: client.py — add method
-[ ] SDK Rust: client.rs — add method
+[ ] SDK TypeScript: client.ts — add method to DeviceConnection
+[ ] SDK Python: client.py — add method to DeviceConnection
+[ ] SDK Rust: client.rs — add method to DeviceConnection
+[ ] Fake device: commands.py — add hardcoded response
+[ ] Test Python: test_with_sdk.py — add test block
+[ ] Test TypeScript: test_fake_device.ts — add test block
+[ ] Test Rust: test_fake_device.rs — add test block
 [ ] Playground: page.tsx — add command UI
 [ ] Docs: commands.md, wire-protocol.md, implementations.md
 ```

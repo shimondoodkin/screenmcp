@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@screenmcp/sdk": "file:../sdk/typescript",
     "ws": "^8.19.0",
     "zod": "^3.25.76"
   },

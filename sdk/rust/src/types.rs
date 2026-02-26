@@ -8,12 +8,28 @@ pub struct ClientOptions {
     /// Base URL of the ScreenMCP API server.
     /// Defaults to "https://screenmcp.com".
     pub api_url: Option<String>,
-    /// Target device ID. If omitted, the server picks the first available device.
-    pub device_id: Option<String>,
     /// Per-command timeout in milliseconds. Defaults to 30000.
     pub command_timeout_ms: Option<u64>,
     /// Automatically reconnect when the worker connection drops. Defaults to true.
     pub auto_reconnect: Option<bool>,
+}
+
+/// Device info returned by list_devices().
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeviceInfo {
+    pub id: String,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub device_number: Option<i32>,
+    #[serde(default)]
+    pub connected: Option<bool>,
+}
+
+/// Response from /api/devices/status
+#[derive(Debug, Deserialize)]
+pub(crate) struct DevicesStatusResponse {
+    pub devices: Vec<DeviceInfo>,
 }
 
 /// Scroll direction.

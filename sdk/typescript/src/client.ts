@@ -8,8 +8,10 @@ import type {
   ClientVersion,
   ClipboardResult,
   CommandResponse,
+  ConnectOptions,
   CopyResult,
   ControllerCommand,
+  DeviceInfo,
   ListCamerasResult,
   ScreenMCPClientOptions,
   ScreenMCPEvents,
@@ -31,27 +33,142 @@ interface PendingCommand {
   timer: ReturnType<typeof setTimeout>;
 }
 
+// ---------------------------------------------------------------------------
+// ScreenMCPClient — API-level, lightweight, does NOT extend EventEmitter
+// ---------------------------------------------------------------------------
+
 /**
- * ScreenMCP SDK client.
- *
- * Connects to the ScreenMCP infrastructure (API server + worker relay) and
- * provides typed methods for every supported phone command.
+ * ScreenMCPClient handles API-level operations: device discovery and
+ * establishing WebSocket connections to devices.
  *
  * ```ts
- * const phone = new ScreenMCPClient({ apiKey: "pk_..." });
- * await phone.connect();
- * const { image } = await phone.screenshot();
- * await phone.click(540, 1200);
+ * const client = new ScreenMCPClient({ apiKey: "pk_..." });
+ * const devices = await client.listDevices();
+ * const phone = await client.connect({ deviceId: "abc123" });
+ * await phone.screenshot();
  * await phone.disconnect();
  * ```
  */
-export class ScreenMCPClient extends EventEmitter {
+export class ScreenMCPClient {
+  private readonly apiKey: string;
+  private readonly apiUrl: string;
+  private readonly commandTimeout: number;
+  private readonly autoReconnect: boolean;
+
+  constructor(options: ScreenMCPClientOptions) {
+    this.apiKey = options.apiKey;
+    this.apiUrl = (options.apiUrl ?? DEFAULT_API_URL).replace(/\/+$/, "");
+    this.commandTimeout = options.commandTimeout ?? 30_000;
+    this.autoReconnect = options.autoReconnect ?? true;
+  }
+
+  /**
+   * List all devices and their connection status.
+   * Calls `GET /api/devices/status` with Bearer token.
+   */
+  async listDevices(): Promise<DeviceInfo[]> {
+    const resp = await fetch(`${this.apiUrl}/api/devices/status`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`listDevices failed (${resp.status}): ${body}`);
+    }
+
+    const data = (await resp.json()) as { devices: DeviceInfo[] };
+    return data.devices ?? [];
+  }
+
+  /**
+   * Discover a worker and connect to a device via WebSocket.
+   * Returns a {@link DeviceConnection} that provides all command methods.
+   *
+   * @param options - Optional connect options. If `deviceId` is omitted the
+   *   server picks the first available device.
+   */
+  async connect(options?: ConnectOptions): Promise<DeviceConnection> {
+    const deviceId = options?.deviceId;
+    const workerUrl = await this.discover(deviceId);
+
+    const connection = new DeviceConnection({
+      apiKey: this.apiKey,
+      apiUrl: this.apiUrl,
+      deviceId,
+      workerUrl,
+      commandTimeout: this.commandTimeout,
+      autoReconnect: this.autoReconnect,
+      discoverFn: (did) => this.discover(did),
+    });
+
+    await connection._connectWs(workerUrl, deviceId);
+    return connection;
+  }
+
+  // -----------------------------------------------------------------------
+  // Internal: discovery
+  // -----------------------------------------------------------------------
+
+  private async discover(deviceId?: string): Promise<string> {
+    const resp = await fetch(`${this.apiUrl}/api/discover`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ device_id: deviceId }),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`discovery failed (${resp.status}): ${body}`);
+    }
+
+    const data = (await resp.json()) as { wsUrl: string };
+    if (!data.wsUrl) {
+      throw new Error("discovery returned no wsUrl");
+    }
+
+    return data.wsUrl;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DeviceConnectionOptions — internal constructor options
+// ---------------------------------------------------------------------------
+
+interface DeviceConnectionOptions {
+  apiKey: string;
+  apiUrl: string;
+  deviceId?: string;
+  workerUrl: string;
+  commandTimeout: number;
+  autoReconnect: boolean;
+  discoverFn: (deviceId?: string) => Promise<string>;
+}
+
+// ---------------------------------------------------------------------------
+// DeviceConnection — device-level, extends EventEmitter
+// ---------------------------------------------------------------------------
+
+/**
+ * DeviceConnection represents an active WebSocket connection to a single
+ * device. All phone/desktop command methods live here.
+ *
+ * Instances are created by {@link ScreenMCPClient.connect}; do not
+ * construct directly.
+ */
+export class DeviceConnection extends EventEmitter {
   private ws: WebSocket | null = null;
   private readonly apiKey: string;
   private readonly apiUrl: string;
   private readonly deviceId?: string;
   private readonly commandTimeout: number;
   private autoReconnect: boolean;
+  private readonly discoverFn: (deviceId?: string) => Promise<string>;
 
   private pending = new Map<number, PendingCommand>();
   private _lastTempId = 0;
@@ -59,13 +176,16 @@ export class ScreenMCPClient extends EventEmitter {
   private _workerUrl: string | null = null;
   private _connected = false;
 
-  constructor(options: ScreenMCPClientOptions) {
+  /** @internal — use {@link ScreenMCPClient.connect} instead. */
+  constructor(options: DeviceConnectionOptions) {
     super();
     this.apiKey = options.apiKey;
-    this.apiUrl = (options.apiUrl ?? DEFAULT_API_URL).replace(/\/+$/, "");
+    this.apiUrl = options.apiUrl;
     this.deviceId = options.deviceId;
-    this.commandTimeout = options.commandTimeout ?? 30_000;
-    this.autoReconnect = options.autoReconnect ?? true;
+    this._workerUrl = options.workerUrl;
+    this.commandTimeout = options.commandTimeout;
+    this.autoReconnect = options.autoReconnect;
+    this.discoverFn = options.discoverFn;
   }
 
   // -----------------------------------------------------------------------
@@ -82,7 +202,7 @@ export class ScreenMCPClient extends EventEmitter {
     return this._workerUrl;
   }
 
-  /** Whether the client is connected to the worker. */
+  /** Whether the connection to the worker is active. */
   get connected(): boolean {
     return this._connected;
   }
@@ -115,12 +235,6 @@ export class ScreenMCPClient extends EventEmitter {
   // -----------------------------------------------------------------------
   // Connection lifecycle
   // -----------------------------------------------------------------------
-
-  /** Discover a worker via the API, then connect to it via WebSocket. */
-  async connect(): Promise<void> {
-    this._workerUrl = await this.discover();
-    await this.connectWs(this._workerUrl);
-  }
 
   /** Gracefully close the connection. Disables auto-reconnect. */
   async disconnect(): Promise<void> {
@@ -408,36 +522,15 @@ export class ScreenMCPClient extends EventEmitter {
   }
 
   // -----------------------------------------------------------------------
-  // Internal: discovery & WebSocket
+  // Internal: WebSocket connection (called by ScreenMCPClient.connect)
   // -----------------------------------------------------------------------
 
-  private async discover(): Promise<string> {
-    const resp = await fetch(`${this.apiUrl}/api/discover`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ device_id: this.deviceId }),
-    });
-
-    if (!resp.ok) {
-      const body = await resp.text();
-      throw new Error(`discovery failed (${resp.status}): ${body}`);
-    }
-
-    const data = (await resp.json()) as { wsUrl: string };
-    if (!data.wsUrl) {
-      throw new Error("discovery returned no wsUrl");
-    }
-
-    return data.wsUrl;
-  }
-
-  private connectWs(workerUrl: string): Promise<void> {
+  /** @internal — opens and authenticates the WebSocket. */
+  _connectWs(workerUrl: string, deviceId?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(workerUrl);
       this.ws = ws;
+      this._workerUrl = workerUrl;
 
       ws.on("open", () => {
         const auth: AuthMessage = {
@@ -447,8 +540,8 @@ export class ScreenMCPClient extends EventEmitter {
           last_ack: 0,
           version: SDK_VERSION,
         };
-        if (this.deviceId) {
-          auth.target_device_id = this.deviceId;
+        if (deviceId ?? this.deviceId) {
+          auth.target_device_id = deviceId ?? this.deviceId;
         }
         ws.send(JSON.stringify(auth));
       });
@@ -494,9 +587,9 @@ export class ScreenMCPClient extends EventEmitter {
     for (let attempt = 0; attempt < delays.length; attempt++) {
       await new Promise((r) => setTimeout(r, delays[attempt]));
       try {
-        this._workerUrl = await this.discover();
-        await this.connectWs(this._workerUrl);
-        this.emit("reconnected", this._workerUrl);
+        const newWorkerUrl = await this.discoverFn(this.deviceId);
+        await this._connectWs(newWorkerUrl, this.deviceId);
+        this.emit("reconnected", newWorkerUrl);
         return;
       } catch {
         // keep retrying

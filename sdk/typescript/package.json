@@ -1,6 +1,6 @@
 {
   "name": "@screenmcp/sdk",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "TypeScript SDK for controlling phones via ScreenMCP",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,6 +21,13 @@
     "sdk"
   ],
   "license": "MIT",
+  "author": "ScreenMCP Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shimondoodkin/screenmcp",
+    "directory": "sdk/typescript"
+  },
+  "homepage": "https://github.com/shimondoodkin/screenmcp#readme",
   "dependencies": {
     "ws": "^8.18.0"
   },

@@ -4,6 +4,7 @@ from .client import (
     AuthError,
     CommandError,
     ConnectionError,
+    DeviceConnection,
     ScreenMCPClient,
     ScreenMCPError,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "CommandError",
     "CommandResponse",
     "ConnectionError",
+    "DeviceConnection",
     "ElementHandle",
     "FoundElement",
     "ScreenMCPClient",

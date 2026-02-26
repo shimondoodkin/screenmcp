@@ -13,48 +13,52 @@ npm install @screenmcp/sdk
 ```typescript
 import { ScreenMCPClient } from "@screenmcp/sdk";
 
-const phone = new ScreenMCPClient({
-  apiKey: "pk_your_api_key_here",
-  deviceId: "a1b2c3d4e5f67890abcdef1234567890", // target device's crypto ID
-});
+// 1. Create API client
+const client = new ScreenMCPClient({ apiKey: "pk_your_api_key_here" });
 
-await phone.connect();
+// 2. List available devices
+const devices = await client.listDevices();
+console.log(devices);
 
-// Take a screenshot
+// 3. Connect to a device — returns a DeviceConnection
+const phone = await client.connect({ deviceId: "a1b2c3d4e5f67890abcdef1234567890" });
+
+// 4. Send commands
 const { image } = await phone.screenshot();
 // image is a base64-encoded WebP string
 
-// Tap on the screen
 await phone.click(540, 1200);
-
-// Type text
 await phone.type("Hello world");
 
+// 5. Disconnect
 await phone.disconnect();
 ```
 
 ## API Reference
 
-### Constructor
+### ScreenMCPClient (API-level)
 
 ```typescript
 new ScreenMCPClient(options: {
   apiKey: string;         // Required. Your API key (pk_... format).
   apiUrl?: string;        // API server URL. Defaults to https://screenmcp.com
-  deviceId?: string;      // Target device's cryptographic ID (32 hex chars). Get from /api/devices/status.
   commandTimeout?: number; // Per-command timeout in ms. Defaults to 30000.
   autoReconnect?: boolean; // Auto-reconnect on disconnect. Defaults to true.
 })
 ```
 
-### Connection
+#### Methods
 
 ```typescript
-await phone.connect();    // Discover worker and open WebSocket
-await phone.disconnect(); // Close connection
+await client.listDevices();                    // Returns DeviceInfo[]
+await client.connect({ deviceId: "..." });     // Returns DeviceConnection
 ```
 
-### Commands
+### DeviceConnection (device-level)
+
+All command methods and events live on the connection returned by `client.connect()`.
+
+#### Commands
 
 | Method | Description |
 |--------|-------------|
@@ -75,7 +79,7 @@ await phone.disconnect(); // Close connection
 | `camera(facing?)` | Returns `{ image: string }`. Facing: `"front"` or `"rear"` |
 | `sendCommand(cmd, params?)` | Send any command (for future/custom commands) |
 
-### Events
+#### Events
 
 ```typescript
 phone.on("connected", () => { /* WebSocket connected */ });
@@ -86,7 +90,7 @@ phone.on("reconnecting", () => { /* attempting reconnect */ });
 phone.on("reconnected", (workerUrl: string) => { /* reconnected successfully */ });
 ```
 
-### Properties
+#### Properties
 
 ```typescript
 phone.connected       // boolean - is WebSocket connected
@@ -100,8 +104,8 @@ phone.workerUrl       // string | null - current worker URL
 import { ScreenMCPClient } from "@screenmcp/sdk";
 import { writeFileSync } from "fs";
 
-const phone = new ScreenMCPClient({ apiKey: "pk_..." });
-await phone.connect();
+const client = new ScreenMCPClient({ apiKey: "pk_..." });
+const phone = await client.connect({ deviceId: "..." });
 
 const { image } = await phone.screenshot();
 writeFileSync("screenshot.webp", Buffer.from(image, "base64"));
@@ -112,7 +116,8 @@ await phone.disconnect();
 ## Example: Monitor Phone Connection
 
 ```typescript
-const phone = new ScreenMCPClient({ apiKey: "pk_..." });
+const client = new ScreenMCPClient({ apiKey: "pk_..." });
+const phone = await client.connect({ deviceId: "..." });
 
 phone.on("phone_status", (online) => {
   console.log(`Phone is ${online ? "online" : "offline"}`);
@@ -121,8 +126,6 @@ phone.on("phone_status", (online) => {
 phone.on("error", (err) => {
   console.error("Connection error:", err.message);
 });
-
-await phone.connect();
 ```
 
 ## License

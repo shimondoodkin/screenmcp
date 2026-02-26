@@ -342,11 +342,11 @@ export function findElements(
 // ElementHandle — fluent API for interacting with found elements
 // ---------------------------------------------------------------------------
 
-import type { ScreenMCPClient } from "./client.js";
+import type { DeviceConnection } from "./client.js";
 
 export class ElementHandle {
   constructor(
-    private client: ScreenMCPClient,
+    private client: DeviceConnection,
     private selector: string,
     private timeout: number = 3000,
   ) {}

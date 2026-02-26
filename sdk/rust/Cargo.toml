@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "Rust SDK for ScreenMCP — control phones and desktops programmatically"
 license = "MIT"
+repository = "https://github.com/shimondoodkin/screenmcp"
+homepage = "https://github.com/shimondoodkin/screenmcp"
+authors = ["ScreenMCP Team"]
+keywords = ["phone", "automation", "android", "websocket", "mcp"]
+categories = ["api-bindings"]
+readme = "README.md"
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }

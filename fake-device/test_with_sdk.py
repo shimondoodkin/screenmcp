@@ -149,35 +149,44 @@ async def test_with_python_sdk(
     client = ScreenMCPClient(
         api_key=api_key,
         api_url=api_url,
-        device_id=device_id,
         command_timeout=10.0,
         auto_reconnect=False,
     )
 
+    # ── Test: list_devices ────────────────────────────────────────────
     try:
-        await client.connect()
-        log.info("  Connected to worker: %s", client.worker_url)
+        devices = await client.list_devices()
+        if isinstance(devices, list):
+            results.ok(f"list_devices() -> {len(devices)} devices")
+        else:
+            results.fail("list_devices", f"Expected list, got {type(devices)}")
+    except Exception as e:
+        results.fail("list_devices", str(e))
+
+    try:
+        phone = await client.connect(device_id=device_id)
+        log.info("  Connected to worker: %s", phone.worker_url)
     except Exception as e:
         results.fail("connect", f"Failed to connect: {e}")
         return
 
     # Wait for the fake device (phone) to connect via SSE → WS
-    if not client.phone_connected:
+    if not phone.phone_connected:
         log.info("  Waiting for phone to connect...")
         for _ in range(30):  # up to 15 seconds
             await asyncio.sleep(0.5)
-            if client.phone_connected:
+            if phone.phone_connected:
                 break
-        if client.phone_connected:
+        if phone.phone_connected:
             log.info("  Phone connected!")
         else:
             results.fail("phone_connect", "Phone did not connect within 15s")
-            await client.disconnect()
+            await phone.disconnect()
             return
 
     # ── Test: screenshot ──────────────────────────────────────────────
     try:
-        result = await client.screenshot()
+        result = await phone.screenshot()
         image_b64 = result.get("image", "")
         if not image_b64:
             results.fail("screenshot", "No image data returned")
@@ -193,21 +202,21 @@ async def test_with_python_sdk(
 
     # ── Test: click ───────────────────────────────────────────────────
     try:
-        result = await client.click(540, 960)
+        result = await phone.click(540, 960)
         results.ok("click(540, 960)")
     except Exception as e:
         results.fail("click", str(e))
 
     # ── Test: type_text ───────────────────────────────────────────────
     try:
-        result = await client.type_text("hello world")
+        result = await phone.type_text("hello world")
         results.ok("type_text('hello world')")
     except Exception as e:
         results.fail("type_text", str(e))
 
     # ── Test: ui_tree ─────────────────────────────────────────────────
     try:
-        result = await client.ui_tree()
+        result = await phone.ui_tree()
         tree = result.get("tree", [])
         if not tree:
             results.fail("ui_tree", "Empty tree returned")
@@ -229,42 +238,42 @@ async def test_with_python_sdk(
 
     # ── Test: back ────────────────────────────────────────────────────
     try:
-        result = await client.back()
+        result = await phone.back()
         results.ok("back()")
     except Exception as e:
         results.fail("back", str(e))
 
     # ── Test: home ────────────────────────────────────────────────────
     try:
-        result = await client.home()
+        result = await phone.home()
         results.ok("home()")
     except Exception as e:
         results.fail("home", str(e))
 
     # ── Test: recents ─────────────────────────────────────────────────
     try:
-        result = await client.recents()
+        result = await phone.recents()
         results.ok("recents()")
     except Exception as e:
         results.fail("recents", str(e))
 
     # ── Test: long_click ──────────────────────────────────────────────
     try:
-        result = await client.long_click(100, 200)
+        result = await phone.long_click(100, 200)
         results.ok("long_click(100, 200)")
     except Exception as e:
         results.fail("long_click", str(e))
 
     # ── Test: scroll ──────────────────────────────────────────────────
     try:
-        result = await client.scroll("down", 500)
+        result = await phone.scroll("down", 500)
         results.ok("scroll('down', 500)")
     except Exception as e:
         results.fail("scroll", str(e))
 
     # ── Test: get_text ────────────────────────────────────────────────
     try:
-        result = await client.get_text()
+        result = await phone.get_text()
         text = result.get("text", "")
         if text:
             results.ok(f"get_text() -> '{text}'")
@@ -275,42 +284,42 @@ async def test_with_python_sdk(
 
     # ── Test: copy ────────────────────────────────────────────────────
     try:
-        result = await client.copy(return_text=True)
+        result = await phone.copy(return_text=True)
         results.ok(f"copy(return_text=True) -> text={result.get('text', '(none)')}")
     except Exception as e:
         results.fail("copy", str(e))
 
     # ── Test: get_clipboard ───────────────────────────────────────────
     try:
-        result = await client.get_clipboard()
+        result = await phone.get_clipboard()
         results.ok(f"get_clipboard() -> '{result.get('text', '')}'")
     except Exception as e:
         results.fail("get_clipboard", str(e))
 
     # ── Test: set_clipboard ───────────────────────────────────────────
     try:
-        result = await client.set_clipboard("test clipboard content")
+        result = await phone.set_clipboard("test clipboard content")
         results.ok("set_clipboard('test clipboard content')")
     except Exception as e:
         results.fail("set_clipboard", str(e))
 
     # ── Test: paste ───────────────────────────────────────────────────
     try:
-        result = await client.paste()
+        result = await phone.paste()
         results.ok("paste()")
     except Exception as e:
         results.fail("paste", str(e))
 
     # ── Test: select_all ──────────────────────────────────────────────
     try:
-        result = await client.select_all()
+        result = await phone.select_all()
         results.ok("select_all()")
     except Exception as e:
         results.fail("select_all", str(e))
 
     # ── Test: list_cameras ────────────────────────────────────────────
     try:
-        result = await client.list_cameras()
+        result = await phone.list_cameras()
         cameras = result.get("cameras", [])
         results.ok(f"list_cameras() -> {len(cameras)} cameras")
     except Exception as e:
@@ -318,7 +327,7 @@ async def test_with_python_sdk(
 
     # ── Test: camera ──────────────────────────────────────────────────
     try:
-        result = await client.camera("0")
+        result = await phone.camera("0")
         image_b64 = result.get("image", "")
         if image_b64:
             results.ok(f"camera('0') -> {len(image_b64)} base64 chars")
@@ -329,7 +338,7 @@ async def test_with_python_sdk(
 
     # ── Test: selector engine with ui_tree data ───────────────────────
     try:
-        result = await client.ui_tree()
+        result = await phone.ui_tree()
         tree = result.get("tree", [])
 
         # Test text selector
@@ -373,7 +382,7 @@ async def test_with_python_sdk(
 
     # ── Test: find() fluent API ───────────────────────────────────────
     try:
-        el = await client.find("text:Chrome", timeout=2.0).element()
+        el = await phone.find("text:Chrome", timeout=2.0).element()
         if el.text == "Chrome":
             results.ok(f"find('text:Chrome').element() -> ({el.x}, {el.y})")
         else:
@@ -383,7 +392,7 @@ async def test_with_python_sdk(
 
     # ── Test: exists() ────────────────────────────────────────────────
     try:
-        exists = await client.exists("text:Settings", timeout=1.0)
+        exists = await phone.exists("text:Settings", timeout=1.0)
         if exists:
             results.ok("exists('text:Settings') -> True")
         else:
@@ -393,7 +402,7 @@ async def test_with_python_sdk(
 
     # ── Test: exists() for non-existent element ──────────────────────
     try:
-        exists = await client.exists("text:NonExistentElement", timeout=1.0)
+        exists = await phone.exists("text:NonExistentElement", timeout=1.0)
         if not exists:
             results.ok("exists('text:NonExistentElement') -> False")
         else:
@@ -403,21 +412,21 @@ async def test_with_python_sdk(
 
     # ── Test: keyboard commands (desktop-style) ───────────────────────
     try:
-        result = await client.press_key("Enter")
+        result = await phone.press_key("Enter")
         results.ok("press_key('Enter')")
     except Exception as e:
         results.fail("press_key", str(e))
 
     # ── Test: drag ────────────────────────────────────────────────────
     try:
-        result = await client.drag(100, 200, 500, 600)
+        result = await phone.drag(100, 200, 500, 600)
         results.ok("drag(100, 200, 500, 600)")
     except Exception as e:
         results.fail("drag", str(e))
 
     # ── Test: unknown command returns error ────────────────────────────
     try:
-        resp = await client.send_command("totally_fake_command")
+        resp = await phone.send_command("totally_fake_command")
         results.fail("unknown_command", "Expected CommandError but got success")
     except CommandError as e:
         results.ok(f"unknown command raises CommandError: {e}")
@@ -425,7 +434,7 @@ async def test_with_python_sdk(
         results.fail("unknown_command", f"Unexpected error type: {type(e).__name__}: {e}")
 
     # Clean up
-    await client.disconnect()
+    await phone.disconnect()
     log.info("  Disconnected from worker")
 
 
@@ -581,20 +590,19 @@ async def test_error_modes_with_sdk(
     client = ScreenMCPClient(
         api_key=api_key,
         api_url=api_url,
-        device_id=device_id,
         command_timeout=10.0,
         auto_reconnect=False,
     )
 
     try:
-        await client.connect()
+        phone = await client.connect(device_id=device_id)
     except Exception as e:
         results.skip("error_modes", f"Cannot connect: {e}")
         return
 
     # Test screen_off mode
     try:
-        result = await client.screenshot()
+        result = await phone.screenshot()
         # If we got here, screen is NOT off
         results.skip("screen_off", "Fake device not in --screen-off mode (screenshot succeeded)")
     except CommandError as e:
@@ -607,7 +615,7 @@ async def test_error_modes_with_sdk(
 
     # Test typing_fails mode
     try:
-        result = await client.type_text("test")
+        result = await phone.type_text("test")
         # If we got here, typing is NOT failing
         results.skip("typing_fails", "Fake device not in --typing-fails mode (type succeeded)")
     except CommandError as e:
@@ -618,7 +626,7 @@ async def test_error_modes_with_sdk(
     except Exception as e:
         results.fail("typing_fails", f"Unexpected error type: {type(e).__name__}: {e}")
 
-    await client.disconnect()
+    await phone.disconnect()
 
 
 # ---------------------------------------------------------------------------

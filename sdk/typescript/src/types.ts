@@ -7,12 +7,26 @@ export interface ScreenMCPClientOptions {
   apiKey: string;
   /** Base URL of the ScreenMCP API server. Defaults to https://screenmcp.com */
   apiUrl?: string;
-  /** Target device ID. If omitted, the server will pick the first available device. */
-  deviceId?: string;
   /** Per-command timeout in milliseconds. Defaults to 30 000. */
   commandTimeout?: number;
   /** Automatically reconnect when the worker connection drops. Defaults to true. */
   autoReconnect?: boolean;
+}
+
+export interface ConnectOptions {
+  /** Target device ID. If omitted, the server will pick the first available device. */
+  deviceId?: string;
+}
+
+export interface DeviceInfo {
+  /** Device ID */
+  id: string;
+  /** Human-readable device name */
+  device_name?: string;
+  /** Device number in the user's device list */
+  device_number?: number;
+  /** Whether the device is currently connected */
+  connected?: boolean;
 }
 
 // ---------------------------------------------------------------------------

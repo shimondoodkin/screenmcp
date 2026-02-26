@@ -2,7 +2,7 @@
 // Steps runner: execute YAML/JSON steps definitions against a ScreenMCP client
 // ---------------------------------------------------------------------------
 
-import type { ScreenMCPClient } from "./client.js";
+import type { DeviceConnection } from "./client.js";
 import type { FoundElement } from "./selector.js";
 
 // ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ export class StepsRunner {
   private verbose: boolean;
 
   constructor(
-    private client: ScreenMCPClient,
+    private client: DeviceConnection,
     options?: StepsRunnerOptions,
   ) {
     this.verbose = options?.verbose ?? false;

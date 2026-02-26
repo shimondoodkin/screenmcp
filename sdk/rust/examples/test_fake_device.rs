@@ -74,50 +74,56 @@ async fn main() {
 
     let mut results = TestResults::new();
 
-    let mut client = ScreenMCPClient::new(ClientOptions {
+    let client = ScreenMCPClient::new(ClientOptions {
         api_key: api_key.clone(),
         api_url: Some(api_url.clone()),
-        device_id: Some(device_id.clone()),
         command_timeout_ms: Some(10_000),
         auto_reconnect: Some(false),
     });
 
+    // list_devices
+    match client.list_devices().await {
+        Ok(devices) => results.pass(&format!("list_devices() -> {} devices", devices.len())),
+        Err(e) => results.fail("list_devices", &e.to_string()),
+    }
+
     // Connect
-    match client.connect().await {
-        Ok(()) => {
-            let phone = client.phone_connected().await;
+    let mut phone = match client.connect(&device_id).await {
+        Ok(conn) => {
+            let phone_connected = conn.phone_connected().await;
             results.pass(&format!(
                 "connect (worker={}, phone={})",
-                client.worker_url().unwrap_or("?"),
-                phone
+                conn.worker_url().unwrap_or("?"),
+                phone_connected
             ));
+            conn
         }
         Err(e) => {
             results.fail("connect", &format!("{}", e));
             std::process::exit(results.summary());
         }
-    }
+    };
 
     // Wait for phone to connect
-    if !client.phone_connected().await {
+    if !phone.phone_connected().await {
         println!("  Waiting for phone to connect...");
         for _ in 0..30 {
             tokio::time::sleep(Duration::from_millis(500)).await;
-            if client.phone_connected().await {
+            if phone.phone_connected().await {
                 break;
             }
         }
-        if client.phone_connected().await {
+        if phone.phone_connected().await {
             results.pass("phone connected");
         } else {
             results.fail("phone_connect", "Phone did not connect within 15s");
-            let _ = client.disconnect().await;
+            let _ = phone.disconnect().await;
             std::process::exit(results.summary());
         }
     }
 
     // screenshot
-    match client.screenshot().await {
+    match phone.screenshot().await {
         Ok(r) => {
             if r.image.is_empty() {
                 results.fail("screenshot", "No image data");
@@ -132,25 +138,25 @@ async fn main() {
     }
 
     // click
-    match client.click(540, 960).await {
+    match phone.click(540, 960).await {
         Ok(()) => results.pass("click(540, 960)"),
         Err(e) => results.fail("click", &e.to_string()),
     }
 
     // long_click
-    match client.long_click(100, 200).await {
+    match phone.long_click(100, 200).await {
         Ok(()) => results.pass("long_click(100, 200)"),
         Err(e) => results.fail("long_click", &e.to_string()),
     }
 
     // type_text
-    match client.type_text("hello world").await {
+    match phone.type_text("hello world").await {
         Ok(()) => results.pass("type_text('hello world')"),
         Err(e) => results.fail("type_text", &e.to_string()),
     }
 
     // ui_tree
-    match client.ui_tree().await {
+    match phone.ui_tree().await {
         Ok(r) => {
             if r.tree.is_empty() {
                 results.fail("ui_tree", "Empty tree");
@@ -166,92 +172,92 @@ async fn main() {
     }
 
     // back
-    match client.back().await {
+    match phone.back().await {
         Ok(()) => results.pass("back()"),
         Err(e) => results.fail("back", &e.to_string()),
     }
 
     // home
-    match client.home().await {
+    match phone.home().await {
         Ok(()) => results.pass("home()"),
         Err(e) => results.fail("home", &e.to_string()),
     }
 
     // recents
-    match client.recents().await {
+    match phone.recents().await {
         Ok(()) => results.pass("recents()"),
         Err(e) => results.fail("recents", &e.to_string()),
     }
 
     // scroll
-    match client.scroll(ScrollDirection::Down, Some(500)).await {
+    match phone.scroll(ScrollDirection::Down, Some(500)).await {
         Ok(()) => results.pass("scroll(Down, 500)"),
         Err(e) => results.fail("scroll", &e.to_string()),
     }
 
     // get_text
-    match client.get_text().await {
+    match phone.get_text().await {
         Ok(r) => results.pass(&format!("get_text() -> '{}'", r.text)),
         Err(e) => results.fail("get_text", &e.to_string()),
     }
 
     // copy
-    match client.copy().await {
+    match phone.copy().await {
         Ok(_) => results.pass("copy()"),
         Err(e) => results.fail("copy", &e.to_string()),
     }
 
     // get_clipboard
-    match client.get_clipboard().await {
+    match phone.get_clipboard().await {
         Ok(r) => results.pass(&format!("get_clipboard() -> '{}'", r.text)),
         Err(e) => results.fail("get_clipboard", &e.to_string()),
     }
 
     // set_clipboard
-    match client.set_clipboard("test content").await {
+    match phone.set_clipboard("test content").await {
         Ok(()) => results.pass("set_clipboard('test content')"),
         Err(e) => results.fail("set_clipboard", &e.to_string()),
     }
 
     // paste
-    match client.paste(None).await {
+    match phone.paste(None).await {
         Ok(()) => results.pass("paste()"),
         Err(e) => results.fail("paste", &e.to_string()),
     }
 
     // select_all
-    match client.select_all().await {
+    match phone.select_all().await {
         Ok(()) => results.pass("select_all()"),
         Err(e) => results.fail("select_all", &e.to_string()),
     }
 
     // drag
-    match client.drag(100, 200, 500, 600).await {
+    match phone.drag(100, 200, 500, 600).await {
         Ok(()) => results.pass("drag(100, 200, 500, 600)"),
         Err(e) => results.fail("drag", &e.to_string()),
     }
 
     // list_cameras
-    match client.list_cameras().await {
+    match phone.list_cameras().await {
         Ok(r) => results.pass(&format!("list_cameras() -> {} cameras", r.cameras.len())),
         Err(e) => results.fail("list_cameras", &e.to_string()),
     }
 
     // camera
-    match client.camera(Some("0")).await {
+    match phone.camera(Some("0")).await {
         Ok(r) => results.pass(&format!("camera('0') -> {} base64 chars", r.image.len())),
         Err(e) => results.fail("camera", &e.to_string()),
     }
 
     // press_key
-    match client.press_key("Enter").await {
+    match phone.press_key("Enter").await {
         Ok(()) => results.pass("press_key('Enter')"),
         Err(e) => results.fail("press_key", &e.to_string()),
     }
 
     // hold_key + release_key
-    match client.hold_key("Shift").await {
-        Ok(()) => match client.release_key("Shift").await {
+    match phone.hold_key("Shift").await {
+        Ok(()) => match phone.release_key("Shift").await {
             Ok(()) => results.pass("hold_key('Shift') + release_key('Shift')"),
             Err(e) => results.fail("release_key", &e.to_string()),
         },
@@ -259,7 +265,7 @@ async fn main() {
     }
 
     // unknown command should return error
-    match client.send_command("totally_fake_command_xyz", None).await {
+    match phone.send_command("totally_fake_command_xyz", None).await {
         Ok(_) => results.fail("unknown_command", "Expected error but got success"),
         Err(ScreenMCPError::Command(msg)) => {
             results.pass(&format!("unknown command raises error: {}", msg));
@@ -267,7 +273,7 @@ async fn main() {
         Err(e) => results.fail("unknown_command", &format!("Wrong error type: {}", e)),
     }
 
-    let _ = client.disconnect().await;
+    let _ = phone.disconnect().await;
 
     let exit_code = results.summary();
     std::process::exit(exit_code);

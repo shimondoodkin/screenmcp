@@ -43,12 +43,21 @@ class CommandError(ScreenMCPError):
     """Raised when a phone command returns an error status."""
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# ScreenMCPClient — lightweight API-level client (no WebSocket state)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
 class ScreenMCPClient:
-    """Async client for the ScreenMCP phone-control platform.
+    """API-level client for the ScreenMCP platform.
+
+    Handles device discovery and creates ``DeviceConnection`` instances.
 
     Usage::
 
-        async with ScreenMCPClient(api_key="pk_...") as phone:
+        client = ScreenMCPClient(api_key="pk_...")
+        devices = await client.list_devices()
+        async with await client.connect(device_id="abc123") as phone:
             img = await phone.screenshot()
             await phone.click(540, 960)
 
@@ -58,37 +67,170 @@ class ScreenMCPClient:
         A ``pk_``-prefixed API key issued from the ScreenMCP dashboard.
     api_url:
         Base URL of the ScreenMCP web API.
-    device_id:
-        Target device UUID.  If ``None`` the server will pick the first
-        device registered to the authenticated user.
     command_timeout:
-        Seconds to wait for a command response before raising a timeout.
+        Default seconds to wait for a command response before raising a timeout.
     auto_reconnect:
-        Whether to attempt transparent reconnection on WebSocket close.
+        Whether ``DeviceConnection`` instances attempt transparent reconnection.
     """
 
     def __init__(
         self,
         api_key: str,
         api_url: str = _DEFAULT_API_URL,
-        device_id: str | None = None,
         command_timeout: float = _DEFAULT_COMMAND_TIMEOUT,
         auto_reconnect: bool = True,
     ) -> None:
         self._api_key = api_key
         self._api_url = api_url.rstrip("/")
-        self._device_id = device_id or ""
         self._command_timeout = command_timeout
         self._auto_reconnect = auto_reconnect
 
-        # Internal state
-        self._ws: ClientConnection | None = None
-        self._worker_url: str | None = None
-        self._phone_connected: bool = False
-        self._connected: bool = False
+    # ── Public API ────────────────────────────────────────────────────────
 
-        # Pending command tracking.  Key is the server-assigned command id
-        # (set after cmd_accepted) or a temporary negative id before that.
+    async def list_devices(self) -> list[dict]:
+        """List all devices visible to the authenticated user.
+
+        Calls ``GET /api/devices/status`` with Bearer token.
+
+        Returns
+        -------
+        list[dict]
+            A list of device dicts from the ``devices`` key.
+        """
+        async with httpx.AsyncClient() as http:
+            resp = await http.get(
+                f"{self._api_url}/api/devices/status",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+            )
+        if resp.status_code != 200:
+            raise ScreenMCPError(
+                f"list_devices failed ({resp.status_code}): {resp.text}"
+            )
+        return resp.json()["devices"]
+
+    async def connect(self, device_id: str = "") -> "DeviceConnection":
+        """Discover a worker, open WebSocket, and return a connected ``DeviceConnection``.
+
+        Parameters
+        ----------
+        device_id:
+            Target device UUID. If empty the server picks the first device
+            registered to the authenticated user.
+
+        Returns
+        -------
+        DeviceConnection
+            A fully connected device handle, ready to receive commands.
+        """
+        worker_url = await self._discover(device_id)
+        ws, phone_connected = await self._open_ws(worker_url, device_id)
+
+        conn = DeviceConnection(
+            api_key=self._api_key,
+            api_url=self._api_url,
+            device_id=device_id,
+            worker_url=worker_url,
+            ws=ws,
+            phone_connected=phone_connected,
+            command_timeout=self._command_timeout,
+            auto_reconnect=self._auto_reconnect,
+        )
+        conn._start_recv_loop()
+        return conn
+
+    # ── Internal helpers ──────────────────────────────────────────────────
+
+    async def _discover(self, device_id: str) -> str:
+        """Call ``POST /api/discover`` and return the worker WebSocket URL."""
+        async with httpx.AsyncClient() as http:
+            resp = await http.post(
+                f"{self._api_url}/api/discover",
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={"device_id": device_id},
+            )
+        if resp.status_code != 200:
+            raise ScreenMCPError(
+                f"discovery failed ({resp.status_code}): {resp.text}"
+            )
+        data = resp.json()
+        ws_url = data.get("wsUrl")
+        if not ws_url:
+            raise ScreenMCPError("discovery returned no wsUrl")
+        return ws_url
+
+    async def _open_ws(
+        self, worker_url: str, device_id: str
+    ) -> tuple[ClientConnection, bool]:
+        """Open WebSocket, authenticate, and return (ws, phone_connected)."""
+        ws = await websockets.connect(worker_url)
+
+        auth = AuthMessage(
+            key=self._api_key,
+            target_device_id=device_id,
+            last_ack=0,
+        )
+        await ws.send(json.dumps(auth.to_dict()))
+
+        raw = await ws.recv()
+        msg = json.loads(raw)
+
+        if msg.get("type") == "auth_fail":
+            await ws.close()
+            raise AuthError(msg.get("error", "authentication failed"))
+
+        if msg.get("type") == "auth_ok":
+            phone_connected = msg.get("phone_connected", False)
+            return ws, phone_connected
+
+        await ws.close()
+        raise ScreenMCPError(f"unexpected auth response: {msg}")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DeviceConnection — holds WebSocket, exposes all device commands
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class DeviceConnection:
+    """A live connection to a single device via WebSocket.
+
+    Instances are created by :meth:`ScreenMCPClient.connect` — do not
+    construct directly.
+
+    Supports async context-manager usage::
+
+        async with await client.connect("abc123") as phone:
+            await phone.screenshot()
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        api_url: str,
+        device_id: str,
+        worker_url: str,
+        ws: ClientConnection,
+        phone_connected: bool,
+        command_timeout: float,
+        auto_reconnect: bool,
+    ) -> None:
+        self._api_key = api_key
+        self._api_url = api_url
+        self._device_id = device_id
+        self._worker_url = worker_url
+        self._command_timeout = command_timeout
+        self._auto_reconnect = auto_reconnect
+
+        # WebSocket state
+        self._ws: ClientConnection | None = ws
+        self._phone_connected: bool = phone_connected
+        self._connected: bool = True
+
+        # Pending command tracking
         self._pending: dict[int, asyncio.Future[CommandResponse]] = {}
         self._last_temp_id: int = 0
         self._recv_task: asyncio.Task[None] | None = None
@@ -96,14 +238,14 @@ class ScreenMCPClient:
     # ── Properties ───────────────────────────────────────────────────────
 
     @property
+    def worker_url(self) -> str:
+        """WebSocket URL of the connected worker."""
+        return self._worker_url
+
+    @property
     def phone_connected(self) -> bool:
         """Whether the target phone is currently online."""
         return self._phone_connected
-
-    @property
-    def worker_url(self) -> str | None:
-        """WebSocket URL of the connected worker."""
-        return self._worker_url
 
     @property
     def connected(self) -> bool:
@@ -112,18 +254,12 @@ class ScreenMCPClient:
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
-    async def connect(self) -> None:
-        """Discover a worker and open an authenticated WebSocket connection."""
-        self._worker_url = await self._discover()
-        await self._connect_ws(self._worker_url)
-
     async def disconnect(self) -> None:
         """Close the WebSocket connection gracefully."""
         self._auto_reconnect = False
         await self._close_ws()
 
-    async def __aenter__(self) -> "ScreenMCPClient":
-        await self.connect()
+    async def __aenter__(self) -> "DeviceConnection":
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -195,7 +331,6 @@ class ScreenMCPClient:
             Scroll distance in pixels (default 500).
         """
         dx_mul, dy_mul = SCROLL_VECTORS[direction]
-        # Use center of a typical 1080x1920 screen as the scroll origin.
         resp = await self.send_command(
             "scroll",
             {"x": 540, "y": 960, "dx": dx_mul * amount, "dy": dy_mul * amount},
@@ -450,59 +585,10 @@ class ScreenMCPClient:
             self._pending.pop(temp_id, None)
             raise
 
-    # ── Discovery ────────────────────────────────────────────────────────
+    # ── Internal: WebSocket management ───────────────────────────────────
 
-    async def _discover(self) -> str:
-        """Call ``POST /api/discover`` and return the worker WebSocket URL."""
-        async with httpx.AsyncClient() as http:
-            resp = await http.post(
-                f"{self._api_url}/api/discover",
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={"device_id": self._device_id},
-            )
-        if resp.status_code != 200:
-            raise ScreenMCPError(
-                f"discovery failed ({resp.status_code}): {resp.text}"
-            )
-        data = resp.json()
-        ws_url = data.get("wsUrl")
-        if not ws_url:
-            raise ScreenMCPError("discovery returned no wsUrl")
-        return ws_url
-
-    # ── WebSocket ────────────────────────────────────────────────────────
-
-    async def _connect_ws(self, worker_url: str) -> None:
-        """Open WebSocket, authenticate, and start the receive loop."""
-        self._ws = await websockets.connect(worker_url)
-
-        # Send auth message
-        auth = AuthMessage(
-            key=self._api_key,
-            target_device_id=self._device_id,
-            last_ack=0,
-        )
-        await self._ws.send(json.dumps(auth.to_dict()))
-
-        # Wait for auth_ok or auth_fail
-        raw = await self._ws.recv()
-        msg = json.loads(raw)
-
-        if msg.get("type") == "auth_fail":
-            await self._ws.close()
-            self._ws = None
-            raise AuthError(msg.get("error", "authentication failed"))
-
-        if msg.get("type") == "auth_ok":
-            self._phone_connected = msg.get("phone_connected", False)
-            self._connected = True
-        else:
-            raise ScreenMCPError(f"unexpected auth response: {msg}")
-
-        # Start background receive loop
+    def _start_recv_loop(self) -> None:
+        """Start the background receive loop (called by ScreenMCPClient.connect)."""
         self._recv_task = asyncio.create_task(self._recv_loop())
 
     async def _recv_loop(self) -> None:
@@ -516,7 +602,6 @@ class ScreenMCPClient:
             pass
         finally:
             self._connected = False
-            # Reject all pending futures
             for fut in self._pending.values():
                 if not fut.done():
                     fut.set_exception(ConnectionError("connection closed"))
@@ -575,10 +660,53 @@ class ScreenMCPClient:
         for attempt, delay in enumerate(delays, 1):
             await asyncio.sleep(delay)
             try:
-                self._worker_url = await self._discover()
-                await self._connect_ws(self._worker_url)
-                logger.info("reconnected (attempt %d)", attempt)
-                return
+                # Re-discover and reconnect
+                async with httpx.AsyncClient() as http:
+                    resp = await http.post(
+                        f"{self._api_url}/api/discover",
+                        headers={
+                            "Authorization": f"Bearer {self._api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={"device_id": self._device_id},
+                    )
+                if resp.status_code != 200:
+                    raise ScreenMCPError(
+                        f"discovery failed ({resp.status_code}): {resp.text}"
+                    )
+                data = resp.json()
+                ws_url = data.get("wsUrl")
+                if not ws_url:
+                    raise ScreenMCPError("discovery returned no wsUrl")
+
+                self._worker_url = ws_url
+
+                # Open and authenticate
+                ws = await websockets.connect(ws_url)
+                auth = AuthMessage(
+                    key=self._api_key,
+                    target_device_id=self._device_id,
+                    last_ack=0,
+                )
+                await ws.send(json.dumps(auth.to_dict()))
+
+                raw = await ws.recv()
+                msg = json.loads(raw)
+
+                if msg.get("type") == "auth_fail":
+                    await ws.close()
+                    raise AuthError(msg.get("error", "authentication failed"))
+
+                if msg.get("type") == "auth_ok":
+                    self._ws = ws
+                    self._phone_connected = msg.get("phone_connected", False)
+                    self._connected = True
+                    self._start_recv_loop()
+                    logger.info("reconnected (attempt %d)", attempt)
+                    return
+
+                await ws.close()
+                raise ScreenMCPError(f"unexpected auth response: {msg}")
             except Exception:
                 logger.warning("reconnect attempt %d failed", attempt, exc_info=True)
         logger.error("reconnect exhausted after %d attempts", len(delays))

@@ -20,7 +20,7 @@ enum WriterCmd {
     Close,
 }
 
-/// Shared state between the client and the background recv task.
+/// Shared state between the connection and the background recv task.
 struct SharedState {
     /// Pending commands awaiting responses, keyed by server-assigned ID.
     pending: HashMap<i64, oneshot::Sender<CommandResponse>>,
@@ -32,25 +32,25 @@ struct SharedState {
     connected: bool,
 }
 
-/// ScreenMCP SDK client.
+/// API-level client for the ScreenMCP service.
 ///
-/// Connects to the ScreenMCP infrastructure (API server + worker relay) and
-/// provides typed methods for every supported phone/desktop command.
+/// Lightweight struct that holds configuration and an HTTP client.
+/// Use [`list_devices`](Self::list_devices) to enumerate available devices
+/// and [`connect`](Self::connect) to open a [`DeviceConnection`].
 ///
 /// ```no_run
 /// use screenmcp::{ScreenMCPClient, ClientOptions};
 ///
 /// # async fn example() -> screenmcp::Result<()> {
-/// let mut phone = ScreenMCPClient::new(ClientOptions {
+/// let client = ScreenMCPClient::new(ClientOptions {
 ///     api_key: "pk_...".into(),
 ///     api_url: None,
-///     device_id: None,
 ///     command_timeout_ms: None,
 ///     auto_reconnect: None,
 /// });
-/// phone.connect().await?;
+/// let devices = client.list_devices().await?;
+/// let mut phone = client.connect("abc123").await?;
 /// let screenshot = phone.screenshot().await?;
-/// phone.click(540, 1200).await?;
 /// phone.disconnect().await?;
 /// # Ok(())
 /// # }
@@ -58,26 +58,9 @@ struct SharedState {
 pub struct ScreenMCPClient {
     api_key: String,
     api_url: String,
-    device_id: Option<String>,
     command_timeout: Duration,
     auto_reconnect: bool,
-
-    state: Arc<Mutex<SharedState>>,
-    writer_tx: Option<mpsc::UnboundedSender<WriterCmd>>,
-    recv_task: Option<tokio::task::JoinHandle<()>>,
-    writer_task: Option<tokio::task::JoinHandle<()>>,
     http_client: reqwest::Client,
-
-    /// Notified when auth completes (ok or fail).
-    auth_notify: Arc<Notify>,
-    /// Auth result from the recv task.
-    auth_result: Arc<Mutex<Option<std::result::Result<bool, String>>>>,
-
-    /// Worker URL currently in use.
-    worker_url: Option<String>,
-
-    /// Temp ID counter for pending command mapping.
-    temp_id_counter: i64,
 }
 
 impl ScreenMCPClient {
@@ -96,9 +79,132 @@ impl ScreenMCPClient {
         Self {
             api_key: options.api_key,
             api_url,
-            device_id: options.device_id,
             command_timeout,
             auto_reconnect: options.auto_reconnect.unwrap_or(true),
+            http_client: reqwest::Client::new(),
+        }
+    }
+
+    /// List all devices and their connection status.
+    ///
+    /// Calls `GET /api/devices/status` with Bearer token authentication.
+    pub async fn list_devices(&self) -> Result<Vec<DeviceInfo>> {
+        let url = format!("{}/api/devices/status", self.api_url);
+
+        let resp = self
+            .http_client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+
+        let status = resp.status().as_u16();
+        if status != 200 {
+            let body_text = resp.text().await.unwrap_or_default();
+            return Err(ScreenMCPError::Discovery {
+                status,
+                body: body_text,
+            });
+        }
+
+        let data: DevicesStatusResponse = resp.json().await?;
+        Ok(data.devices)
+    }
+
+    /// Discover a worker for the given device, open a WebSocket connection,
+    /// authenticate, and return a ready-to-use [`DeviceConnection`].
+    pub async fn connect(&self, device_id: &str) -> Result<DeviceConnection> {
+        let ws_url = self.discover(device_id).await?;
+        let mut conn = DeviceConnection::new(
+            self.api_key.clone(),
+            self.api_url.clone(),
+            device_id.to_string(),
+            self.command_timeout,
+            self.auto_reconnect,
+        );
+        conn.worker_url = Some(ws_url.clone());
+        conn.connect_ws(&ws_url).await?;
+        Ok(conn)
+    }
+
+    /// Discover a worker URL for the given device via the API.
+    async fn discover(&self, device_id: &str) -> Result<String> {
+        let url = format!("{}/api/discover", self.api_url);
+
+        let body = serde_json::json!({ "device_id": device_id });
+
+        let resp = self
+            .http_client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = resp.status().as_u16();
+        if status != 200 {
+            let body_text = resp.text().await.unwrap_or_default();
+            return Err(ScreenMCPError::Discovery {
+                status,
+                body: body_text,
+            });
+        }
+
+        let data: DiscoverResponse = resp.json().await?;
+        if data.ws_url.is_empty() {
+            return Err(ScreenMCPError::Discovery {
+                status: 200,
+                body: "discovery returned no wsUrl".into(),
+            });
+        }
+
+        Ok(data.ws_url)
+    }
+}
+
+/// A live connection to a single device via the ScreenMCP worker relay.
+///
+/// Holds the WebSocket state and exposes typed methods for every supported
+/// phone/desktop command. Obtained via [`ScreenMCPClient::connect`].
+pub struct DeviceConnection {
+    api_key: String,
+    api_url: String,
+    device_id: String,
+    command_timeout: Duration,
+    auto_reconnect: bool,
+
+    state: Arc<Mutex<SharedState>>,
+    writer_tx: Option<mpsc::UnboundedSender<WriterCmd>>,
+    recv_task: Option<tokio::task::JoinHandle<()>>,
+    writer_task: Option<tokio::task::JoinHandle<()>>,
+
+    /// Notified when auth completes (ok or fail).
+    auth_notify: Arc<Notify>,
+    /// Auth result from the recv task.
+    auth_result: Arc<Mutex<Option<std::result::Result<bool, String>>>>,
+
+    /// Worker URL currently in use.
+    worker_url: Option<String>,
+
+    /// Temp ID counter for pending command mapping.
+    temp_id_counter: i64,
+}
+
+impl DeviceConnection {
+    /// Create a new (disconnected) DeviceConnection.
+    fn new(
+        api_key: String,
+        api_url: String,
+        device_id: String,
+        command_timeout: Duration,
+        auto_reconnect: bool,
+    ) -> Self {
+        Self {
+            api_key,
+            api_url,
+            device_id,
+            command_timeout,
+            auto_reconnect,
             state: Arc::new(Mutex::new(SharedState {
                 pending: HashMap::new(),
                 last_temp_id: 0,
@@ -108,19 +214,11 @@ impl ScreenMCPClient {
             writer_tx: None,
             recv_task: None,
             writer_task: None,
-            http_client: reqwest::Client::new(),
             auth_notify: Arc::new(Notify::new()),
             auth_result: Arc::new(Mutex::new(None)),
             worker_url: None,
             temp_id_counter: 0,
         }
-    }
-
-    /// Discover a worker via the API, then connect to it via WebSocket.
-    pub async fn connect(&mut self) -> Result<()> {
-        let ws_url = self.discover().await?;
-        self.worker_url = Some(ws_url.clone());
-        self.connect_ws(&ws_url).await
     }
 
     /// Gracefully close the connection. Disables auto-reconnect.
@@ -141,7 +239,7 @@ impl ScreenMCPClient {
         Ok(())
     }
 
-    /// Whether the client is connected to the worker.
+    /// Whether the connection is authenticated to the worker.
     pub async fn connected(&self) -> bool {
         self.state.lock().await.connected
     }
@@ -434,44 +532,8 @@ impl ScreenMCPClient {
     }
 
     // -----------------------------------------------------------------------
-    // Internal: discovery & WebSocket
+    // Internal: WebSocket connection
     // -----------------------------------------------------------------------
-
-    async fn discover(&self) -> Result<String> {
-        let url = format!("{}/api/discover", self.api_url);
-
-        let mut body = serde_json::Map::new();
-        if let Some(ref device_id) = self.device_id {
-            body.insert("device_id".into(), serde_json::json!(device_id));
-        }
-
-        let resp = self
-            .http_client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&body)
-            .send()
-            .await?;
-
-        let status = resp.status().as_u16();
-        if status != 200 {
-            let body_text = resp.text().await.unwrap_or_default();
-            return Err(ScreenMCPError::Discovery {
-                status,
-                body: body_text,
-            });
-        }
-
-        let data: DiscoverResponse = resp.json().await?;
-        if data.ws_url.is_empty() {
-            return Err(ScreenMCPError::Discovery {
-                status: 200,
-                body: "discovery returned no wsUrl".into(),
-            });
-        }
-
-        Ok(data.ws_url)
-    }
 
     async fn connect_ws(&mut self, ws_url: &str) -> Result<()> {
         info!("connecting to worker: {}", ws_url);
@@ -488,7 +550,7 @@ impl ScreenMCPClient {
             msg_type: "auth",
             key: self.api_key.clone(),
             role: "controller",
-            target_device_id: self.device_id.clone(),
+            target_device_id: Some(self.device_id.clone()),
             last_ack: 0,
         };
         let auth_json = serde_json::to_string(&auth)?;
@@ -634,10 +696,45 @@ impl ScreenMCPClient {
     pub async fn reconnect(&mut self) -> Result<()> {
         let delays = [1000u64, 2000, 4000, 8000, 16000, 30000];
 
+        let http_client = reqwest::Client::new();
+
         for delay_ms in &delays {
             tokio::time::sleep(Duration::from_millis(*delay_ms)).await;
 
-            match self.discover().await {
+            // Discover worker URL for this device
+            let discover_result = async {
+                let url = format!("{}/api/discover", self.api_url);
+                let body = serde_json::json!({ "device_id": self.device_id });
+
+                let resp = http_client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", self.api_key))
+                    .json(&body)
+                    .send()
+                    .await?;
+
+                let status = resp.status().as_u16();
+                if status != 200 {
+                    let body_text = resp.text().await.unwrap_or_default();
+                    return Err(ScreenMCPError::Discovery {
+                        status,
+                        body: body_text,
+                    });
+                }
+
+                let data: DiscoverResponse = resp.json().await?;
+                if data.ws_url.is_empty() {
+                    return Err(ScreenMCPError::Discovery {
+                        status: 200,
+                        body: "discovery returned no wsUrl".into(),
+                    });
+                }
+
+                Ok(data.ws_url)
+            }
+            .await;
+
+            match discover_result {
                 Ok(ws_url) => {
                     self.worker_url = Some(ws_url.clone());
                     match self.connect_ws(&ws_url).await {
@@ -662,7 +759,7 @@ impl ScreenMCPClient {
     }
 }
 
-impl Drop for ScreenMCPClient {
+impl Drop for DeviceConnection {
     fn drop(&mut self) {
         if let Some(tx) = self.writer_tx.take() {
             let _ = tx.send(WriterCmd::Close);

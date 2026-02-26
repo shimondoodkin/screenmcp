@@ -28,7 +28,7 @@
  *   npx tsx test_fake_device.ts [--api-url URL] [--api-key KEY] [--device-id ID]
  */
 
-import { ScreenMCPClient, findElements } from "@screenmcp/sdk";
+import { ScreenMCPClient, DeviceConnection, findElements } from "@screenmcp/sdk";
 import type { FoundElement } from "@screenmcp/sdk";
 
 // ---------------------------------------------------------------------------
@@ -83,39 +83,51 @@ async function runTests() {
   const client = new ScreenMCPClient({
     apiKey: API_KEY,
     apiUrl: API_URL,
-    deviceId: DEVICE_ID,
     commandTimeout: 10_000,
     autoReconnect: false,
   });
 
-  // Connect
+  // listDevices
   try {
-    await client.connect();
-    pass(`connect (worker=${client.workerUrl}, phone=${client.phoneConnected})`);
+    const devices = await client.listDevices();
+    if (Array.isArray(devices)) {
+      pass(`listDevices() -> ${devices.length} devices`);
+    } else {
+      fail("listDevices", `Expected array, got ${typeof devices}`);
+    }
+  } catch (e) {
+    fail("listDevices", (e as Error).message);
+  }
+
+  // Connect
+  let phone: DeviceConnection;
+  try {
+    phone = await client.connect({ deviceId: DEVICE_ID });
+    pass(`connect (worker=${phone.workerUrl}, phone=${phone.phoneConnected})`);
   } catch (e) {
     fail("connect", (e as Error).message);
     process.exit(1);
   }
 
   // Wait for phone to connect (fake device connects via SSE -> WS after discover)
-  if (!client.phoneConnected) {
+  if (!phone.phoneConnected) {
     console.log("  Waiting for phone to connect...");
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 500));
-      if (client.phoneConnected) break;
+      if (phone.phoneConnected) break;
     }
-    if (client.phoneConnected) {
+    if (phone.phoneConnected) {
       pass("phone connected");
     } else {
       fail("phone_connect", "Phone did not connect within 15s");
-      await client.disconnect();
+      await phone.disconnect();
       process.exit(1);
     }
   }
 
   // screenshot
   try {
-    const result = await client.screenshot();
+    const result = await phone.screenshot();
     if (!result.image) {
       fail("screenshot", "No image returned");
     } else {
@@ -129,7 +141,7 @@ async function runTests() {
 
   // click
   try {
-    await client.click(540, 960);
+    await phone.click(540, 960);
     pass("click(540, 960)");
   } catch (e) {
     fail("click", (e as Error).message);
@@ -137,7 +149,7 @@ async function runTests() {
 
   // type
   try {
-    await client.type("hello world");
+    await phone.type("hello world");
     pass("type('hello world')");
   } catch (e) {
     fail("type", (e as Error).message);
@@ -145,7 +157,7 @@ async function runTests() {
 
   // uiTree
   try {
-    const result = await client.uiTree();
+    const result = await phone.uiTree();
     if (!result.tree || result.tree.length === 0) {
       fail("uiTree", "Empty tree");
     } else {
@@ -159,7 +171,7 @@ async function runTests() {
 
   // back
   try {
-    await client.back();
+    await phone.back();
     pass("back()");
   } catch (e) {
     fail("back", (e as Error).message);
@@ -167,7 +179,7 @@ async function runTests() {
 
   // home
   try {
-    await client.home();
+    await phone.home();
     pass("home()");
   } catch (e) {
     fail("home", (e as Error).message);
@@ -175,7 +187,7 @@ async function runTests() {
 
   // recents
   try {
-    await client.recents();
+    await phone.recents();
     pass("recents()");
   } catch (e) {
     fail("recents", (e as Error).message);
@@ -183,7 +195,7 @@ async function runTests() {
 
   // longClick
   try {
-    await client.longClick(100, 200);
+    await phone.longClick(100, 200);
     pass("longClick(100, 200)");
   } catch (e) {
     fail("longClick", (e as Error).message);
@@ -191,7 +203,7 @@ async function runTests() {
 
   // scroll
   try {
-    await client.scroll("down", 500);
+    await phone.scroll("down", 500);
     pass("scroll('down', 500)");
   } catch (e) {
     fail("scroll", (e as Error).message);
@@ -199,7 +211,7 @@ async function runTests() {
 
   // getText
   try {
-    const result = await client.getText();
+    const result = await phone.getText();
     if (result.text) {
       pass(`getText() -> '${result.text}'`);
     } else {
@@ -211,7 +223,7 @@ async function runTests() {
 
   // copy
   try {
-    const result = await client.copy({ returnText: true });
+    const result = await phone.copy({ returnText: true });
     pass(`copy({returnText: true}) -> text='${result.text ?? "(none)"}'`);
   } catch (e) {
     fail("copy", (e as Error).message);
@@ -219,7 +231,7 @@ async function runTests() {
 
   // getClipboard
   try {
-    const result = await client.getClipboard();
+    const result = await phone.getClipboard();
     pass(`getClipboard() -> '${result.text}'`);
   } catch (e) {
     fail("getClipboard", (e as Error).message);
@@ -227,7 +239,7 @@ async function runTests() {
 
   // setClipboard
   try {
-    await client.setClipboard("test content");
+    await phone.setClipboard("test content");
     pass("setClipboard('test content')");
   } catch (e) {
     fail("setClipboard", (e as Error).message);
@@ -235,7 +247,7 @@ async function runTests() {
 
   // paste
   try {
-    await client.paste();
+    await phone.paste();
     pass("paste()");
   } catch (e) {
     fail("paste", (e as Error).message);
@@ -243,7 +255,7 @@ async function runTests() {
 
   // selectAll
   try {
-    await client.selectAll();
+    await phone.selectAll();
     pass("selectAll()");
   } catch (e) {
     fail("selectAll", (e as Error).message);
@@ -251,7 +263,7 @@ async function runTests() {
 
   // drag
   try {
-    await client.drag(100, 200, 500, 600);
+    await phone.drag(100, 200, 500, 600);
     pass("drag(100, 200, 500, 600)");
   } catch (e) {
     fail("drag", (e as Error).message);
@@ -259,7 +271,7 @@ async function runTests() {
 
   // listCameras
   try {
-    const result = await client.listCameras();
+    const result = await phone.listCameras();
     pass(`listCameras() -> ${result.cameras.length} cameras`);
   } catch (e) {
     fail("listCameras", (e as Error).message);
@@ -267,7 +279,7 @@ async function runTests() {
 
   // camera
   try {
-    const result = await client.camera("0");
+    const result = await phone.camera("0");
     if (result.image) {
       pass(`camera('0') -> ${result.image.length} base64 chars`);
     } else {
@@ -279,7 +291,7 @@ async function runTests() {
 
   // pressKey
   try {
-    await client.pressKey("Enter");
+    await phone.pressKey("Enter");
     pass("pressKey('Enter')");
   } catch (e) {
     fail("pressKey", (e as Error).message);
@@ -287,8 +299,8 @@ async function runTests() {
 
   // holdKey + releaseKey
   try {
-    await client.holdKey("Shift");
-    await client.releaseKey("Shift");
+    await phone.holdKey("Shift");
+    await phone.releaseKey("Shift");
     pass("holdKey('Shift') + releaseKey('Shift')");
   } catch (e) {
     fail("holdKey/releaseKey", (e as Error).message);
@@ -296,7 +308,7 @@ async function runTests() {
 
   // ── Selector engine tests ─────────────────────────────────────────
   try {
-    const { tree } = await client.uiTree();
+    const { tree } = await phone.uiTree();
 
     // text selector
     const settingsEls = findElements(tree, "text:Settings");
@@ -336,7 +348,7 @@ async function runTests() {
 
   // find() fluent API
   try {
-    const el = await client.find("text:Chrome", { timeout: 2000 }).element();
+    const el = await phone.find("text:Chrome", { timeout: 2000 }).element();
     if (el.text === "Chrome") {
       pass(`find('text:Chrome').element() -> (${el.x}, ${el.y})`);
     } else {
@@ -348,7 +360,7 @@ async function runTests() {
 
   // exists()
   try {
-    const exists = await client.exists("text:Settings", { timeout: 1000 });
+    const exists = await phone.exists("text:Settings", { timeout: 1000 });
     if (exists) {
       pass("exists('text:Settings') -> true");
     } else {
@@ -360,7 +372,7 @@ async function runTests() {
 
   // exists() for non-existent element
   try {
-    const exists = await client.exists("text:NonExistentElement123", { timeout: 500 });
+    const exists = await phone.exists("text:NonExistentElement123", { timeout: 500 });
     if (!exists) {
       pass("exists('text:NonExistentElement123') -> false");
     } else {
@@ -372,7 +384,7 @@ async function runTests() {
 
   // find().click() via selector
   try {
-    await client.find("text:Settings", { timeout: 2000 }).click();
+    await phone.find("text:Settings", { timeout: 2000 }).click();
     pass("find('text:Settings').click()");
   } catch (e) {
     fail("find.click", (e as Error).message);
@@ -380,14 +392,14 @@ async function runTests() {
 
   // Unknown command should error
   try {
-    await client.sendCommand("totally_fake_command_xyz");
+    await phone.sendCommand("totally_fake_command_xyz");
     fail("unknown_command", "Expected error but got success");
   } catch (e) {
     pass(`unknown command raises error: ${(e as Error).message}`);
   }
 
   // Disconnect
-  await client.disconnect();
+  await phone.disconnect();
 
   // Summary
   const total = passed + failed + skipped;

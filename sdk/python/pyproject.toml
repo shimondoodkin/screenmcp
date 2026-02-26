@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "screenmcp"
-version = "0.1.0"
+version = "1.1.0"
 description = "Python SDK for ScreenMCP — control Android phones programmatically"
 readme = "README.md"
-license = "MIT"
+license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
     { name = "ScreenMCP Team" },
@@ -31,8 +31,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/screenmcp/screenmcp"
-Repository = "https://github.com/screenmcp/screenmcp"
+Homepage = "https://github.com/shimondoodkin/screenmcp"
+Repository = "https://github.com/shimondoodkin/screenmcp"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/screenmcp"]
