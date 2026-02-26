@@ -46,3 +46,6 @@ config/worker.toml
 .DS_Store
 Thumbs.db
 *.venv*
+
+# Python build artifacts
+sdk/python/dist/
