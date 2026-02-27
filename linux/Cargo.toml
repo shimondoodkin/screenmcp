@@ -1,6 +1,6 @@
 [package]
 name = "screenmcp-linux"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "ScreenMCP Linux client - desktop control via system tray"
 
