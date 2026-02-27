@@ -70,7 +70,8 @@ jobs:
             libayatana-appindicator3-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
-            libdbus-1-dev
+            libdbus-1-dev \
+            libasound2-dev
 
       - name: Build
         working-directory: ${{ matrix.client }}
@@ -313,7 +314,8 @@ jobs:
             libayatana-appindicator3-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
-            libdbus-1-dev
+            libdbus-1-dev \
+            libasound2-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -351,7 +353,7 @@ jobs:
           Priority: optional
           Architecture: ${arch}
           Installed-Size: ${installed_size}
-          Depends: libgtk-3-0, libssl3 | libssl1.1, libxdo3, wmctrl
+          Depends: libgtk-3-0, libssl3 | libssl1.1, libxdo3, wmctrl, libasound2
           Maintainer: ScreenMCP <support@screenmcp.com>
           Homepage: https://screenmcp.com
           Description: AI desktop control via MCP

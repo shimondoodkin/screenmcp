@@ -4,7 +4,6 @@ use enigo::{
     Direction::{Click, Press, Release},
     Enigo, Key, Keyboard, Mouse, Settings,
 };
-use image::codecs::png::PngEncoder;
 use image::codecs::webp::WebPEncoder;
 use image::ImageEncoder;
 use nokhwa::pixel_format::RgbFormat;
@@ -137,16 +136,24 @@ fn handle_screenshot(
         img
     };
 
-    // Encode as PNG (widely supported; WebP encoding requires extra feature flags)
+    // Encode as WebP (smaller than PNG, matches Android client format)
+    let quality = params
+        .and_then(|p| p.get("quality"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(100) as u8;
     let mut buf = Cursor::new(Vec::new());
-    PngEncoder::new(&mut buf)
+    // image crate's WebP encoder is lossless-only; quality param is accepted
+    // but lossy encoding would require libwebp. Lossless WebP is still smaller
+    // than PNG for screenshots and the format is consistent across all clients.
+    let _ = quality;
+    WebPEncoder::new_lossless(&mut buf)
         .write_image(
             img.as_raw(),
             img.width(),
             img.height(),
             image::ExtendedColorType::Rgba8,
         )
-        .map_err(|e| format!("PNG encode failed: {e}"))?;
+        .map_err(|e| format!("WebP encode failed: {e}"))?;
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
 
@@ -756,7 +763,7 @@ fn handle_ui_tree() -> Result<Value, String> {
         child = unsafe { walker.GetNextSiblingElement(el).ok() };
     }
 
-    Ok(json!({ "tree": children }))
+    Ok(json!({ "tree": children, "os": "windows" }))
 }
 
 /// Check if rect `inner` is fully enclosed by rect `outer`.
@@ -868,11 +875,19 @@ fn walk_element(
         .map(|h| h.0 as u64)
         .unwrap_or(0);
 
-    // Bounds as [[x, y], [width, height]]
+    // Bounds as {left, top, right, bottom, width, height}
     let bounds_json = bounds_raw
         .as_ref()
-        .map(|r| json!([[r.left as i32, r.top as i32], [(r.right - r.left) as i32, (r.bottom - r.top) as i32]]))
-        .unwrap_or(json!([[0, 0], [0, 0]]));
+        .map(|r| {
+            let left = r.left as i32;
+            let top = r.top as i32;
+            let right = r.right as i32;
+            let bottom = r.bottom as i32;
+            let width = right - left;
+            let height = bottom - top;
+            json!({"left": left, "top": top, "right": right, "bottom": bottom, "width": width, "height": height})
+        })
+        .unwrap_or(json!({"left": 0, "top": 0, "right": 0, "bottom": 0, "width": 0, "height": 0}));
 
     let clickable = unsafe {
         el.GetCurrentPattern(UIA_InvokePatternId).is_ok()
@@ -1011,7 +1026,5 @@ fn control_type_name(id: windows::Win32::UI::Accessibility::UIA_CONTROLTYPE_ID) 
 
 #[cfg(not(windows))]
 fn handle_ui_tree() -> Result<Value, String> {
-    // On Linux/macOS, try to return basic window info using wmctrl-style approach
-    // For now, return a minimal response
-    Ok(json!({ "tree": [], "note": "ui_tree is best supported on Windows" }))
+    Err("ui_tree is not supported on this platform".to_string())
 }

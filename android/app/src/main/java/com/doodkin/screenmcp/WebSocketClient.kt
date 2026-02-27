@@ -29,8 +29,7 @@ class WebSocketClient(
     companion object {
         private const val TAG = "WebSocketClient"
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
-        private const val MAX_RECONNECT_ATTEMPTS = 5
-        private const val IDLE_TIMEOUT_MS = 5 * 60_000L // 5 minutes
+        private const val MAX_RECONNECT_ATTEMPTS = 10
     }
 
     private var webSocket: WebSocket? = null
@@ -51,7 +50,6 @@ class WebSocketClient(
     private val shouldReconnect = AtomicBoolean(false)
     private var reconnectAttempt = 0
     private val handler = Handler(Looper.getMainLooper())
-    private var idleRunnable: Runnable? = null
     /** Monotonic generation counter — stale callbacks compare against this to bail out */
     @Volatile private var connectionGeneration = 0L
 
@@ -242,7 +240,6 @@ class WebSocketClient(
                     isConnecting.set(false)
                     reconnectAttempt = 0
                     handler.post { onStatusChange("Connected") }
-                    resetIdleTimer()
                 }
                 "auth_fail" -> {
                     tlog("Auth failed: ${json.optString("error")}")
@@ -252,14 +249,12 @@ class WebSocketClient(
                 }
                 "ping" -> {
                     ws.send(JSONObject().put("type", "pong").toString())
-                    resetIdleTimer()
                 }
                 "error" -> {
                     tlog("Server error: ${json.optString("error")}")
                 }
                 else -> {
                     if (json.has("id") && json.has("cmd")) {
-                        resetIdleTimer()
                         executeCommand(ws, json)
                     }
                 }
@@ -333,7 +328,7 @@ class WebSocketClient(
 
             "ui_tree" -> {
                 val tree = service.getUiTreeJson()
-                sendResponse(ws, id, "ok", JSONObject().put("tree", tree))
+                sendResponse(ws, id, "ok", JSONObject().put("tree", tree).put("os", "android"))
             }
 
             "click" -> {
@@ -462,7 +457,12 @@ class WebSocketClient(
             }
 
             "right_click", "middle_click", "mouse_scroll" -> {
-                sendResponse(ws, id, "ok", JSONObject().put("unsupported", true))
+                val response = JSONObject().apply {
+                    put("id", id)
+                    put("status", "ok")
+                    put("unsupported", true)
+                }
+                ws.send(response.toString())
             }
 
             "list_cameras" -> {
@@ -550,8 +550,6 @@ class WebSocketClient(
     private fun scheduleReconnect() {
         if (!shouldReconnect.get()) return
 
-        // Cancel idle timer during reconnection — don't let idle timeout kill the reconnect loop
-        cancelIdleTimer()
         isConnecting.set(false)
 
         if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
@@ -590,17 +588,4 @@ class WebSocketClient(
         handler.postDelayed(reconnectRunnable, delay)
     }
 
-    private fun cancelIdleTimer() {
-        idleRunnable?.let { handler.removeCallbacks(it) }
-        idleRunnable = null
-    }
-
-    private fun resetIdleTimer() {
-        cancelIdleTimer()
-        idleRunnable = Runnable {
-            tlog("Idle timeout (${IDLE_TIMEOUT_MS / 1000}s), disconnecting")
-            disconnect()
-        }
-        handler.postDelayed(idleRunnable!!, IDLE_TIMEOUT_MS)
-    }
 }

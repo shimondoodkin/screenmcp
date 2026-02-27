@@ -28,3 +28,4 @@ open = "5"
 getrandom = "0.2"
 hostname = "0.4"
 nokhwa = { version = "0.10", features = ["input-v4l"] }
+rodio = "0.19"

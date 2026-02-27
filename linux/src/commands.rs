@@ -4,7 +4,6 @@ use enigo::{
     Direction::{Click, Press, Release},
     Enigo, Key, Keyboard, Mouse, Settings,
 };
-use image::codecs::png::PngEncoder;
 use image::codecs::webp::WebPEncoder;
 use image::ImageEncoder;
 use nokhwa::pixel_format::RgbFormat;
@@ -47,7 +46,7 @@ pub fn execute_command(
         "right_click" => handle_right_click(params),
         "middle_click" => handle_middle_click(params),
         "mouse_scroll" => handle_mouse_scroll(params),
-        "play_audio" => return json!({"status": "ok", "unsupported": true}),
+        "play_audio" => handle_play_audio(params),
         "hold_key" => handle_hold_key(params),
         "release_key" => handle_release_key(params),
         "press_key" => handle_press_key(params),
@@ -137,16 +136,24 @@ fn handle_screenshot(
         img
     };
 
-    // Encode as PNG
+    // Encode as WebP (smaller than PNG, matches Android client format)
+    let quality = params
+        .and_then(|p| p.get("quality"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(100) as u8;
     let mut buf = Cursor::new(Vec::new());
-    PngEncoder::new(&mut buf)
+    // image crate's WebP encoder is lossless-only; quality param is accepted
+    // but lossy encoding would require libwebp. Lossless WebP is still smaller
+    // than PNG for screenshots and the format is consistent across all clients.
+    let _ = quality;
+    WebPEncoder::new_lossless(&mut buf)
         .write_image(
             img.as_raw(),
             img.width(),
             img.height(),
             image::ExtendedColorType::Rgba8,
         )
-        .map_err(|e| format!("PNG encode failed: {e}"))?;
+        .map_err(|e| format!("WebP encode failed: {e}"))?;
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
 
@@ -588,8 +595,73 @@ fn handle_press_key(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
+fn handle_play_audio(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let audio_data_b64 = p
+        .get("audio_data")
+        .and_then(|v| v.as_str())
+        .ok_or("missing audio_data")?;
+    let volume = p
+        .get("volume")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0) as f32;
+
+    // Decode base64 audio data
+    let audio_bytes = base64::engine::general_purpose::STANDARD
+        .decode(audio_data_b64)
+        .map_err(|e| format!("base64 decode failed: {e}"))?;
+
+    if audio_bytes.len() < 4 {
+        return Err("audio data too short to detect format".to_string());
+    }
+
+    // Detect format from magic bytes: WAV starts with "RIFF", MP3 with 0xFF 0xFB or "ID3"
+    let extension = if audio_bytes.starts_with(b"RIFF") {
+        "wav"
+    } else if audio_bytes.starts_with(b"ID3")
+        || (audio_bytes[0] == 0xFF && audio_bytes[1] == 0xFB)
+    {
+        "mp3"
+    } else {
+        return Err("unsupported audio format: expected WAV (RIFF) or MP3 (ID3/0xFFFB)".to_string());
+    };
+
+    // Write to temp file
+    let temp_path = std::env::temp_dir().join(format!("screenmcp_audio.{extension}"));
+    std::fs::write(&temp_path, &audio_bytes)
+        .map_err(|e| format!("failed to write temp audio file: {e}"))?;
+
+    // Play audio using rodio
+    let play_result = (|| -> Result<(), String> {
+        let (_stream, stream_handle) = rodio::OutputStream::try_default()
+            .map_err(|e| format!("failed to open audio output: {e}"))?;
+
+        let file = std::fs::File::open(&temp_path)
+            .map_err(|e| format!("failed to open temp audio file: {e}"))?;
+        let buf_reader = std::io::BufReader::new(file);
+
+        let source = rodio::Decoder::new(buf_reader)
+            .map_err(|e| format!("failed to decode audio: {e}"))?;
+
+        let sink = rodio::Sink::try_new(&stream_handle)
+            .map_err(|e| format!("failed to create audio sink: {e}"))?;
+
+        sink.set_volume(volume.clamp(0.0, 1.0));
+        sink.append(source);
+        sink.sleep_until_end();
+
+        Ok(())
+    })();
+
+    // Clean up temp file regardless of playback outcome
+    let _ = std::fs::remove_file(&temp_path);
+
+    play_result?;
+    Ok(json!({}))
+}
+
 /// Get list of windows with titles and positions using wmctrl.
-/// Falls back to an empty list if wmctrl is not installed.
+/// Falls back to an error if wmctrl is not installed.
 fn handle_ui_tree() -> Result<Value, String> {
     // Try wmctrl -lG for window list with geometry
     let output = std::process::Command::new("wmctrl")
@@ -618,18 +690,26 @@ fn handle_ui_tree() -> Result<Value, String> {
                         continue;
                     }
 
-                    windows.push(json!({
-                        "title": title,
-                        "x": x,
-                        "y": y,
+                    // Sparse output: only include non-empty/non-default values
+                    let mut node = json!({});
+                    let m = node.as_object_mut().unwrap();
+                    if !title.is_empty() {
+                        m.insert("text".into(), json!(title));
+                    }
+                    m.insert("hWnd".into(), json!(win_id));
+                    m.insert("bounds".into(), json!({
+                        "left": x,
+                        "top": y,
+                        "right": x + width,
+                        "bottom": y + height,
                         "width": width,
                         "height": height,
-                        "windowId": win_id,
                     }));
+                    windows.push(node);
                 }
             }
 
-            Ok(json!({ "tree": windows }))
+            Ok(json!({ "os": "linux", "tree": windows }))
         }
         _ => {
             // wmctrl not available — try xdotool as fallback
@@ -681,20 +761,28 @@ fn handle_ui_tree() -> Result<Value, String> {
                             }
                         }
 
-                        windows.push(json!({
-                            "title": title,
-                            "x": x,
-                            "y": y,
+                        // Sparse output: only include non-empty/non-default values
+                        let mut node = json!({});
+                        let m = node.as_object_mut().unwrap();
+                        if !title.is_empty() {
+                            m.insert("text".into(), json!(title));
+                        }
+                        m.insert("hWnd".into(), json!(win_id));
+                        m.insert("bounds".into(), json!({
+                            "left": x,
+                            "top": y,
+                            "right": x + width,
+                            "bottom": y + height,
                             "width": width,
                             "height": height,
-                            "windowId": win_id,
                         }));
+                        windows.push(node);
                     }
 
-                    Ok(json!({ "tree": windows }))
+                    Ok(json!({ "os": "linux", "tree": windows }))
                 }
                 _ => {
-                    Ok(json!({ "tree": [], "note": "install wmctrl or xdotool for window listing" }))
+                    Err("install wmctrl or xdotool for window listing".to_string())
                 }
             }
         }

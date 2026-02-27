@@ -256,16 +256,27 @@ class ScreenMcpService : AccessibilityService() {
 
     private fun dumpNodeJson(node: AccessibilityNodeInfo, arr: JSONArray) {
         val obj = JSONObject()
-        obj.put("className", node.className?.toString()?.substringAfterLast('.') ?: "")
-        obj.put("text", node.text?.toString() ?: "")
-        obj.put("contentDescription", node.contentDescription?.toString() ?: "")
-        obj.put("resourceId", node.viewIdResourceName ?: "")
-        obj.put("clickable", node.isClickable)
-        obj.put("editable", node.isEditable)
-        obj.put("focused", node.isFocused)
-        obj.put("scrollable", node.isScrollable)
-        obj.put("checkable", node.isCheckable)
-        obj.put("checked", node.isChecked)
+
+        val className = node.className?.toString()?.substringAfterLast('.') ?: ""
+        if (className.isNotEmpty()) obj.put("className", className)
+
+        val text = node.text?.toString() ?: ""
+        if (text.isNotEmpty()) obj.put("text", text)
+
+        val contentDescription = node.contentDescription?.toString() ?: ""
+        if (contentDescription.isNotEmpty()) obj.put("contentDescription", contentDescription)
+
+        val resourceId = node.viewIdResourceName ?: ""
+        if (resourceId.isNotEmpty()) obj.put("resourceId", resourceId)
+
+        if (node.isClickable) obj.put("clickable", true)
+        if (node.isEditable) obj.put("editable", true)
+        if (node.isFocused) obj.put("focused", true)
+        if (node.isScrollable) obj.put("scrollable", true)
+        if (node.isCheckable) {
+            obj.put("checkable", true)
+            obj.put("checked", node.isChecked)
+        }
 
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
@@ -274,6 +285,8 @@ class ScreenMcpService : AccessibilityService() {
             put("top", bounds.top)
             put("right", bounds.right)
             put("bottom", bounds.bottom)
+            put("width", bounds.width())
+            put("height", bounds.height())
         })
 
         if (node.childCount > 0) {
@@ -282,7 +295,7 @@ class ScreenMcpService : AccessibilityService() {
                 val child = node.getChild(i) ?: continue
                 dumpNodeJson(child, children)
             }
-            obj.put("children", children)
+            if (children.length() > 0) obj.put("children", children)
         }
 
         arr.put(obj)

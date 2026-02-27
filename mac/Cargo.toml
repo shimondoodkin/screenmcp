@@ -28,6 +28,7 @@ open = "5"
 getrandom = "0.2"
 hostname = "0.4"
 nokhwa = { version = "0.10", features = ["input-avfoundation"] }
+rodio = { version = "0.19", default-features = false, features = ["wav", "mp3"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"

@@ -1,11 +1,14 @@
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{interval, Instant};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
+
+const MAX_RECONNECT_ATTEMPTS: u32 = 10;
 
 use crate::commands;
 use crate::config::Config;
@@ -116,6 +119,7 @@ pub async fn run_ws_manager(
 
     let mut connection_task: Option<tokio::task::JoinHandle<()>> = None;
     let (disconnect_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+    let reconnect_attempts = Arc::new(AtomicU32::new(0));
 
     loop {
         let cmd = tokio::select! {
@@ -131,6 +135,15 @@ pub async fn run_ws_manager(
                     handle.abort();
                 }
 
+                let attempts = reconnect_attempts.fetch_add(1, Ordering::SeqCst);
+                if attempts >= MAX_RECONNECT_ATTEMPTS {
+                    let _ = status_tx.send(ConnectionStatus::Error(
+                        "max reconnect attempts reached".to_string(),
+                    ));
+                    warn!("max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached, giving up");
+                    continue;
+                }
+
                 let cfg = config.read().await.clone();
                 if !cfg.is_ready() {
                     let _ = status_tx.send(ConnectionStatus::Error(
@@ -143,9 +156,10 @@ pub async fn run_ws_manager(
                 let status_tx2 = status_tx.clone();
                 let disconnect_rx = disconnect_tx.subscribe();
                 let internal_tx2 = internal_tx.clone();
+                let attempts_clone = reconnect_attempts.clone();
 
                 connection_task = Some(tokio::spawn(async move {
-                    run_connection(cfg, status_tx2, disconnect_rx, internal_tx2).await;
+                    run_connection(cfg, status_tx2, disconnect_rx, internal_tx2, attempts_clone).await;
                 }));
             }
             WsCommand::ConnectToWorker(ws_url) => {
@@ -153,6 +167,9 @@ pub async fn run_ws_manager(
                 if let Some(handle) = connection_task.take() {
                     handle.abort();
                 }
+
+                // Reset attempts for SSE-driven connections (SSE manages its own reconnect)
+                reconnect_attempts.store(0, Ordering::SeqCst);
 
                 let cfg = config.read().await.clone();
                 if !cfg.is_ready() {
@@ -165,10 +182,11 @@ pub async fn run_ws_manager(
                 let status_tx2 = status_tx.clone();
                 let disconnect_rx = disconnect_tx.subscribe();
                 let internal_tx2 = internal_tx.clone();
+                let attempts_clone = reconnect_attempts.clone();
 
                 info!("connecting directly to worker: {ws_url}");
                 connection_task = Some(tokio::spawn(async move {
-                    run_connection_to_worker(cfg, ws_url, status_tx2, disconnect_rx, internal_tx2).await;
+                    run_connection_to_worker(cfg, ws_url, status_tx2, disconnect_rx, internal_tx2, attempts_clone).await;
                 }));
             }
             WsCommand::Disconnect => {
@@ -176,6 +194,7 @@ pub async fn run_ws_manager(
                 if let Some(handle) = connection_task.take() {
                     handle.abort();
                 }
+                reconnect_attempts.store(0, Ordering::SeqCst);
                 let _ = status_tx.send(ConnectionStatus::Disconnected);
                 info!("disconnected by user");
             }
@@ -227,8 +246,12 @@ async fn run_connection(
     status_tx: watch::Sender<ConnectionStatus>,
     mut disconnect_rx: tokio::sync::broadcast::Receiver<()>,
     reconnect_tx: mpsc::Sender<WsCommand>,
+    reconnect_attempts: Arc<AtomicU32>,
 ) {
     let _ = status_tx.send(ConnectionStatus::Connecting);
+
+    let attempt = reconnect_attempts.load(Ordering::SeqCst);
+    let backoff_delay = std::cmp::min(1u64 << attempt, 30);
 
     // Discover worker URL
     let ws_url = if let Some(ref direct_url) = config.worker_url {
@@ -239,7 +262,7 @@ async fn run_connection(
             Err(e) => {
                 error!("worker discovery failed: {e}");
                 let _ = status_tx.send(ConnectionStatus::Error(e));
-                schedule_reconnect(reconnect_tx, 5).await;
+                schedule_reconnect(reconnect_tx, backoff_delay).await;
                 return;
             }
         }
@@ -253,7 +276,7 @@ async fn run_connection(
         Err(e) => {
             error!("websocket connect failed: {e}");
             let _ = status_tx.send(ConnectionStatus::Error(format!("WS connect failed: {e}")));
-            schedule_reconnect(reconnect_tx, 5).await;
+            schedule_reconnect(reconnect_tx, backoff_delay).await;
             return;
         }
     };
@@ -275,7 +298,7 @@ async fn run_connection(
     {
         error!("failed to send auth: {e}");
         let _ = status_tx.send(ConnectionStatus::Error(format!("Auth send failed: {e}")));
-        schedule_reconnect(reconnect_tx, 5).await;
+        schedule_reconnect(reconnect_tx, backoff_delay).await;
         return;
     }
 
@@ -321,10 +344,12 @@ async fn run_connection(
     if let Err(e) = auth_result {
         error!("auth failed: {e}");
         let _ = status_tx.send(ConnectionStatus::Error(e));
-        schedule_reconnect(reconnect_tx, 10).await;
+        schedule_reconnect(reconnect_tx, backoff_delay).await;
         return;
     }
 
+    // Reset reconnect counter on successful auth
+    reconnect_attempts.store(0, Ordering::SeqCst);
     let _ = status_tx.send(ConnectionStatus::Connected);
     info!("connected and authenticated as phone");
 
@@ -423,9 +448,11 @@ async fn run_connection(
         }
     }
 
-    // Connection lost, schedule reconnect
+    // Connection lost, schedule reconnect with backoff
+    let attempt = reconnect_attempts.load(Ordering::SeqCst);
+    let backoff_delay = std::cmp::min(1u64 << attempt, 30);
     let _ = status_tx.send(ConnectionStatus::Reconnecting);
-    schedule_reconnect(reconnect_tx, 3).await;
+    schedule_reconnect(reconnect_tx, backoff_delay).await;
 }
 
 /// Run a connection directly to a specific worker URL (skipping discovery).
@@ -436,6 +463,7 @@ async fn run_connection_to_worker(
     status_tx: watch::Sender<ConnectionStatus>,
     mut disconnect_rx: tokio::sync::broadcast::Receiver<()>,
     _reconnect_tx: mpsc::Sender<WsCommand>,
+    reconnect_attempts: Arc<AtomicU32>,
 ) {
     let _ = status_tx.send(ConnectionStatus::Connecting);
 
@@ -518,6 +546,8 @@ async fn run_connection_to_worker(
         return;
     }
 
+    // Reset reconnect counter on successful auth
+    reconnect_attempts.store(0, Ordering::SeqCst);
     let _ = status_tx.send(ConnectionStatus::Connected);
     info!("connected and authenticated as phone (direct worker)");
 
