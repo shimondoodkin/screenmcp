@@ -24,7 +24,7 @@
   "author": "ScreenMCP Team",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shimondoodkin/screenmcp",
+    "url": "git+https://github.com/shimondoodkin/screenmcp.git",
     "directory": "sdk/typescript"
   },
   "homepage": "https://github.com/shimondoodkin/screenmcp#readme",
