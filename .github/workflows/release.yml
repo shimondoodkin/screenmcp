@@ -258,13 +258,42 @@ jobs:
         working-directory: windows
         run: ./build-installer.sh "${GITHUB_REF_NAME#v}"
 
-      - name: Sign Windows installer
+      - name: Sign inner Windows binary before packaging
         if: env.CODE_SIGNING_PFX != ''
         env:
           CODE_SIGNING_PFX: ${{ secrets.CODE_SIGNING_PFX }}
           CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
         run: |
           sudo apt-get install -y osslsigncode
+          echo "$CODE_SIGNING_PFX" | base64 -d > codesign.pfx
+          file="windows/target/installer/screenmcp-windows.exe"
+          osslsigncode sign \
+            -pkcs12 codesign.pfx \
+            -pass "$CODE_SIGNING_PASSWORD" \
+            -ts http://timestamp.digicert.com \
+            -h sha256 \
+            -in "$file" \
+            -out "${file}.signed"
+          mv "${file}.signed" "$file"
+          rm codesign.pfx
+
+      - name: Rebuild installer with signed binary
+        if: env.CODE_SIGNING_PFX != ''
+        env:
+          CODE_SIGNING_PFX: ${{ secrets.CODE_SIGNING_PFX }}
+        working-directory: windows/target/installer
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sed -i "s/^!define APP_VERSION.*$/!define APP_VERSION   \"${version}\"/" installer.nsi
+          makensis installer.nsi
+
+      - name: Sign Windows installer
+        if: env.CODE_SIGNING_PFX != ''
+        env:
+          CODE_SIGNING_PFX: ${{ secrets.CODE_SIGNING_PFX }}
+          CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+        run: |
+          which osslsigncode || sudo apt-get install -y osslsigncode
           echo "$CODE_SIGNING_PFX" | base64 -d > codesign.pfx
           version="${GITHUB_REF_NAME#v}"
           file="windows/target/installer/screenmcp-setup-${version}-x86_64.exe"
@@ -449,6 +478,8 @@ jobs:
             ## Windows
 
             Extract the archive and run `screenmcp-windows.exe`, or use the NSIS installer.
+
+            > **Browser may block the download** — click the small arrow (⌄) next to the download and choose **"Keep"**. See [visual guide](https://github.com/shimondoodkin/screenmcp/blob/main/docs/on-windows-how-to-download-new-setup-file.png).
 
             ## Linux
 
