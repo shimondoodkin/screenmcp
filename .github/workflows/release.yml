@@ -194,20 +194,27 @@ jobs:
         run: ./gradlew assembleRelease
 
       - name: Sign APK
-        if: env.KEYSTORE_BASE64 != ''
+        if: ${{ secrets.KEYSTORE_BASE64 != '' && secrets.KEYSTORE_PASSWORD != '' && secrets.KEY_ALIAS != '' && secrets.KEY_PASSWORD != '' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          # Ensure build-tools are present (zipalign/apksigner)
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "build-tools;35.0.0"
+
           echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
-          # Find the unsigned APK
           APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
           ALIGNED="app/build/outputs/apk/release/screenmcp-aligned.apk"
           SIGNED="app/build/outputs/apk/release/screenmcp-signed.apk"
-          zipalign -v -p 4 "$APK" "$ALIGNED"
-          apksigner sign \
+
+          ZIPALIGN=$(find "$ANDROID_SDK_ROOT/build-tools" -name zipalign | sort -V | tail -1)
+          APKSIGNER=$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner | sort -V | tail -1)
+
+          "$ZIPALIGN" -v -p 4 "$APK" "$ALIGNED"
+          "$APKSIGNER" sign \
             --ks keystore.jks \
             --ks-pass "pass:$KEYSTORE_PASSWORD" \
             --ks-key-alias "$KEY_ALIAS" \
