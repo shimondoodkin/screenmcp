@@ -254,17 +254,17 @@ impl TrayApp {
 
         let (menu_event_tx, menu_event_rx) = std_mpsc::channel::<MenuEvent>();
         let ws_cmd_tx_for_handler = ws_cmd_tx.clone();
+        let repaint_ctx = _cc.egui_ctx.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             if event.id == quit_id {
                 info!("menu: quit clicked");
                 let _ = ws_cmd_tx_for_handler.try_send(WsCommand::Shutdown);
                 std::process::exit(0);
             }
-            info!("menu event handler: received event id={:?}", event.id);
-            match menu_event_tx.send(event) {
-                Ok(()) => info!("menu event handler: sent to channel ok"),
-                Err(e) => error!("menu event handler: channel send failed: {e}"),
-            }
+            let _ = menu_event_tx.send(event);
+            // Wake up the eframe event loop immediately so menu events are processed
+            // without delay (hidden windows on Windows don't repaint reliably)
+            repaint_ctx.request_repaint();
         }));
 
         // Auto-open login window if not signed in
@@ -318,10 +318,7 @@ impl TrayApp {
     }
 
     fn handle_menu_events(&mut self) {
-        let mut event_count = 0u32;
         while let Ok(event) = self.menu_event_rx.try_recv() {
-            event_count += 1;
-            info!("handle_menu_events: processing event id={:?} (#{event_count})", event.id());
             let items = match &self.menu_items {
                 Some(items) => items,
                 None => continue,

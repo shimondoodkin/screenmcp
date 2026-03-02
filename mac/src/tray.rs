@@ -254,6 +254,7 @@ impl TrayApp {
 
         let (menu_event_tx, menu_event_rx) = std_mpsc::channel::<MenuEvent>();
         let ws_cmd_tx_for_handler = ws_cmd_tx.clone();
+        let repaint_ctx = _cc.egui_ctx.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             if event.id == quit_id {
                 info!("menu: quit clicked");
@@ -261,6 +262,7 @@ impl TrayApp {
                 std::process::exit(0);
             }
             let _ = menu_event_tx.send(event);
+            repaint_ctx.request_repaint();
         }));
 
         // Auto-open login window if not signed in
