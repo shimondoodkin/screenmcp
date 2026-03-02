@@ -243,7 +243,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenmcp-android
-          path: ${{ steps.apk.outputs.path }}
+          path: android/${{ steps.apk.outputs.path }}
 
   build-windows-installer:
     runs-on: ubuntu-latest
