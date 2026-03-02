@@ -260,7 +260,11 @@ impl TrayApp {
                 let _ = ws_cmd_tx_for_handler.try_send(WsCommand::Shutdown);
                 std::process::exit(0);
             }
-            let _ = menu_event_tx.send(event);
+            info!("menu event handler: received event id={:?}", event.id);
+            match menu_event_tx.send(event) {
+                Ok(()) => info!("menu event handler: sent to channel ok"),
+                Err(e) => error!("menu event handler: channel send failed: {e}"),
+            }
         }));
 
         // Auto-open login window if not signed in
@@ -314,7 +318,10 @@ impl TrayApp {
     }
 
     fn handle_menu_events(&mut self) {
+        let mut event_count = 0u32;
         while let Ok(event) = self.menu_event_rx.try_recv() {
+            event_count += 1;
+            info!("handle_menu_events: processing event id={:?} (#{event_count})", event.id());
             let items = match &self.menu_items {
                 Some(items) => items,
                 None => continue,
