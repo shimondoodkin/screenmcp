@@ -30,14 +30,19 @@ hostname = "0.4"
 regex = "1"
 nokhwa = { version = "0.10", features = ["input-msmf"] }
 rodio = "0.20"
+axum = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Accessibility",
+    "Win32_UI_Shell",
     "Win32_Graphics_Gdi",
     "Win32_System_Com",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_Storage_Xps",
 ] }
 
 [build-dependencies]

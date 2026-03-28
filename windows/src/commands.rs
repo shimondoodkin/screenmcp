@@ -50,6 +50,16 @@ pub fn execute_command(
         "release_key" => handle_release_key(params),
         "press_key" => handle_press_key(params),
         "play_audio" => handle_play_audio(params),
+        "mouse_move" => handle_mouse_move(params),
+        "double_click" => handle_double_click(params),
+        "hotkey" => handle_hotkey(params),
+        "get_screen_size" => handle_get_screen_size(),
+        "list_windows" => handle_list_windows(),
+        "focus_window" => handle_focus_window(params),
+        "active_window" => handle_active_window(),
+        "screenshot_window" => handle_screenshot_window(params, config),
+        "elevate" => handle_elevate(),
+        "is_elevated" => handle_is_elevated(),
         _ => {
             return json!({
                 "id": id,
@@ -627,6 +637,660 @@ fn handle_press_key(params: Option<&Value>) -> Result<Value, String> {
     let mut enigo = new_enigo()?;
     enigo.key(key, Click).map_err(|e| format!("press_key failed: {e}"))?;
     Ok(json!({}))
+}
+
+fn handle_mouse_move(params: Option<&Value>) -> Result<Value, String> {
+    let (x, y) = get_xy(params)?;
+    let mut enigo = new_enigo()?;
+    enigo
+        .move_mouse(x, y, Coordinate::Abs)
+        .map_err(|e| format!("move_mouse failed: {e}"))?;
+    Ok(json!({}))
+}
+
+fn handle_double_click(params: Option<&Value>) -> Result<Value, String> {
+    let (x, y) = get_xy(params)?;
+    let mut enigo = new_enigo()?;
+    enigo
+        .move_mouse(x, y, Coordinate::Abs)
+        .map_err(|e| format!("move_mouse failed: {e}"))?;
+    enigo
+        .button(Button::Left, Click)
+        .map_err(|e| format!("click failed: {e}"))?;
+    enigo
+        .button(Button::Left, Click)
+        .map_err(|e| format!("click failed: {e}"))?;
+    Ok(json!({}))
+}
+
+fn handle_hotkey(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let keys_arr = p
+        .get("keys")
+        .and_then(|v| v.as_array())
+        .ok_or("missing keys array")?;
+
+    if keys_arr.is_empty() {
+        return Err("keys array is empty".to_string());
+    }
+
+    let keys: Vec<Key> = keys_arr
+        .iter()
+        .map(|v| {
+            let name = v.as_str().ok_or("key must be a string")?;
+            parse_key(name)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut enigo = new_enigo()?;
+
+    // Press all keys in order
+    for key in &keys {
+        enigo.key(*key, Press).map_err(|e| format!("hotkey press failed: {e}"))?;
+    }
+
+    // Release all keys in reverse order
+    for key in keys.iter().rev() {
+        enigo.key(*key, Release).map_err(|e| format!("hotkey release failed: {e}"))?;
+    }
+
+    Ok(json!({}))
+}
+
+fn handle_get_screen_size() -> Result<Value, String> {
+    let screens = screenshots::Screen::all().map_err(|e| format!("failed to list screens: {e}"))?;
+    let screen = screens
+        .first()
+        .ok_or_else(|| "no screens found".to_string())?;
+    let info = screen.display_info;
+    Ok(json!({
+        "width": info.width,
+        "height": info.height,
+        "x": info.x,
+        "y": info.y,
+    }))
+}
+
+#[cfg(windows)]
+fn handle_list_windows() -> Result<Value, String> {
+    use std::sync::Arc;
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE};
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    let vx = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
+    let vy = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
+    let vw = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
+    let vh = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
+
+    struct WindowInfo {
+        title: String,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        is_minimized: bool,
+        is_maximized: bool,
+    }
+
+    let windows_list: Arc<std::sync::Mutex<Vec<WindowInfo>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+
+    // We need to pass data to the callback via LPARAM
+    struct CallbackData {
+        windows: Arc<std::sync::Mutex<Vec<WindowInfo>>>,
+        viewport: (i32, i32, i32, i32),
+    }
+
+    let data = CallbackData {
+        windows: windows_list.clone(),
+        viewport: (vx, vy, vx + vw, vy + vh),
+    };
+
+    unsafe extern "system" fn enum_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let data = &*(lparam.0 as *const CallbackData);
+
+        // Skip invisible windows
+        if !IsWindowVisible(hwnd).as_bool() {
+            return TRUE;
+        }
+
+        // Skip windows with empty titles
+        let mut title_buf = [0u16; 512];
+        let len = GetWindowTextW(hwnd, &mut title_buf);
+        if len == 0 {
+            return TRUE;
+        }
+        let title = String::from_utf16_lossy(&title_buf[..len as usize]);
+
+        // Get window rect
+        let mut rect = std::mem::zeroed::<windows::Win32::Foundation::RECT>();
+        if GetWindowRect(hwnd, &mut rect).is_err() {
+            return TRUE;
+        }
+
+        let w = rect.right - rect.left;
+        let h = rect.bottom - rect.top;
+
+        // Skip zero-size windows
+        if w <= 0 || h <= 0 {
+            return TRUE;
+        }
+
+        // Skip windows entirely outside viewport (offscreen hidden windows)
+        let vp = data.viewport;
+        if rect.right <= vp.0 || rect.left >= vp.2 || rect.bottom <= vp.1 || rect.top >= vp.3 {
+            return TRUE;
+        }
+
+        let is_minimized = IsIconic(hwnd).as_bool();
+        let is_maximized = IsZoomed(hwnd).as_bool();
+
+        data.windows.lock().unwrap().push(WindowInfo {
+            title,
+            x: rect.left,
+            y: rect.top,
+            width: w,
+            height: h,
+            is_minimized,
+            is_maximized,
+        });
+
+        TRUE
+    }
+
+    unsafe {
+        let _ = EnumWindows(Some(enum_callback), LPARAM(&data as *const _ as isize));
+    }
+
+    let windows = windows_list.lock().unwrap();
+    let list: Vec<Value> = windows
+        .iter()
+        .enumerate()
+        .map(|(i, w)| {
+            json!({
+                "index": i,
+                "title": w.title,
+                "x": w.x,
+                "y": w.y,
+                "width": w.width,
+                "height": w.height,
+                "minimized": w.is_minimized,
+                "maximized": w.is_maximized,
+            })
+        })
+        .collect();
+
+    Ok(json!({ "windows": list }))
+}
+
+#[cfg(not(windows))]
+fn handle_list_windows() -> Result<Value, String> {
+    Err("list_windows is only supported on Windows".to_string())
+}
+
+#[cfg(windows)]
+fn handle_focus_window(params: Option<&Value>) -> Result<Value, String> {
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE};
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    let p = params.ok_or("missing params")?;
+
+    let target_title = p.get("title").and_then(|v| v.as_str());
+    let target_index = p.get("index").and_then(|v| v.as_u64()).map(|v| v as usize);
+
+    if target_title.is_none() && target_index.is_none() {
+        return Err("provide either 'title' or 'index' parameter".to_string());
+    }
+
+    // Use list_windows to find the target title
+    let list_result = handle_list_windows()?;
+    let windows = list_result
+        .get("windows")
+        .and_then(|v| v.as_array())
+        .ok_or("failed to list windows")?;
+
+    let target_window_title = if let Some(index) = target_index {
+        windows
+            .get(index)
+            .and_then(|w| w.get("title"))
+            .and_then(|t| t.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("no window at index {index}"))?
+    } else if let Some(title_substr) = target_title {
+        let lower = title_substr.to_lowercase();
+        windows
+            .iter()
+            .find_map(|w| {
+                let t = w.get("title")?.as_str()?;
+                if t.to_lowercase().contains(&lower) {
+                    Some(t.to_string())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| format!("no window matching '{title_substr}'"))?
+    } else {
+        return Err("provide either 'title' or 'index' parameter".to_string());
+    };
+
+    // Find the HWND by title and bring to front
+    struct FindData {
+        target: String,
+        found: Option<isize>,
+    }
+
+    let mut find_data = FindData {
+        target: target_window_title.clone(),
+        found: None,
+    };
+
+    unsafe extern "system" fn find_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let data = &mut *(lparam.0 as *mut FindData);
+        let mut title_buf = [0u16; 512];
+        let len = GetWindowTextW(hwnd, &mut title_buf);
+        if len > 0 {
+            let title = String::from_utf16_lossy(&title_buf[..len as usize]);
+            if title == data.target {
+                data.found = Some(hwnd.0 as isize);
+                return BOOL(0);
+            }
+        }
+        TRUE
+    }
+
+    unsafe {
+        let _ = EnumWindows(
+            Some(find_callback),
+            LPARAM(&mut find_data as *mut _ as isize),
+        );
+    }
+
+    let hwnd_val = find_data.found.ok_or("window not found")?;
+    let hwnd = HWND(hwnd_val as *mut _);
+
+    unsafe {
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        let _ = SetForegroundWindow(hwnd);
+    }
+
+    Ok(json!({ "focused": target_window_title }))
+}
+
+#[cfg(not(windows))]
+fn handle_focus_window(params: Option<&Value>) -> Result<Value, String> {
+    let _ = params;
+    Err("focus_window is only supported on Windows".to_string())
+}
+
+#[cfg(windows)]
+fn handle_active_window() -> Result<Value, String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    let hwnd = unsafe { GetForegroundWindow() };
+    if hwnd == HWND::default() {
+        return Ok(json!({ "title": null, "active": false }));
+    }
+
+    let mut title_buf = [0u16; 512];
+    let len = unsafe { GetWindowTextW(hwnd, &mut title_buf) };
+    let title = if len > 0 {
+        String::from_utf16_lossy(&title_buf[..len as usize])
+    } else {
+        String::new()
+    };
+
+    let mut rect = unsafe { std::mem::zeroed::<windows::Win32::Foundation::RECT>() };
+    let _ = unsafe { GetWindowRect(hwnd, &mut rect) };
+
+    Ok(json!({
+        "title": title,
+        "x": rect.left,
+        "y": rect.top,
+        "width": rect.right - rect.left,
+        "height": rect.bottom - rect.top,
+        "minimized": unsafe { IsIconic(hwnd).as_bool() },
+        "maximized": unsafe { IsZoomed(hwnd).as_bool() },
+    }))
+}
+
+#[cfg(not(windows))]
+fn handle_active_window() -> Result<Value, String> {
+    Err("active_window is only supported on Windows".to_string())
+}
+
+#[cfg(windows)]
+fn handle_screenshot_window(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE};
+    use windows::Win32::Graphics::Gdi::*;
+    use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    let p = params.ok_or("missing params")?;
+    let target_title = p.get("title").and_then(|v| v.as_str());
+    let target_index = p.get("index").and_then(|v| v.as_u64()).map(|v| v as usize);
+
+    if target_title.is_none() && target_index.is_none() {
+        return Err("provide either 'title' or 'index' parameter".to_string());
+    }
+
+    // Find the target window
+    let list_result = handle_list_windows()?;
+    let windows = list_result
+        .get("windows")
+        .and_then(|v| v.as_array())
+        .ok_or("failed to list windows")?;
+
+    let target_window_title = if let Some(index) = target_index {
+        windows
+            .get(index)
+            .and_then(|w| w.get("title"))
+            .and_then(|t| t.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("no window at index {index}"))?
+    } else if let Some(title_substr) = target_title {
+        let lower = title_substr.to_lowercase();
+        windows
+            .iter()
+            .find_map(|w| {
+                let t = w.get("title")?.as_str()?;
+                if t.to_lowercase().contains(&lower) {
+                    Some(t.to_string())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| format!("no window matching '{title_substr}'"))?
+    } else {
+        return Err("provide either 'title' or 'index' parameter".to_string());
+    };
+
+    // Find the HWND
+    struct FindData {
+        target: String,
+        found: Option<isize>,
+    }
+
+    let mut find_data = FindData {
+        target: target_window_title.clone(),
+        found: None,
+    };
+
+    unsafe extern "system" fn find_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let data = &mut *(lparam.0 as *mut FindData);
+        let mut title_buf = [0u16; 512];
+        let len = GetWindowTextW(hwnd, &mut title_buf);
+        if len > 0 {
+            let title = String::from_utf16_lossy(&title_buf[..len as usize]);
+            if title == data.target {
+                data.found = Some(hwnd.0 as isize);
+                return BOOL(0);
+            }
+        }
+        TRUE
+    }
+
+    unsafe {
+        let _ = EnumWindows(
+            Some(find_callback),
+            LPARAM(&mut find_data as *mut _ as isize),
+        );
+    }
+
+    let hwnd_val = find_data.found.ok_or("window not found")?;
+    let hwnd = HWND(hwnd_val as *mut _);
+
+    // Get window dimensions
+    let mut rect = unsafe { std::mem::zeroed::<windows::Win32::Foundation::RECT>() };
+    unsafe { GetWindowRect(hwnd, &mut rect) }
+        .map_err(|e| format!("GetWindowRect failed: {e}"))?;
+
+    let width = (rect.right - rect.left) as u32;
+    let height = (rect.bottom - rect.top) as u32;
+
+    if width == 0 || height == 0 {
+        return Err("window has zero size".to_string());
+    }
+
+    // Create a compatible DC and bitmap
+    let hdc_window = unsafe { GetDC(hwnd) };
+    let hdc_mem = unsafe { CreateCompatibleDC(hdc_window) };
+    let hbm = unsafe { CreateCompatibleBitmap(hdc_window, width as i32, height as i32) };
+    let old_bm = unsafe { SelectObject(hdc_mem, hbm) };
+
+    // Use PrintWindow to capture even if partially occluded
+    // PW_RENDERFULLCONTENT (0x2) captures the full window content
+    let pw_result = unsafe {
+        PrintWindow(hwnd, hdc_mem, PRINT_WINDOW_FLAGS(0x2))
+    };
+
+    if !pw_result.as_bool() {
+        // Fallback to BitBlt from window DC
+        unsafe {
+            let _ = BitBlt(hdc_mem, 0, 0, width as i32, height as i32, hdc_window, 0, 0, SRCCOPY);
+        }
+    }
+
+    // Read pixels from the bitmap
+    let mut bmi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width as i32,
+            biHeight: -(height as i32), // top-down
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: 0, // BI_RGB
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    unsafe {
+        GetDIBits(
+            hdc_mem,
+            hbm,
+            0,
+            height,
+            Some(pixels.as_mut_ptr() as *mut _),
+            &mut bmi,
+            DIB_RGB_COLORS,
+        );
+    }
+
+    // Clean up GDI objects
+    unsafe {
+        SelectObject(hdc_mem, old_bm);
+        let _ = DeleteObject(hbm);
+        DeleteDC(hdc_mem);
+        ReleaseDC(hwnd, hdc_window);
+    }
+
+    // Convert BGRA to RGBA
+    for chunk in pixels.chunks_exact_mut(4) {
+        chunk.swap(0, 2); // B <-> R
+    }
+
+    let img = image::RgbaImage::from_raw(width, height, pixels)
+        .ok_or_else(|| "failed to create image from window capture".to_string())?;
+
+    // Apply max dimensions
+    let max_w = p
+        .get("max_width")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .or(config.max_screenshot_width);
+    let max_h = p
+        .get("max_height")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .or(config.max_screenshot_height);
+
+    let img = if let (Some(mw), Some(mh)) = (max_w, max_h) {
+        if width > mw || height > mh {
+            image::DynamicImage::ImageRgba8(img)
+                .resize(mw, mh, image::imageops::FilterType::Triangle)
+                .to_rgba8()
+        } else {
+            img
+        }
+    } else if let Some(mw) = max_w {
+        if width > mw {
+            let ratio = mw as f64 / width as f64;
+            let new_h = (height as f64 * ratio) as u32;
+            image::DynamicImage::ImageRgba8(img)
+                .resize_exact(mw, new_h, image::imageops::FilterType::Triangle)
+                .to_rgba8()
+        } else {
+            img
+        }
+    } else if let Some(mh) = max_h {
+        if height > mh {
+            let ratio = mh as f64 / height as f64;
+            let new_w = (width as f64 * ratio) as u32;
+            image::DynamicImage::ImageRgba8(img)
+                .resize_exact(new_w, mh, image::imageops::FilterType::Triangle)
+                .to_rgba8()
+        } else {
+            img
+        }
+    } else {
+        img
+    };
+
+    // Encode as WebP
+    let mut buf = Cursor::new(Vec::new());
+    WebPEncoder::new_lossless(&mut buf)
+        .write_image(
+            img.as_raw(),
+            img.width(),
+            img.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|e| format!("WebP encode failed: {e}"))?;
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
+
+    Ok(json!({
+        "image": b64,
+        "title": target_window_title,
+        "width": img.width(),
+        "height": img.height(),
+    }))
+}
+
+#[cfg(not(windows))]
+fn handle_screenshot_window(params: Option<&Value>, _config: &Config) -> Result<Value, String> {
+    let _ = params;
+    Err("screenshot_window is only supported on Windows".to_string())
+}
+
+#[cfg(windows)]
+fn is_process_elevated() -> bool {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    unsafe {
+        let mut token = HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
+            return false;
+        }
+
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut size = 0u32;
+        let result = GetTokenInformation(
+            token,
+            TokenElevation,
+            Some(&mut elevation as *mut _ as *mut _),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut size,
+        );
+        let _ = CloseHandle(token);
+
+        result.is_ok() && elevation.TokenIsElevated != 0
+    }
+}
+
+#[cfg(not(windows))]
+fn is_process_elevated() -> bool {
+    false
+}
+
+/// Public wrapper for tray.rs to check elevation status.
+pub fn is_process_elevated_check() -> bool {
+    is_process_elevated()
+}
+
+fn handle_is_elevated() -> Result<Value, String> {
+    Ok(json!({ "elevated": is_process_elevated() }))
+}
+
+#[cfg(windows)]
+fn handle_elevate() -> Result<Value, String> {
+    if is_process_elevated() {
+        return Ok(json!({ "already_elevated": true }));
+    }
+
+    use windows::core::w;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    // Show confirmation dialog
+    let result = unsafe {
+        MessageBoxW(
+            None,
+            w!("The AI assistant is requesting administrator privileges.\n\nAllow?"),
+            w!("ScreenMCP - Elevation Request"),
+            MB_OKCANCEL | MB_ICONQUESTION | MB_SETFOREGROUND,
+        )
+    };
+
+    if result == IDCANCEL {
+        return Err("User denied elevation request".to_string());
+    }
+
+    // Relaunch as admin
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("failed to get exe path: {e}"))?;
+    let exe_wide: Vec<u16> = exe_path
+        .to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            w!("runas"),
+            PCWSTR(exe_wide.as_ptr()),
+            None,
+            None,
+            SW_SHOWNORMAL,
+        )
+    };
+
+    if result.0 as usize > 32 {
+        // Exit current process after response is sent
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::process::exit(0);
+        });
+        Ok(json!({ "elevating": true }))
+    } else {
+        Err("Failed to launch elevated process (UAC was likely cancelled)".to_string())
+    }
+}
+
+#[cfg(not(windows))]
+fn handle_elevate() -> Result<Value, String> {
+    Err("elevate is only supported on Windows".to_string())
 }
 
 fn handle_play_audio(params: Option<&Value>) -> Result<Value, String> {
