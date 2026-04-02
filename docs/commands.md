@@ -19,6 +19,24 @@ Responses:
 
 ---
 
+## Coordinate Scaling
+
+All commands that accept or return coordinates support optional `max_width` and `max_height` parameters for automatic coordinate scaling. This lets AI assistants use screenshot pixel coordinates directly without knowing the device's DPI or resolution.
+
+**How it works:**
+1. Take a screenshot with `max_width: 1280` — get a 1280-wide image
+2. Pass `max_width: 1280` in click/drag/scroll commands — coordinates are auto-scaled from 1280-space to actual screen
+3. `ui_tree` and `list_windows` with `max_width: 1280` — returned bounds are in 1280-space
+4. `get_screen_size` with `max_width: 1280` — returns scaled dimensions plus originals
+
+**Disabling:** Omit `max_width`/`max_height` or set to 0 to use raw screen coordinates.
+
+**Config default:** If `max_screenshot_width` or `max_screenshot_height` are set in the config file, they apply as defaults to all commands (screenshot, clicks, ui_tree, etc.) without needing to pass them explicitly.
+
+**Applies to:** `click`, `long_click`, `right_click`, `middle_click`, `double_click`, `mouse_move`, `drag`, `scroll`, `mouse_scroll`, `ui_tree`, `list_windows`, `get_screen_size`.
+
+---
+
 ## Screen & UI
 
 ### screenshot
@@ -38,7 +56,10 @@ Take a screenshot of the device screen. Returns base64 WebP image.
 
 Get the accessibility tree of the current screen.
 
-No parameters.
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_width` | integer | 0 | Scale returned bounds to match screenshot space |
+| `max_height` | integer | 0 | Scale returned bounds to match screenshot space |
 
 **Returns:** `{ "tree": [ ...nodes ] }`
 
@@ -82,6 +103,8 @@ Tap on the screen at coordinates.
 | `x` | number | — | X coordinate (required) |
 | `y` | number | — | Y coordinate (required) |
 | `duration` | integer | 100 | Press duration in ms |
+| `max_width` | integer | 0 | Screenshot width for auto-scaling (see Coordinate Scaling) |
+| `max_height` | integer | 0 | Screenshot height for auto-scaling |
 
 ### long_click
 
@@ -329,16 +352,25 @@ Press a key combination atomically (e.g., Ctrl+C, Alt+Tab). All keys are pressed
 
 Get the primary display dimensions. On Android, returns screen resolution and density.
 
-No parameters.
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_width` | integer | 0 | If set, return scaled dimensions matching screenshot space |
+| `max_height` | integer | 0 | If set, return scaled dimensions matching screenshot space |
 
-**Returns:** `{ "width": 1920, "height": 1080, "x": 0, "y": 0 }`
+**Returns (no scaling):** `{ "width": 3840, "height": 2160 }`
+
+**Returns (with max_width: 1280):** `{ "width": 1280, "height": 720, "original_width": 3840, "original_height": 2160, "scaled": true }`
+
 Android also returns `"density"`.
 
 ### list_windows
 
 List all visible windows with titles and positions.
 
-No parameters.
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_width` | integer | 0 | Scale returned coordinates to match screenshot space |
+| `max_height` | integer | 0 | Scale returned coordinates to match screenshot space |
 
 **Returns:**
 ```json

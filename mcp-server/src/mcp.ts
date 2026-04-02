@@ -11,6 +11,12 @@ const deviceConnections = new Map<string, DeviceConnection>();
 // Common device_id parameter added to every phone tool
 const deviceIdParam = z.number().int().describe('Device ID number. Use list_devices to see available devices.');
 
+// Optional coordinate scaling params — pass the same max_width/max_height used for screenshot
+const scalingParams = {
+  max_width: z.number().int().optional().describe('Screenshot width for coordinate auto-scaling (0 or omit to disable)'),
+  max_height: z.number().int().optional().describe('Screenshot height for coordinate auto-scaling (0 or omit to disable)'),
+};
+
 // MCP tools for phone control — descriptions match web/ exactly
 const phoneTools = [
   {
@@ -30,9 +36,9 @@ const phoneTools = [
   {
     name: 'ui_tree',
     description: 'Get the accessibility tree of the current screen. Returns array of UI nodes with bounds, text, clickable state, etc.',
-    inputSchema: { device_id: deviceIdParam },
-    handler: async (phone: DeviceConnection) => {
-      const res = await phone.sendCommand('ui_tree');
+    inputSchema: { device_id: deviceIdParam, ...scalingParams },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      const res = await phone.sendCommand('ui_tree', params);
       return res.result;
     },
   },
@@ -44,6 +50,7 @@ const phoneTools = [
       x: z.number().int().describe('X coordinate'),
       y: z.number().int().describe('Y coordinate'),
       duration: z.number().optional().describe('Press duration in ms (default: 100)'),
+      ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('click', params)).result;
@@ -56,6 +63,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       x: z.number().int().describe('X coordinate'),
       y: z.number().int().describe('Y coordinate'),
+      ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('long_click', params)).result;
@@ -70,6 +78,7 @@ const phoneTools = [
       y: z.number().int().describe('Start Y'),
       dx: z.number().int().describe('Horizontal delta'),
       dy: z.number().int().describe('Vertical delta (negative = scroll content up)'),
+      ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('scroll', params)).result;
@@ -85,6 +94,7 @@ const phoneTools = [
       endX: z.number().int(),
       endY: z.number().int(),
       duration: z.number().optional().describe('Duration in ms (default: 300)'),
+      ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('drag', params)).result;
@@ -244,6 +254,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       x: z.number().int().describe('X coordinate'),
       y: z.number().int().describe('Y coordinate'),
+      ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('right_click', params)).result;
@@ -256,6 +267,7 @@ const phoneTools = [
       device_id: deviceIdParam,
       x: z.number().int().describe('X coordinate'),
       y: z.number().int().describe('Y coordinate'),
+      ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('middle_click', params)).result;
@@ -270,6 +282,7 @@ const phoneTools = [
       y: z.number().int().describe('Y coordinate'),
       dx: z.number().int().describe('Horizontal delta'),
       dy: z.number().int().describe('Vertical delta'),
+      ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('mouse_scroll', params)).result;
@@ -285,6 +298,121 @@ const phoneTools = [
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('play_audio', params)).result;
+    },
+  },
+  {
+    name: 'mouse_move',
+    description: 'Move the mouse cursor without clicking (desktop only)',
+    inputSchema: {
+      device_id: deviceIdParam,
+      x: z.number().int().describe('X coordinate'),
+      y: z.number().int().describe('Y coordinate'),
+      ...scalingParams,
+    },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('mouse_move', params)).result;
+    },
+  },
+  {
+    name: 'double_click',
+    description: 'Double-click at coordinates (desktop: two clicks, Android: two rapid taps)',
+    inputSchema: {
+      device_id: deviceIdParam,
+      x: z.number().int().describe('X coordinate'),
+      y: z.number().int().describe('Y coordinate'),
+      ...scalingParams,
+    },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('double_click', params)).result;
+    },
+  },
+  {
+    name: 'hotkey',
+    description: 'Press a key combination atomically, e.g. ["ctrl","c"] for copy (desktop only)',
+    inputSchema: {
+      device_id: deviceIdParam,
+      keys: z.array(z.string()).describe('Array of key names to press together'),
+    },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('hotkey', params)).result;
+    },
+  },
+  {
+    name: 'get_screen_size',
+    description: 'Get the primary display dimensions. With max_width/max_height, returns scaled dimensions plus originals.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      ...scalingParams,
+    },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('get_screen_size', params)).result;
+    },
+  },
+  {
+    name: 'list_windows',
+    description: 'List all visible windows with titles and positions (desktop only). Coordinates scaled when max_width/max_height set.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      ...scalingParams,
+    },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('list_windows', params)).result;
+    },
+  },
+  {
+    name: 'focus_window',
+    description: 'Bring a window to the foreground by title substring or index (desktop only)',
+    inputSchema: {
+      device_id: deviceIdParam,
+      title: z.string().optional().describe('Window title substring (case-insensitive)'),
+      index: z.number().int().optional().describe('Window index from list_windows'),
+    },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('focus_window', params)).result;
+    },
+  },
+  {
+    name: 'active_window',
+    description: 'Get information about the currently focused window (desktop only)',
+    inputSchema: {
+      device_id: deviceIdParam,
+    },
+    handler: async (phone: DeviceConnection) => {
+      return (await phone.sendCommand('active_window')).result;
+    },
+  },
+  {
+    name: 'screenshot_window',
+    description: 'Capture a specific window by title or index without focusing it (desktop only)',
+    inputSchema: {
+      device_id: deviceIdParam,
+      title: z.string().optional().describe('Window title substring'),
+      index: z.number().int().optional().describe('Window index from list_windows'),
+      max_width: z.number().int().optional().describe('Max width in pixels'),
+      max_height: z.number().int().optional().describe('Max height in pixels'),
+    },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('screenshot_window', params)).result;
+    },
+  },
+  {
+    name: 'is_elevated',
+    description: 'Check if the process has elevated/admin privileges (desktop only)',
+    inputSchema: {
+      device_id: deviceIdParam,
+    },
+    handler: async (phone: DeviceConnection) => {
+      return (await phone.sendCommand('is_elevated')).result;
+    },
+  },
+  {
+    name: 'elevate',
+    description: 'Request administrator/root privileges with user confirmation (desktop only)',
+    inputSchema: {
+      device_id: deviceIdParam,
+    },
+    handler: async (phone: DeviceConnection) => {
+      return (await phone.sendCommand('elevate')).result;
     },
   },
 ];
