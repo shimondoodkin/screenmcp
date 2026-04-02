@@ -733,14 +733,14 @@ fn handle_get_screen_size(params: Option<&Value>, config: &Config) -> Result<Val
             (mh / oh as f64).min(1.0)
         };
         Ok(json!({
-            "width": (ow as f64 * r) as u32,
-            "height": (oh as f64 * r) as u32,
+            "width": (ow as f64 * r * 10.0).round() / 10.0,
+            "height": (oh as f64 * r * 10.0).round() / 10.0,
             "original_width": ow,
             "original_height": oh,
             "scaled": true,
         }))
     } else {
-        Ok(json!({ "width": ow, "height": oh }))
+        Ok(json!({ "width": ow as f64, "height": oh as f64 }))
     }
 }
 
@@ -913,10 +913,10 @@ fn handle_active_window(params: Option<&Value>, config: &Config) -> Result<Value
         let raw_h: i32 = parts[5].parse().unwrap_or(0);
 
         let (sx, sy) = get_output_scale(params, config)?;
-        let x = (raw_x as f64 * sx).round() as i64;
-        let y = (raw_y as f64 * sy).round() as i64;
-        let width = (raw_w as f64 * sx).round() as i64;
-        let height = (raw_h as f64 * sy).round() as i64;
+        let x = (raw_x as f64 * sx * 10.0).round() / 10.0;
+        let y = (raw_y as f64 * sy * 10.0).round() / 10.0;
+        let width = (raw_w as f64 * sx * 10.0).round() / 10.0;
+        let height = (raw_h as f64 * sy * 10.0).round() / 10.0;
 
         Ok(json!({
             "title": title,
@@ -1173,9 +1173,9 @@ fn scale_bounds_in_value(val: &Value, sx: f64, sy: f64) -> Value {
             for (k, v) in map {
                 let scaled = match k.as_str() {
                     "left" | "right" | "x" | "width" if v.is_number() =>
-                        json!((v.as_f64().unwrap() * sx).round() as i64),
+                        json!((v.as_f64().unwrap() * sx * 10.0).round() / 10.0),
                     "top" | "bottom" | "y" | "height" if v.is_number() =>
-                        json!((v.as_f64().unwrap() * sy).round() as i64),
+                        json!((v.as_f64().unwrap() * sy * 10.0).round() / 10.0),
                     _ => scale_bounds_in_value(v, sx, sy),
                 };
                 out.insert(k.clone(), scaled);
@@ -1321,13 +1321,13 @@ fn handle_ui_tree_raw() -> Result<Value, String> {
             };
 
             (
-                get_bounds_num("X") as i64,
-                get_bounds_num("Y") as i64,
-                get_bounds_num("Width") as i64,
-                get_bounds_num("Height") as i64,
+                get_bounds_num("X"),
+                get_bounds_num("Y"),
+                get_bounds_num("Width"),
+                get_bounds_num("Height"),
             )
         } else {
-            (0, 0, 0, 0)
+            (0.0, 0.0, 0.0, 0.0)
         };
 
         let window_id = get_number("kCGWindowNumber").unwrap_or(0);
@@ -1350,7 +1350,7 @@ fn handle_ui_tree_raw() -> Result<Value, String> {
         }
 
         // Bounds in standardized format
-        if width != 0 || height != 0 || x != 0 || y != 0 {
+        if width != 0.0 || height != 0.0 || x != 0.0 || y != 0.0 {
             m.insert("bounds".into(), json!({
                 "left": x,
                 "top": y,

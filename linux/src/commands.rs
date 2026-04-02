@@ -784,14 +784,14 @@ fn handle_get_screen_size(params: Option<&Value>, config: &Config) -> Result<Val
             (mh / oh as f64).min(1.0)
         };
         Ok(json!({
-            "width": (ow as f64 * r) as u32,
-            "height": (oh as f64 * r) as u32,
+            "width": (ow as f64 * r * 10.0).round() / 10.0,
+            "height": (oh as f64 * r * 10.0).round() / 10.0,
             "original_width": ow,
             "original_height": oh,
             "scaled": true,
         }))
     } else {
-        Ok(json!({ "width": ow, "height": oh }))
+        Ok(json!({ "width": ow as f64, "height": oh as f64 }))
     }
 }
 
@@ -1003,10 +1003,10 @@ fn handle_active_window(params: Option<&Value>, config: &Config) -> Result<Value
     }
 
     let (sx, sy) = get_output_scale(params, config)?;
-    let x = (raw_x as f64 * sx).round() as i64;
-    let y = (raw_y as f64 * sy).round() as i64;
-    let width = (raw_w as f64 * sx).round() as i64;
-    let height = (raw_h as f64 * sy).round() as i64;
+    let x = (raw_x as f64 * sx * 10.0).round() / 10.0;
+    let y = (raw_y as f64 * sy * 10.0).round() / 10.0;
+    let width = (raw_w as f64 * sx * 10.0).round() / 10.0;
+    let height = (raw_h as f64 * sy * 10.0).round() / 10.0;
 
     Ok(json!({
         "title": title,
@@ -1210,9 +1210,9 @@ fn scale_bounds_in_value(val: &Value, sx: f64, sy: f64) -> Value {
             for (k, v) in map {
                 let scaled = match k.as_str() {
                     "left" | "right" | "x" | "width" if v.is_number() =>
-                        json!((v.as_f64().unwrap() * sx).round() as i64),
+                        json!((v.as_f64().unwrap() * sx * 10.0).round() / 10.0),
                     "top" | "bottom" | "y" | "height" if v.is_number() =>
-                        json!((v.as_f64().unwrap() * sy).round() as i64),
+                        json!((v.as_f64().unwrap() * sy * 10.0).round() / 10.0),
                     _ => scale_bounds_in_value(v, sx, sy),
                 };
                 out.insert(k.clone(), scaled);

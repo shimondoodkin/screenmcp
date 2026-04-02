@@ -782,25 +782,25 @@ fn handle_get_screen_size(params: Option<&Value>, config: &Config) -> Result<Val
             let rw = mw / ow as f64;
             let rh = mh / oh as f64;
             let r = rw.min(rh).min(1.0);
-            ((ow as f64 * r) as u32, (oh as f64 * r) as u32)
+            (ow as f64 * r, oh as f64 * r)
         } else if mw > 0.0 {
             let r = (mw / ow as f64).min(1.0);
-            ((ow as f64 * r) as u32, (oh as f64 * r) as u32)
+            (ow as f64 * r, oh as f64 * r)
         } else {
             let r = (mh / oh as f64).min(1.0);
-            ((ow as f64 * r) as u32, (oh as f64 * r) as u32)
+            (ow as f64 * r, oh as f64 * r)
         };
         Ok(json!({
-            "width": sw,
-            "height": sh,
+            "width": (sw * 10.0).round() / 10.0,
+            "height": (sh * 10.0).round() / 10.0,
             "original_width": ow,
             "original_height": oh,
             "scaled": true,
         }))
     } else {
         Ok(json!({
-            "width": ow,
-            "height": oh,
+            "width": ow as f64,
+            "height": oh as f64,
         }))
     }
 }
@@ -1040,10 +1040,10 @@ fn handle_active_window(params: Option<&Value>, config: &Config) -> Result<Value
     let _ = unsafe { GetWindowRect(hwnd, &mut rect) };
 
     let (sx, sy) = get_output_scale(params, config)?;
-    let x = (rect.left as f64 * sx).round() as i64;
-    let y = (rect.top as f64 * sy).round() as i64;
-    let width = ((rect.right - rect.left) as f64 * sx).round() as i64;
-    let height = ((rect.bottom - rect.top) as f64 * sy).round() as i64;
+    let x = (rect.left as f64 * sx * 10.0).round() / 10.0;
+    let y = (rect.top as f64 * sy * 10.0).round() / 10.0;
+    let width = ((rect.right - rect.left) as f64 * sx * 10.0).round() / 10.0;
+    let height = ((rect.bottom - rect.top) as f64 * sy * 10.0).round() / 10.0;
 
     Ok(json!({
         "title": title,
@@ -1821,10 +1821,10 @@ fn scale_bounds_in_value(val: &Value, sx: f64, sy: f64) -> Value {
             for (k, v) in map {
                 let scaled = match k.as_str() {
                     "left" | "right" | "x" | "width" if v.is_number() => {
-                        json!((v.as_f64().unwrap() * sx).round() as i64)
+                        json!((v.as_f64().unwrap() * sx * 10.0).round() / 10.0)
                     }
                     "top" | "bottom" | "y" | "height" if v.is_number() => {
-                        json!((v.as_f64().unwrap() * sy).round() as i64)
+                        json!((v.as_f64().unwrap() * sy * 10.0).round() / 10.0)
                     }
                     _ => scale_bounds_in_value(v, sx, sy),
                 };

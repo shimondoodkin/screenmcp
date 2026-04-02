@@ -132,8 +132,8 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "x": {"type": "number", "description": "X coordinate"},
+                    "y": {"type": "number", "description": "Y coordinate"},
                     "duration": {"type": "integer", "description": "Press duration in ms (default: 100)"},
                     "max_width": sp["max_width"],
                     "max_height": sp["max_height"]
@@ -147,8 +147,8 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "x": {"type": "number", "description": "X coordinate"},
+                    "y": {"type": "number", "description": "Y coordinate"},
                     "max_width": sp["max_width"],
                     "max_height": sp["max_height"]
                 },
@@ -161,8 +161,8 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "x": {"type": "number", "description": "X coordinate"},
+                    "y": {"type": "number", "description": "Y coordinate"},
                     "max_width": sp["max_width"],
                     "max_height": sp["max_height"]
                 },
@@ -175,8 +175,8 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "x": {"type": "number", "description": "X coordinate"},
+                    "y": {"type": "number", "description": "Y coordinate"},
                     "max_width": sp["max_width"],
                     "max_height": sp["max_height"]
                 },
@@ -189,8 +189,8 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "x": {"type": "number", "description": "X coordinate"},
+                    "y": {"type": "number", "description": "Y coordinate"},
                     "duration": {"type": "integer", "description": "Press duration in ms (default: 1000)"},
                     "max_width": sp["max_width"],
                     "max_height": sp["max_height"]
@@ -204,10 +204,10 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "startX": {"type": "integer"},
-                    "startY": {"type": "integer"},
-                    "endX": {"type": "integer"},
-                    "endY": {"type": "integer"},
+                    "startX": {"type": "number"},
+                    "startY": {"type": "number"},
+                    "endX": {"type": "number"},
+                    "endY": {"type": "number"},
                     "duration": {"type": "integer", "description": "Duration in ms (default: 300)"},
                     "max_width": sp["max_width"],
                     "max_height": sp["max_height"]
@@ -221,10 +221,10 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"},
-                    "dx": {"type": "integer", "description": "Horizontal delta"},
-                    "dy": {"type": "integer", "description": "Vertical delta (negative = scroll content up)"},
+                    "x": {"type": "number", "description": "X coordinate"},
+                    "y": {"type": "number", "description": "Y coordinate"},
+                    "dx": {"type": "number", "description": "Horizontal delta"},
+                    "dy": {"type": "number", "description": "Vertical delta (negative = scroll content up)"},
                     "direction": {"type": "string", "description": "Alternative: up/down/left/right"},
                     "amount": {"type": "integer", "description": "Scroll amount (used with direction, default: 3)"},
                     "max_width": sp["max_width"],
@@ -238,8 +238,8 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "x": {"type": "number", "description": "X coordinate"},
+                    "y": {"type": "number", "description": "Y coordinate"},
                     "max_width": sp["max_width"],
                     "max_height": sp["max_height"]
                 },
@@ -252,10 +252,10 @@ fn mcp_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "integer"},
-                    "y": {"type": "integer"},
-                    "dx": {"type": "integer"},
-                    "dy": {"type": "integer"},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "dx": {"type": "number"},
+                    "dy": {"type": "number"},
                     "max_width": sp["max_width"],
                     "max_height": sp["max_height"]
                 }

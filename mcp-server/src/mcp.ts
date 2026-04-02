@@ -47,8 +47,8 @@ const phoneTools = [
     description: 'Tap on the screen at coordinates',
     inputSchema: {
       device_id: deviceIdParam,
-      x: z.number().int().describe('X coordinate'),
-      y: z.number().int().describe('Y coordinate'),
+      x: z.number().describe('X coordinate'),
+      y: z.number().describe('Y coordinate'),
       duration: z.number().optional().describe('Press duration in ms (default: 100)'),
       ...scalingParams,
     },
@@ -61,8 +61,8 @@ const phoneTools = [
     description: 'Long press at coordinates (1000ms)',
     inputSchema: {
       device_id: deviceIdParam,
-      x: z.number().int().describe('X coordinate'),
-      y: z.number().int().describe('Y coordinate'),
+      x: z.number().describe('X coordinate'),
+      y: z.number().describe('Y coordinate'),
       ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
@@ -74,10 +74,10 @@ const phoneTools = [
     description: 'Scroll the screen with a finger-drag gesture',
     inputSchema: {
       device_id: deviceIdParam,
-      x: z.number().int().describe('Start X'),
-      y: z.number().int().describe('Start Y'),
-      dx: z.number().int().describe('Horizontal delta'),
-      dy: z.number().int().describe('Vertical delta (negative = scroll content up)'),
+      x: z.number().describe('Start X'),
+      y: z.number().describe('Start Y'),
+      dx: z.number().describe('Horizontal delta'),
+      dy: z.number().describe('Vertical delta (negative = scroll content up)'),
       ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
@@ -89,10 +89,10 @@ const phoneTools = [
     description: 'Drag from one point to another',
     inputSchema: {
       device_id: deviceIdParam,
-      startX: z.number().int(),
-      startY: z.number().int(),
-      endX: z.number().int(),
-      endY: z.number().int(),
+      startX: z.number(),
+      startY: z.number(),
+      endX: z.number(),
+      endY: z.number(),
       duration: z.number().optional().describe('Duration in ms (default: 300)'),
       ...scalingParams,
     },
@@ -252,8 +252,8 @@ const phoneTools = [
     description: 'Right-click at coordinates (desktop only). Returns unsupported on Android.',
     inputSchema: {
       device_id: deviceIdParam,
-      x: z.number().int().describe('X coordinate'),
-      y: z.number().int().describe('Y coordinate'),
+      x: z.number().describe('X coordinate'),
+      y: z.number().describe('Y coordinate'),
       ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
@@ -265,8 +265,8 @@ const phoneTools = [
     description: 'Middle-click at coordinates (desktop only). Returns unsupported on Android.',
     inputSchema: {
       device_id: deviceIdParam,
-      x: z.number().int().describe('X coordinate'),
-      y: z.number().int().describe('Y coordinate'),
+      x: z.number().describe('X coordinate'),
+      y: z.number().describe('Y coordinate'),
       ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
@@ -278,10 +278,10 @@ const phoneTools = [
     description: 'Raw mouse scroll at coordinates with pixel deltas (desktop only). Returns unsupported on Android.',
     inputSchema: {
       device_id: deviceIdParam,
-      x: z.number().int().describe('X coordinate'),
-      y: z.number().int().describe('Y coordinate'),
-      dx: z.number().int().describe('Horizontal delta'),
-      dy: z.number().int().describe('Vertical delta'),
+      x: z.number().describe('X coordinate'),
+      y: z.number().describe('Y coordinate'),
+      dx: z.number().describe('Horizontal delta'),
+      dy: z.number().describe('Vertical delta'),
       ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
@@ -305,8 +305,8 @@ const phoneTools = [
     description: 'Move the mouse cursor without clicking (desktop only)',
     inputSchema: {
       device_id: deviceIdParam,
-      x: z.number().int().describe('X coordinate'),
-      y: z.number().int().describe('Y coordinate'),
+      x: z.number().describe('X coordinate'),
+      y: z.number().describe('Y coordinate'),
       ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
@@ -318,8 +318,8 @@ const phoneTools = [
     description: 'Double-click at coordinates (desktop: two clicks, Android: two rapid taps)',
     inputSchema: {
       device_id: deviceIdParam,
-      x: z.number().int().describe('X coordinate'),
-      y: z.number().int().describe('Y coordinate'),
+      x: z.number().describe('X coordinate'),
+      y: z.number().describe('Y coordinate'),
       ...scalingParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
