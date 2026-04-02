@@ -31,6 +31,32 @@ def cmd(name: str, params: dict = None) -> dict:
     return data.get("result", {})
 ```
 
+## Coordinate Scaling
+
+All coordinates auto-scale between screenshot space (default 1456x819) and actual screen. You don't need to know the screen resolution — just use pixel coordinates from the screenshot.
+
+```python
+# Screenshot and click use the same coordinate space automatically
+result = cmd("screenshot")  # returns 1456x819 image by default
+# If you see a button at pixel (400, 300) in the image, just click there:
+cmd("click", {"x": 400, "y": 300})  # auto-scaled to actual screen
+```
+
+To use a different resolution, pass `max_width`/`max_height` to both screenshot and click:
+```python
+result = cmd("screenshot", {"max_width": 1092, "max_height": 1092})
+cmd("click", {"x": 200, "y": 300, "max_width": 1092, "max_height": 1092})
+```
+
+## Important: Always Focus First
+
+**Call `focus_window` before clicking on an app.** Otherwise clicks land on whatever window is in front.
+
+```python
+cmd("focus_window", {"title": "Paint"})  # bring Paint to front
+cmd("click", {"x": 400, "y": 300})       # now clicks Paint's canvas
+```
+
 ## Taking Screenshots
 
 ```python

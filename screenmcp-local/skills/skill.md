@@ -1,12 +1,34 @@
 # ScreenMCP Local — Desktop Control via MCP
 
-You have access to ScreenMCP tools that let you see and control a Windows desktop. These tools connect to the ScreenMCP app running locally.
+You have access to ScreenMCP tools that let you see and control a desktop. These tools connect to the ScreenMCP app running locally.
+
+## Coordinate Scaling (Important)
+
+All coordinates auto-scale between screenshot space and actual screen. Default: **1456x819**.
+
+- Screenshots return a 1456x819 image by default
+- Click/drag/scroll coordinates are in the same 1456x819 space — auto-scaled to actual screen
+- ui_tree and list_windows return bounds in 1456x819 space
+- You can override with `max_width`/`max_height` params on any command (set to 0 to disable)
+
+**You do NOT need to know the actual screen resolution or DPI.** Just use pixel coordinates from the screenshot directly.
+
+## Critical: Window Focus
+
+**Always call `focus_window` before clicking on a specific app.** Clicks go to whatever window is currently focused. If the terminal or another app is in front, your click will land there instead of the target app.
+
+```
+1. focus_window(title: "Paint")   ← bring Paint to front
+2. click(x: 400, y: 300)          ← now lands on Paint's canvas
+```
 
 ## Available Tools
 
 ### Vision
-- **screenshot** — Take a screenshot. Returns base64 WebP image. Use `max_width`/`max_height` to control size.
-- **ui_tree** — Get the accessibility tree. Returns structured data with element names, types, bounds (x,y,width,height), text content, and clickable/focusable state. Excellent for finding interactive elements without visual inspection.
+- **screenshot** — Take a screenshot. Returns base64 WebP image. Default 1456x819.
+- **ui_tree** — Get the accessibility tree with element names, types, bounds, text, clickable/focusable state. Bounds are in screenshot coordinates.
+- **screenshot_window** — Capture a specific window by `title` or `index` without focusing it.
+- **active_window** — Get title, position, size of the currently focused window.
 
 ### Mouse
 - **click** — Left-click at (x, y). Optional `duration` in ms.
@@ -14,29 +36,30 @@ You have access to ScreenMCP tools that let you see and control a Windows deskto
 - **double_click** — Double-click at (x, y). Opens files, selects words.
 - **long_click** — Long press at (x, y). Default 1000ms hold.
 - **middle_click** — Middle-click at (x, y).
-- **mouse_move** — Move cursor to (x, y) without clicking. Useful for hover actions.
-- **drag** — Drag from (startX, startY) to (endX, endY). Optional `duration`.
+- **mouse_move** — Move cursor to (x, y) without clicking. Useful for hover.
+- **drag** — Drag from (startX, startY) to (endX, endY). Use for drawing, moving, resizing.
 - **scroll** — Scroll at (x, y) with `dx`/`dy` deltas, or use `direction` (up/down/left/right) + `amount`.
 - **mouse_scroll** — Raw mouse wheel scroll at coordinates.
 
 ### Keyboard
-- **type** — Type text into the focused field. Handles special characters.
-- **press_key** — Press and release a single key. Key names: shift, ctrl, alt, meta/win, tab, enter, escape, space, backspace, delete, home, end, pageup, pagedown, up, down, left, right, f1-f12, or a single character.
-- **hold_key** / **release_key** — Hold and release keys manually. Use for complex sequences.
-- **hotkey** — Press a key combination atomically. Pass an array of key names: `["ctrl", "c"]`, `["alt", "tab"]`, `["win", "d"]`. Preferred over hold_key/release_key for standard shortcuts.
+- **type** — Type text into the focused field.
+- **press_key** — Press and release a single key. Names: shift, ctrl, alt, meta/win, tab, enter, escape, space, backspace, delete, home, end, pageup, pagedown, up, down, left, right, f1-f12, or a single character.
+- **hold_key** / **release_key** — Hold and release keys manually.
+- **hotkey** — Press a key combination atomically: `["ctrl", "c"]`, `["alt", "tab"]`, `["win", "d"]`. Preferred over hold_key/release_key.
 
 ### Text & Clipboard
-- **get_text** — Get text from the focused field (reads clipboard).
+- **get_text** — Get text from the focused field.
 - **select_all** — Select all text (Ctrl+A).
-- **copy** — Copy selection (Ctrl+C). Set `return_text: true` to get the copied text back.
-- **paste** — Paste (Ctrl+V). Optionally pass `text` to set clipboard before pasting.
+- **copy** — Copy selection (Ctrl+C). Set `return_text: true` to get the text back.
+- **paste** — Paste (Ctrl+V). Optionally pass `text` to set clipboard first.
 - **get_clipboard** — Read clipboard contents.
 - **set_clipboard** — Set clipboard to given text.
 
 ### Window Management
-- **list_windows** — List all visible on-screen windows with title, position, size, minimized/maximized state, and index.
-- **focus_window** — Bring a window to front by `title` (substring match) or `index` from list_windows.
-- **get_screen_size** — Get primary screen dimensions (width, height, x, y).
+- **list_windows** — List all visible windows with title, position, size, state, and index.
+- **focus_window** — Bring a window to front by `title` (substring match) or `index`.
+- **active_window** — Get the currently focused window info.
+- **get_screen_size** — Get screen dimensions in screenshot space (default 1456x819) plus original resolution.
 
 ### Navigation
 - **back** — Browser back / general back (Alt+Left).
@@ -44,37 +67,74 @@ You have access to ScreenMCP tools that let you see and control a Windows deskto
 - **recents** — Show recent windows (Alt+Tab).
 
 ### System
-- **elevate** — Request administrator privileges. Shows a confirmation dialog to the user. Needed for interacting with elevated windows.
+- **elevate** — Request administrator privileges (shows confirmation dialog).
 - **is_elevated** — Check if running with admin privileges.
 - **camera** / **list_cameras** — Capture from connected cameras.
 - **play_audio** — Play base64-encoded WAV/MP3 audio.
 
-## How to Use These Tools
+## How to Use
 
-### Understanding the Screen
+### Workflow Pattern
 
-Use both **screenshot** and **ui_tree** as needed:
+```
+1. focus_window(title: "target app")  ← ALWAYS focus first
+2. screenshot()                        ← see the screen
+3. click/type/hotkey                   ← take action
+4. screenshot()                        ← verify result
+```
 
-- **screenshot** gives you a visual picture of what's on screen. Great for understanding layout, reading visual content (images, charts, web pages), and verifying actions worked.
-- **ui_tree** gives you structured data about every UI element. Great for finding buttons, text fields, labels, and their exact coordinates. Elements include bounds, text, control type, and interaction state.
+### Finding Elements
 
-Use whichever fits the situation. Often you'll use both — ui_tree to find elements and their coordinates, screenshot to verify visual state.
+Use both **screenshot** and **ui_tree**:
 
-### Taking Actions
+- **screenshot** — visual picture, good for layout, images, verifying actions
+- **ui_tree** — structured data with exact coordinates, good for finding buttons, text fields, labels
 
-1. Identify the target — use ui_tree to find elements or screenshot to see the screen
-2. Act — click, type, hotkey, etc.
-3. Verify — take a screenshot or check ui_tree to confirm the action worked
+Often use both: ui_tree to find coordinates, screenshot to verify.
 
-### Coordinates
+### Coordinate Tips
 
-All coordinates are in screen pixels. (0,0) is the top-left corner of the primary monitor. Multi-monitor setups may have negative coordinates for monitors to the left/above.
+- Coordinates from screenshot pixels map directly to click coordinates (auto-scaled)
+- Use element bounds from `ui_tree` for precise clicking — click the center of the bounding box
+- `get_screen_size` returns dimensions in the same coordinate space as screenshots
+- For percentage-based estimation: think "this element is X% from left, Y% from top" then multiply by screenshot dimensions (1456, 819)
 
-Use `get_screen_size` to know the screen bounds. Use element bounds from `ui_tree` for precise clicking — click the center of an element's bounding box.
+### Common Patterns
+
+**Click a button found via ui_tree:**
+```
+tree = ui_tree()
+# Find button with text "Save" in the tree
+# Use its bounds center: x = (left + right) / 2, y = (top + bottom) / 2
+click(x, y)
+```
+
+**Type into a field:**
+```
+focus_window(title: "Notepad")
+click(x, y)           # click the text field
+select_all()           # select existing text
+type(text: "new text") # replace with new text
+```
+
+**Switch apps and interact:**
+```
+focus_window(title: "Chrome")
+hotkey(keys: ["ctrl", "l"])  # focus address bar
+type(text: "example.com")
+press_key(key: "enter")
+```
+
+**Draw a line in Paint:**
+```
+focus_window(title: "Paint")
+drag(startX: 100, startY: 200, endX: 400, endY: 200, duration: 500)
+```
 
 ### Tips
 
-- **Prefer hotkey over hold_key/release_key** for standard shortcuts. It's atomic and more reliable.
-- **For text input:** Click the target field first, then use `type`. To replace existing text: `select_all` then `type`.
-- **For window switching:** Use `list_windows` + `focus_window` for programmatic control, or `hotkey ["alt", "tab"]` for quick toggle.
-- **Screenshots can be large.** Use `max_width` and `max_height` to keep them manageable.
+- **Always focus_window first** — clicks land on the focused window
+- **Prefer hotkey over hold_key/release_key** — it's atomic and more reliable
+- **For text input:** Click the target field first, then `type`
+- **Verify after acting** — take a screenshot to confirm the action worked
+- **If a click seems to do nothing** — check if the right window is focused with `active_window`
