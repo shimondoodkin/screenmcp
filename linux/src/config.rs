@@ -150,12 +150,13 @@ impl Config {
         }
     }
 
-    /// Get the effective API URL (opensource or normal).
+    /// Get the effective API URL.
+    /// Open source mode uses the user-configured URL; cloud mode always uses the hardcoded URL.
     pub fn effective_api_url(&self) -> &str {
         if self.opensource_server_enabled && !self.opensource_api_url.is_empty() {
             &self.opensource_api_url
         } else {
-            &self.api_url
+            "https://api.screenmcp.com"
         }
     }
 }
