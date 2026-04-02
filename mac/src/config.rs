@@ -49,6 +49,18 @@ pub struct Config {
     /// API server URL for open source server
     #[serde(default)]
     pub opensource_api_url: String,
+
+    /// Local mode API key (empty = disabled)
+    #[serde(default)]
+    pub local_mode_key: String,
+
+    /// Local mode HTTP port
+    #[serde(default = "default_local_mode_port")]
+    pub local_mode_port: u16,
+}
+
+fn default_local_mode_port() -> u16 {
+    6767
 }
 
 fn default_api_url() -> String {
@@ -78,6 +90,8 @@ impl Default for Config {
             opensource_server_enabled: false,
             opensource_user_id: String::new(),
             opensource_api_url: String::new(),
+            local_mode_key: String::new(),
+            local_mode_port: default_local_mode_port(),
         }
     }
 }

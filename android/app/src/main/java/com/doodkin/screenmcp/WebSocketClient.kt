@@ -31,6 +31,8 @@ class WebSocketClient(
         private const val TAG = "WebSocketClient"
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val MAX_RECONNECT_ATTEMPTS = 10
+        const val DEFAULT_SCALE_WIDTH = 1456.0
+        const val DEFAULT_SCALE_HEIGHT = 819.0
     }
 
     private var webSocket: WebSocket? = null
@@ -263,11 +265,6 @@ class WebSocketClient(
         } catch (e: Exception) {
             Log.e(TAG, "Failed to handle message: ${e.message}")
         }
-    }
-
-    companion object {
-        const val DEFAULT_SCALE_WIDTH = 1456.0
-        const val DEFAULT_SCALE_HEIGHT = 819.0
     }
 
     /** Scale coordinates from screenshot space to actual screen space using max_width/max_height params. */
