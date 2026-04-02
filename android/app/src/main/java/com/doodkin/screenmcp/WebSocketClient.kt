@@ -277,6 +277,43 @@ class WebSocketClient(
         return y.toFloat()
     }
 
+    /** Get output scale factors (screen→screenshot space). Returns (sx, sy), both 1.0 if no scaling. */
+    private fun getOutputScale(params: JSONObject?, dm: android.util.DisplayMetrics): Pair<Double, Double> {
+        val mw = params?.optDouble("max_width", 0.0) ?: 0.0
+        val mh = params?.optDouble("max_height", 0.0) ?: 0.0
+        if (mw <= 0.0 && mh <= 0.0) return Pair(1.0, 1.0)
+        val sx = if (mw > 0.0) mw / dm.widthPixels else mh / dm.heightPixels
+        val sy = if (mh > 0.0) mh / dm.heightPixels else sx
+        return Pair(sx, sy)
+    }
+
+    /** Recursively scale bounds fields in a JSONObject/JSONArray. */
+    private fun scaleBoundsJson(value: Any, sx: Double, sy: Double): Any {
+        return when (value) {
+            is JSONObject -> {
+                val out = JSONObject()
+                for (key in value.keys()) {
+                    val v = value.get(key)
+                    val scaled = when (key) {
+                        "left", "right", "x", "width" -> if (v is Number) Math.round(v.toDouble() * sx) else scaleBoundsJson(v, sx, sy)
+                        "top", "bottom", "y", "height" -> if (v is Number) Math.round(v.toDouble() * sy) else scaleBoundsJson(v, sx, sy)
+                        else -> scaleBoundsJson(v, sx, sy)
+                    }
+                    out.put(key, scaled)
+                }
+                out
+            }
+            is JSONArray -> {
+                val out = JSONArray()
+                for (i in 0 until value.length()) {
+                    out.put(scaleBoundsJson(value.get(i), sx, sy))
+                }
+                out
+            }
+            else -> value
+        }
+    }
+
     private fun executeCommand(ws: WebSocket, json: JSONObject) {
         val id = json.getLong("id")
         val cmd = json.getString("cmd")
@@ -342,7 +379,9 @@ class WebSocketClient(
             }
 
             "ui_tree" -> {
-                val tree = service.getUiTreeJson()
+                var tree: Any = service.getUiTreeJson()
+                val (sx, sy) = getOutputScale(params, dm)
+                if (sx != 1.0 || sy != 1.0) tree = scaleBoundsJson(tree, sx, sy)
                 sendResponse(ws, id, "ok", JSONObject().put("tree", tree).put("os", "android"))
             }
 
@@ -595,6 +634,52 @@ class WebSocketClient(
                     } else {
                         sendResponse(ws, id, "error", error = "first tap failed")
                     }
+                }
+            }
+
+            "list_windows" -> {
+                var windows: Any = service.getWindowList()
+                val (sx, sy) = getOutputScale(params, dm)
+                if (sx != 1.0 || sy != 1.0) windows = scaleBoundsJson(windows, sx, sy)
+                sendResponse(ws, id, "ok", result = JSONObject().put("windows", windows))
+            }
+
+            "active_window" -> {
+                var result = service.getActiveWindow()
+                val (sx, sy) = getOutputScale(params, dm)
+                if (sx != 1.0 || sy != 1.0) result = scaleBoundsJson(result, sx, sy) as JSONObject
+                sendResponse(ws, id, "ok", result = result)
+            }
+
+            "focus_window" -> {
+                val title = params?.optString("title", "") ?: ""
+                if (title.isEmpty()) {
+                    sendResponse(ws, id, "error", error = "missing title param")
+                    return
+                }
+                // Launch app by name using package manager search
+                try {
+                    val pm = service.packageManager
+                    val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                    intent.addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                    val apps = pm.queryIntentActivities(intent, 0)
+                    val match = apps.find {
+                        it.loadLabel(pm).toString().contains(title, ignoreCase = true)
+                    }
+                    if (match != null) {
+                        val launchIntent = pm.getLaunchIntentForPackage(match.activityInfo.packageName)
+                        if (launchIntent != null) {
+                            launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            service.startActivity(launchIntent)
+                            sendResponse(ws, id, "ok", result = JSONObject().put("focused", match.loadLabel(pm).toString()))
+                        } else {
+                            sendResponse(ws, id, "error", error = "cannot launch ${match.loadLabel(pm)}")
+                        }
+                    } else {
+                        sendResponse(ws, id, "error", error = "no app matching '$title'")
+                    }
+                } catch (e: Exception) {
+                    sendResponse(ws, id, "error", error = "focus_window failed: ${e.message}")
                 }
             }
 

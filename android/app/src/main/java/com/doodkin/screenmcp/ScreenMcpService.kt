@@ -301,6 +301,62 @@ class ScreenMcpService : AccessibilityService() {
         arr.put(obj)
     }
 
+    /** List visible windows (apps) using AccessibilityService.getWindows(). */
+    fun getWindowList(): JSONArray {
+        val result = JSONArray()
+        try {
+            val windowList = windows ?: return result
+            for ((index, window) in windowList.withIndex()) {
+                val obj = JSONObject()
+                obj.put("index", index)
+                obj.put("title", window.title?.toString() ?: "")
+                obj.put("type", when (window.type) {
+                    android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION -> "application"
+                    android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "input_method"
+                    android.view.accessibility.AccessibilityWindowInfo.TYPE_SYSTEM -> "system"
+                    android.view.accessibility.AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "overlay"
+                    else -> "unknown"
+                })
+                obj.put("active", window.isActive)
+                obj.put("focused", window.isFocused)
+                val bounds = Rect()
+                window.getBoundsInScreen(bounds)
+                obj.put("x", bounds.left)
+                obj.put("y", bounds.top)
+                obj.put("width", bounds.width())
+                obj.put("height", bounds.height())
+                result.put(obj)
+            }
+        } catch (e: Exception) {
+            // windows property may throw on some devices
+        }
+        return result
+    }
+
+    /** Get the currently focused/active window info. */
+    fun getActiveWindow(): JSONObject {
+        val result = JSONObject()
+        try {
+            val windowList = windows ?: return result.put("active", false)
+            val active = windowList.find { it.isActive || it.isFocused }
+            if (active != null) {
+                result.put("title", active.title?.toString() ?: "")
+                result.put("active", true)
+                val bounds = Rect()
+                active.getBoundsInScreen(bounds)
+                result.put("x", bounds.left)
+                result.put("y", bounds.top)
+                result.put("width", bounds.width())
+                result.put("height", bounds.height())
+            } else {
+                result.put("active", false)
+            }
+        } catch (e: Exception) {
+            result.put("active", false)
+        }
+        return result
+    }
+
     // --- Global Actions ---
 
     fun pressBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
