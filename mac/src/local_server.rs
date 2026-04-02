@@ -93,34 +93,50 @@ async fn handle_health() -> impl IntoResponse {
 
 // ── MCP Streamable HTTP: POST /mcp ──
 
+fn scaling_props() -> Value {
+    json!({
+        "max_width": {"type": "integer", "description": "Screenshot width for coordinate scaling (default: 1456). Set to 0 to disable.", "default": 1456},
+        "max_height": {"type": "integer", "description": "Screenshot height for coordinate scaling (default: 819). Set to 0 to disable.", "default": 819}
+    })
+}
+
 fn mcp_tool_definitions() -> Vec<Value> {
+    let sp = scaling_props();
     vec![
         json!({
             "name": "screenshot",
-            "description": "Take a screenshot of the screen. Returns base64 WebP image.",
+            "description": "Take a screenshot of the screen. Returns base64 WebP image. Default max_width=1456, max_height=819.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "quality": {"type": "integer", "description": "Image quality 1-100 (default: 100)"},
-                    "max_width": {"type": "integer", "description": "Max width for scaling"},
-                    "max_height": {"type": "integer", "description": "Max height for scaling"}
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 }
             }
         }),
         json!({
             "name": "ui_tree",
-            "description": "Get the accessibility tree of the current screen. Returns UI nodes with bounds, text, clickable state.",
-            "inputSchema": {"type": "object", "properties": {}}
+            "description": "Get the accessibility tree of the current screen. Returns UI nodes with bounds scaled to screenshot coordinates.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
+                }
+            }
         }),
         json!({
             "name": "click",
-            "description": "Click at screen coordinates",
+            "description": "Click at screen coordinates. Coordinates are in screenshot space and auto-scaled.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "x": {"type": "integer", "description": "X coordinate"},
                     "y": {"type": "integer", "description": "Y coordinate"},
-                    "duration": {"type": "integer", "description": "Press duration in ms (default: 100)"}
+                    "duration": {"type": "integer", "description": "Press duration in ms (default: 100)"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 },
                 "required": ["x", "y"]
             }
@@ -132,7 +148,9 @@ fn mcp_tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"}
+                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 },
                 "required": ["x", "y"]
             }
@@ -144,7 +162,9 @@ fn mcp_tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"}
+                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 },
                 "required": ["x", "y"]
             }
@@ -156,7 +176,9 @@ fn mcp_tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"}
+                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 },
                 "required": ["x", "y"]
             }
@@ -169,14 +191,16 @@ fn mcp_tool_definitions() -> Vec<Value> {
                 "properties": {
                     "x": {"type": "integer", "description": "X coordinate"},
                     "y": {"type": "integer", "description": "Y coordinate"},
-                    "duration": {"type": "integer", "description": "Press duration in ms (default: 1000)"}
+                    "duration": {"type": "integer", "description": "Press duration in ms (default: 1000)"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 },
                 "required": ["x", "y"]
             }
         }),
         json!({
             "name": "drag",
-            "description": "Drag from one point to another",
+            "description": "Drag from one point to another. Coordinates are in screenshot space.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -184,7 +208,9 @@ fn mcp_tool_definitions() -> Vec<Value> {
                     "startY": {"type": "integer"},
                     "endX": {"type": "integer"},
                     "endY": {"type": "integer"},
-                    "duration": {"type": "integer", "description": "Duration in ms (default: 300)"}
+                    "duration": {"type": "integer", "description": "Duration in ms (default: 300)"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 },
                 "required": ["startX", "startY", "endX", "endY"]
             }
@@ -200,7 +226,9 @@ fn mcp_tool_definitions() -> Vec<Value> {
                     "dx": {"type": "integer", "description": "Horizontal delta"},
                     "dy": {"type": "integer", "description": "Vertical delta (negative = scroll content up)"},
                     "direction": {"type": "string", "description": "Alternative: up/down/left/right"},
-                    "amount": {"type": "integer", "description": "Scroll amount (used with direction, default: 3)"}
+                    "amount": {"type": "integer", "description": "Scroll amount (used with direction, default: 3)"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 }
             }
         }),
@@ -211,7 +239,9 @@ fn mcp_tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "x": {"type": "integer", "description": "X coordinate"},
-                    "y": {"type": "integer", "description": "Y coordinate"}
+                    "y": {"type": "integer", "description": "Y coordinate"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 },
                 "required": ["x", "y"]
             }
@@ -225,7 +255,9 @@ fn mcp_tool_definitions() -> Vec<Value> {
                     "x": {"type": "integer"},
                     "y": {"type": "integer"},
                     "dx": {"type": "integer"},
-                    "dy": {"type": "integer"}
+                    "dy": {"type": "integer"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
                 }
             }
         }),
@@ -336,13 +368,25 @@ fn mcp_tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "get_screen_size",
-            "description": "Get the primary screen dimensions",
-            "inputSchema": {"type": "object", "properties": {}}
+            "description": "Get screen dimensions. Returns scaled dimensions matching screenshot space by default.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
+                }
+            }
         }),
         json!({
             "name": "list_windows",
-            "description": "List visible on-screen windows with title, position, size, and state",
-            "inputSchema": {"type": "object", "properties": {}}
+            "description": "List visible on-screen windows with title, position, size, and state. Coordinates in screenshot space.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
+                }
+            }
         }),
         json!({
             "name": "focus_window",
@@ -357,8 +401,14 @@ fn mcp_tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "active_window",
-            "description": "Get the title, position, size, and state of the currently active (foreground) window",
-            "inputSchema": {"type": "object", "properties": {}}
+            "description": "Get the title, position, size, and state of the currently active (foreground) window. Coordinates in screenshot space.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
+                }
+            }
         }),
         json!({
             "name": "screenshot_window",

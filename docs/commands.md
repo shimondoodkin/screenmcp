@@ -23,15 +23,17 @@ Responses:
 
 All commands that accept or return coordinates support optional `max_width` and `max_height` parameters for automatic coordinate scaling. This lets AI assistants use screenshot pixel coordinates directly without knowing the device's DPI or resolution.
 
+**Default values:** `max_width: 1456`, `max_height: 819` (landscape). These defaults apply automatically to all coordinate commands — screenshots, clicks, ui_tree, list_windows, get_screen_size. You don't need to pass them explicitly.
+
 **How it works:**
-1. Take a screenshot with `max_width: 1280` — get a 1280-wide image
-2. Pass `max_width: 1280` in click/drag/scroll commands — coordinates are auto-scaled from 1280-space to actual screen
-3. `ui_tree` and `list_windows` with `max_width: 1280` — returned bounds are in 1280-space
-4. `get_screen_size` with `max_width: 1280` — returns scaled dimensions plus originals
+1. Take a screenshot — get a 1456x819 image by default
+2. Click at screenshot pixel coordinates — auto-scaled to actual screen
+3. `ui_tree` and `list_windows` — returned bounds are in 1456x819 space
+4. `get_screen_size` — returns scaled dimensions (1456x819) plus originals
 
-**Disabling:** Omit `max_width`/`max_height` or set to 0 to use raw screen coordinates.
+**Disabling:** Set `max_width: 0` and `max_height: 0` to use raw screen coordinates.
 
-**Config default:** If `max_screenshot_width` or `max_screenshot_height` are set in the config file, they apply as defaults to all commands (screenshot, clicks, ui_tree, etc.) without needing to pass them explicitly.
+**Config override:** If `max_screenshot_width` or `max_screenshot_height` are set in the config file, they override the built-in defaults.
 
 **Applies to:** `click`, `long_click`, `right_click`, `middle_click`, `double_click`, `mouse_move`, `drag`, `scroll`, `mouse_scroll`, `ui_tree`, `list_windows`, `get_screen_size`.
 

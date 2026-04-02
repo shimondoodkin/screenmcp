@@ -287,10 +287,10 @@ fn get_screen_dimensions() -> Result<(u32, u32), String> {
 fn get_output_scale(params: Option<&Value>, config: &Config) -> Result<(f64, f64), String> {
     let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
         .or(config.max_screenshot_width.map(|v| v as f64))
-        .unwrap_or(0.0);
+        .unwrap_or(DEFAULT_SCALE_WIDTH);
     let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
         .or(config.max_screenshot_height.map(|v| v as f64))
-        .unwrap_or(0.0);
+        .unwrap_or(DEFAULT_SCALE_HEIGHT);
 
     if mw > 0.0 || mh > 0.0 {
         let (sw, sh) = get_screen_dimensions()?;
@@ -309,13 +309,17 @@ fn get_output_scale(params: Option<&Value>, config: &Config) -> Result<(f64, f64
 /// Scale coordinates from screenshot space to actual screen space.
 /// Uses max_width/max_height from params first, then falls back to config defaults.
 /// If both are 0/absent, no scaling is applied.
+/// Default screenshot dimensions for coordinate scaling (landscape).
+const DEFAULT_SCALE_WIDTH: f64 = 1456.0;
+const DEFAULT_SCALE_HEIGHT: f64 = 819.0;
+
 fn scale_xy(x: f64, y: f64, params: Option<&Value>, config: &Config) -> Result<(i32, i32), String> {
     let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
         .or(config.max_screenshot_width.map(|v| v as f64))
-        .unwrap_or(0.0);
+        .unwrap_or(DEFAULT_SCALE_WIDTH);
     let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
         .or(config.max_screenshot_height.map(|v| v as f64))
-        .unwrap_or(0.0);
+        .unwrap_or(DEFAULT_SCALE_HEIGHT);
 
     if mw > 0.0 || mh > 0.0 {
         let (sw, sh) = get_screen_dimensions()?;
@@ -765,7 +769,7 @@ fn handle_get_screen_size(params: Option<&Value>, config: &Config) -> Result<Val
 
     let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
         .or(config.max_screenshot_width.map(|v| v as f64))
-        .unwrap_or(0.0);
+        .unwrap_or(DEFAULT_SCALE_WIDTH);
     let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
         .or(config.max_screenshot_height.map(|v| v as f64))
         .unwrap_or(0.0);
