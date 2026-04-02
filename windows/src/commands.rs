@@ -40,7 +40,7 @@ pub fn execute_command(
         "back" => handle_back(),
         "home" => handle_home(),
         "recents" => handle_recents(),
-        "ui_tree" => handle_ui_tree(),
+        "ui_tree" => handle_ui_tree(params, config),
         "camera" => handle_camera(params),
         "list_cameras" => handle_list_cameras(),
         "right_click" => handle_right_click(params, config),
@@ -54,7 +54,7 @@ pub fn execute_command(
         "double_click" => handle_double_click(params, config),
         "hotkey" => handle_hotkey(params),
         "get_screen_size" => handle_get_screen_size(params, config),
-        "list_windows" => handle_list_windows(),
+        "list_windows" => handle_list_windows(params, config),
         "focus_window" => handle_focus_window(params),
         "active_window" => handle_active_window(),
         "screenshot_window" => handle_screenshot_window(params, config),
@@ -282,8 +282,30 @@ fn get_screen_dimensions() -> Result<(u32, u32), String> {
     Ok((screen.display_info.width, screen.display_info.height))
 }
 
-/// Scale a coordinate from screenshot space to actual screen space.
-/// If max_width/max_height are 0 or absent, no scaling is applied.
+/// Get the inverse scale factors (screen→screenshot space) for output coordinates.
+/// Returns (scale_x, scale_y) where output = actual * scale. Returns (1.0, 1.0) if no scaling.
+fn get_output_scale(params: Option<&Value>, config: &Config) -> Result<(f64, f64), String> {
+    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
+        .or(config.max_screenshot_width.map(|v| v as f64))
+        .unwrap_or(0.0);
+    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
+        .or(config.max_screenshot_height.map(|v| v as f64))
+        .unwrap_or(0.0);
+
+    if mw > 0.0 || mh > 0.0 {
+        let (sw, sh) = get_screen_dimensions()?;
+        let (sw, sh) = (sw as f64, sh as f64);
+        Ok(match (mw > 0.0, mh > 0.0) {
+            (true, true) => (mw / sw, mh / sh),
+            (true, false) => { let s = mw / sw; (s, s) }
+            (false, true) => { let s = mh / sh; (s, s) }
+            _ => (1.0, 1.0),
+        })
+    } else {
+        Ok((1.0, 1.0))
+    }
+}
+
 /// Scale coordinates from screenshot space to actual screen space.
 /// Uses max_width/max_height from params first, then falls back to config defaults.
 /// If both are 0/absent, no scaling is applied.
@@ -778,7 +800,7 @@ fn handle_get_screen_size(params: Option<&Value>, config: &Config) -> Result<Val
 }
 
 #[cfg(windows)]
-fn handle_list_windows() -> Result<Value, String> {
+fn handle_list_windows_raw() -> Result<Value, String> {
     use std::sync::Arc;
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE};
     use windows::Win32::UI::WindowsAndMessaging::*;
@@ -890,7 +912,7 @@ fn handle_list_windows() -> Result<Value, String> {
 }
 
 #[cfg(not(windows))]
-fn handle_list_windows() -> Result<Value, String> {
+fn handle_list_windows_raw() -> Result<Value, String> {
     Err("list_windows is only supported on Windows".to_string())
 }
 
@@ -909,7 +931,7 @@ fn handle_focus_window(params: Option<&Value>) -> Result<Value, String> {
     }
 
     // Use list_windows to find the target title
-    let list_result = handle_list_windows()?;
+    let list_result = handle_list_windows_raw()?;
     let windows = list_result
         .get("windows")
         .and_then(|v| v.as_array())
@@ -1043,7 +1065,7 @@ fn handle_screenshot_window(params: Option<&Value>, config: &Config) -> Result<V
     }
 
     // Find the target window
-    let list_result = handle_list_windows()?;
+    let list_result = handle_list_windows_raw()?;
     let windows = list_result
         .get("windows")
         .and_then(|v| v.as_array())
@@ -1428,7 +1450,7 @@ fn handle_play_audio(params: Option<&Value>) -> Result<Value, String> {
 /// Walks the control view from the desktop root, extracting element properties
 /// and interaction patterns to match the Android ui_tree output format.
 #[cfg(windows)]
-fn handle_ui_tree() -> Result<Value, String> {
+fn handle_ui_tree_raw() -> Result<Value, String> {
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
     };
@@ -1755,6 +1777,48 @@ fn control_type_name(id: windows::Win32::UI::Accessibility::UIA_CONTROLTYPE_ID) 
 }
 
 #[cfg(not(windows))]
-fn handle_ui_tree() -> Result<Value, String> {
+fn handle_ui_tree_raw() -> Result<Value, String> {
     Err("ui_tree is not supported on this platform".to_string())
+}
+
+fn handle_ui_tree(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let result = handle_ui_tree_raw()?;
+    let (sx, sy) = get_output_scale(params, config)?;
+    if sx == 1.0 && sy == 1.0 {
+        return Ok(result);
+    }
+    Ok(scale_bounds_in_value(&result, sx, sy))
+}
+
+fn handle_list_windows(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let result = handle_list_windows_raw()?;
+    let (sx, sy) = get_output_scale(params, config)?;
+    if sx == 1.0 && sy == 1.0 {
+        return Ok(result);
+    }
+    Ok(scale_bounds_in_value(&result, sx, sy))
+}
+
+/// Recursively scale coordinate fields in a JSON value.
+fn scale_bounds_in_value(val: &Value, sx: f64, sy: f64) -> Value {
+    match val {
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in map {
+                let scaled = match k.as_str() {
+                    "left" | "right" | "x" | "width" if v.is_number() => {
+                        json!((v.as_f64().unwrap() * sx).round() as i64)
+                    }
+                    "top" | "bottom" | "y" | "height" if v.is_number() => {
+                        json!((v.as_f64().unwrap() * sy).round() as i64)
+                    }
+                    _ => scale_bounds_in_value(v, sx, sy),
+                };
+                out.insert(k.clone(), scaled);
+            }
+            Value::Object(out)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(|v| scale_bounds_in_value(v, sx, sy)).collect()),
+        _ => val.clone(),
+    }
 }

@@ -40,7 +40,7 @@ pub fn execute_command(
         "back" => handle_back(),
         "home" => handle_home(),
         "recents" => handle_recents(),
-        "ui_tree" => handle_ui_tree(),
+        "ui_tree" => handle_ui_tree(params, config),
         "camera" => handle_camera(params),
         "list_cameras" => handle_list_cameras(),
         "right_click" => handle_right_click(params, config),
@@ -54,7 +54,7 @@ pub fn execute_command(
         "double_click" => handle_double_click(params, config),
         "hotkey" => handle_hotkey(params),
         "get_screen_size" => handle_get_screen_size(params, config),
-        "list_windows" => handle_list_windows(),
+        "list_windows" => handle_list_windows(params, config),
         "focus_window" => handle_focus_window(params),
         "active_window" => handle_active_window(),
         "screenshot_window" => handle_screenshot_window(params, config),
@@ -789,7 +789,7 @@ fn handle_get_screen_size(params: Option<&Value>, config: &Config) -> Result<Val
     }
 }
 
-fn handle_list_windows() -> Result<Value, String> {
+fn handle_list_windows_raw() -> Result<Value, String> {
     // Try wmctrl -lG for window list with geometry
     let output = std::process::Command::new("wmctrl")
         .args(["-lG"])
@@ -926,7 +926,7 @@ fn handle_focus_window(params: Option<&Value>) -> Result<Value, String> {
 
     // By index: get window list and activate by index
     if let Some(index) = target_index {
-        let list_result = handle_list_windows()?;
+        let list_result = handle_list_windows_raw()?;
         let windows = list_result
             .get("windows")
             .and_then(|v| v.as_array())
@@ -1027,7 +1027,7 @@ fn handle_screenshot_window(params: Option<&Value>, config: &Config) -> Result<V
             .map(|s| s.trim().to_string())
             .ok_or_else(|| format!("no window matching '{title}'"))?
     } else if let Some(index) = target_index {
-        let list_result = handle_list_windows()?;
+        let list_result = handle_list_windows_raw()?;
         let windows = list_result
             .get("windows")
             .and_then(|v| v.as_array())
@@ -1170,9 +1170,65 @@ fn handle_elevate() -> Result<Value, String> {
     }
 }
 
+fn get_output_scale(params: Option<&Value>, config: &Config) -> Result<(f64, f64), String> {
+    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
+        .or(config.max_screenshot_width.map(|v| v as f64))
+        .unwrap_or(0.0);
+    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
+        .or(config.max_screenshot_height.map(|v| v as f64))
+        .unwrap_or(0.0);
+    if mw > 0.0 || mh > 0.0 {
+        let (sw, sh) = get_screen_dimensions()?;
+        let (sw, sh) = (sw as f64, sh as f64);
+        Ok(match (mw > 0.0, mh > 0.0) {
+            (true, true) => (mw / sw, mh / sh),
+            (true, false) => { let s = mw / sw; (s, s) }
+            (false, true) => { let s = mh / sh; (s, s) }
+            _ => (1.0, 1.0),
+        })
+    } else {
+        Ok((1.0, 1.0))
+    }
+}
+
+fn scale_bounds_in_value(val: &Value, sx: f64, sy: f64) -> Value {
+    match val {
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in map {
+                let scaled = match k.as_str() {
+                    "left" | "right" | "x" | "width" if v.is_number() =>
+                        json!((v.as_f64().unwrap() * sx).round() as i64),
+                    "top" | "bottom" | "y" | "height" if v.is_number() =>
+                        json!((v.as_f64().unwrap() * sy).round() as i64),
+                    _ => scale_bounds_in_value(v, sx, sy),
+                };
+                out.insert(k.clone(), scaled);
+            }
+            Value::Object(out)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(|v| scale_bounds_in_value(v, sx, sy)).collect()),
+        _ => val.clone(),
+    }
+}
+
+fn handle_ui_tree(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let result = handle_ui_tree_raw()?;
+    let (sx, sy) = get_output_scale(params, config)?;
+    if sx == 1.0 && sy == 1.0 { return Ok(result); }
+    Ok(scale_bounds_in_value(&result, sx, sy))
+}
+
+fn handle_list_windows(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let result = handle_list_windows_raw()?;
+    let (sx, sy) = get_output_scale(params, config)?;
+    if sx == 1.0 && sy == 1.0 { return Ok(result); }
+    Ok(scale_bounds_in_value(&result, sx, sy))
+}
+
 /// Get list of windows with titles and positions using wmctrl.
 /// Falls back to an error if wmctrl is not installed.
-fn handle_ui_tree() -> Result<Value, String> {
+fn handle_ui_tree_raw() -> Result<Value, String> {
     // Try wmctrl -lG for window list with geometry
     let output = std::process::Command::new("wmctrl")
         .args(["-lG"])
