@@ -28,6 +28,8 @@ struct MenuItems {
     register_device: MenuItem,
     unregister_device: MenuItem,
     test_window: MenuItem,
+    local_mode_status: MenuItem,
+    local_mode_settings: MenuItem,
     about: MenuItem,
     quit: MenuItem,
 }
@@ -161,6 +163,11 @@ pub struct TrayApp {
     // Shared viewport state
     login_state: Arc<Mutex<LoginState>>,
     test_state: Arc<Mutex<TestState>>,
+    local_mode_state: Arc<Mutex<crate::local_mode_window::LocalModeState>>,
+
+    // Local mode viewport
+    show_local_mode: Arc<AtomicBool>,
+    focus_local_mode: Arc<AtomicBool>,
 
     // Quit flag
     should_quit: bool,
@@ -204,6 +211,16 @@ impl TrayApp {
         let register_device = MenuItem::new("Register Device", is_signed_in, None);
         let unregister_device = MenuItem::new("Unregister Device", false, None);
         let test_window = MenuItem::new("Test Window", true, None);
+
+        // Local mode menu items
+        let local_status_text = if config.local_mode_key.is_empty() {
+            "Local: Disabled".to_string()
+        } else {
+            format!("Local: Listening on :{}", config.local_mode_port)
+        };
+        let local_mode_status = MenuItem::new(&local_status_text, false, None);
+        let local_mode_settings = MenuItem::new("Local Mode Settings...", true, None);
+
         let quit = MenuItem::new("Quit", true, None);
         let quit_id = quit.id().clone();
 
@@ -220,6 +237,9 @@ impl TrayApp {
         let _ = menu.append(&unregister_device);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&test_window);
+        let _ = menu.append(&PredefinedMenuItem::separator());
+        let _ = menu.append(&local_mode_status);
+        let _ = menu.append(&local_mode_settings);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&quit);
 
@@ -248,6 +268,8 @@ impl TrayApp {
             register_device,
             unregister_device,
             test_window,
+            local_mode_status,
+            local_mode_settings,
             about,
             quit,
         };
@@ -293,6 +315,9 @@ impl TrayApp {
             focus_test: Arc::new(AtomicBool::new(false)),
             login_state,
             test_state: Arc::new(Mutex::new(TestState::new())),
+            local_mode_state: Arc::new(Mutex::new(crate::local_mode_window::LocalModeState::new())),
+            show_local_mode: Arc::new(AtomicBool::new(false)),
+            focus_local_mode: Arc::new(AtomicBool::new(false)),
             should_quit: false,
         }
     }
@@ -402,6 +427,11 @@ impl TrayApp {
                         *result.lock().unwrap() = Some(res);
                     });
                 });
+            } else if event.id() == items.local_mode_settings.id() {
+                info!("menu: local mode settings clicked");
+                *self.local_mode_state.lock().unwrap() = crate::local_mode_window::LocalModeState::new();
+                self.show_local_mode.store(true, Ordering::SeqCst);
+                self.focus_local_mode.store(true, Ordering::SeqCst);
             } else if event.id() == items.about.id() {
                 info!("menu: about clicked");
                 let _ = open::that("https://screenmcp.com");
@@ -561,6 +591,34 @@ impl eframe::App for TrayApp {
                     }
                     let mut s = state.lock().unwrap();
                     s.render(ctx);
+                },
+            );
+        }
+
+        // ── Local Mode viewport ──
+        if self.show_local_mode.load(Ordering::SeqCst) {
+            let state = self.local_mode_state.clone();
+            let show = self.show_local_mode.clone();
+            let focus = self.focus_local_mode.clone();
+            ctx.show_viewport_deferred(
+                egui::ViewportId::from_hash_of("local_mode_window"),
+                egui::ViewportBuilder::default()
+                    .with_title("ScreenMCP Local Mode")
+                    .with_inner_size([450.0, 520.0]),
+                move |ctx, _class| {
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        show.store(false, Ordering::SeqCst);
+                        return;
+                    }
+                    if focus.swap(false, Ordering::SeqCst) {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    }
+                    let mut s = state.lock().unwrap();
+                    let should_close = s.render(ctx);
+                    if should_close {
+                        show.store(false, Ordering::SeqCst);
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
                 },
             );
         }

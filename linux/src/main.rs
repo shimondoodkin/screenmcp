@@ -1,6 +1,8 @@
 mod auth;
 mod commands;
 mod config;
+mod local_mode_window;
+mod local_server;
 mod login_window;
 mod sse;
 mod test_window;
@@ -57,6 +59,14 @@ fn main() {
             // Start local HTTP server for auth callbacks
             let local_port = auth::start_local_server(auth_event_tx).await;
             let _ = port_tx.send(local_port);
+
+            // Start local mode HTTP server if key is configured
+            if !config_clone.local_mode_key.is_empty() {
+                let local_config = config_clone.clone();
+                tokio::spawn(async move {
+                    local_server::run_local_server(local_config).await;
+                });
+            }
 
             // If opensource server mode is enabled, start SSE listener
             if config_clone.opensource_server_enabled {
