@@ -50,6 +50,16 @@ pub fn execute_command(
         "hold_key" => handle_hold_key(params),
         "release_key" => handle_release_key(params),
         "press_key" => handle_press_key(params),
+        "mouse_move" => handle_mouse_move(params),
+        "double_click" => handle_double_click(params),
+        "hotkey" => handle_hotkey(params),
+        "get_screen_size" => handle_get_screen_size(),
+        "list_windows" => handle_list_windows(),
+        "focus_window" => handle_focus_window(params),
+        "active_window" => handle_active_window(),
+        "screenshot_window" => handle_screenshot_window(params, config),
+        "is_elevated" => handle_is_elevated(),
+        "elevate" => handle_elevate(),
         _ => {
             return json!({
                 "id": id,
@@ -609,6 +619,406 @@ fn handle_press_key(params: Option<&Value>) -> Result<Value, String> {
     let mut enigo = new_enigo()?;
     enigo.key(key, Click).map_err(|e| format!("press_key failed: {e}"))?;
     Ok(json!({}))
+}
+
+fn handle_mouse_move(params: Option<&Value>) -> Result<Value, String> {
+    let (x, y) = get_xy(params)?;
+    let mut enigo = new_enigo()?;
+    enigo
+        .move_mouse(x, y, Coordinate::Abs)
+        .map_err(|e| format!("move_mouse failed: {e}"))?;
+    Ok(json!({}))
+}
+
+fn handle_double_click(params: Option<&Value>) -> Result<Value, String> {
+    let (x, y) = get_xy(params)?;
+    let mut enigo = new_enigo()?;
+    enigo
+        .move_mouse(x, y, Coordinate::Abs)
+        .map_err(|e| format!("move_mouse failed: {e}"))?;
+    enigo
+        .button(Button::Left, Click)
+        .map_err(|e| format!("click failed: {e}"))?;
+    enigo
+        .button(Button::Left, Click)
+        .map_err(|e| format!("click failed: {e}"))?;
+    Ok(json!({}))
+}
+
+fn handle_hotkey(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let keys_arr = p
+        .get("keys")
+        .and_then(|v| v.as_array())
+        .ok_or("missing keys array")?;
+
+    if keys_arr.is_empty() {
+        return Err("keys array is empty".to_string());
+    }
+
+    let keys: Vec<Key> = keys_arr
+        .iter()
+        .map(|v| {
+            let name = v.as_str().ok_or("key must be a string")?;
+            parse_key(name)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut enigo = new_enigo()?;
+
+    for key in &keys {
+        enigo.key(*key, Press).map_err(|e| format!("hotkey press failed: {e}"))?;
+    }
+
+    for key in keys.iter().rev() {
+        enigo.key(*key, Release).map_err(|e| format!("hotkey release failed: {e}"))?;
+    }
+
+    Ok(json!({}))
+}
+
+fn handle_get_screen_size() -> Result<Value, String> {
+    let screens = screenshots::Screen::all().map_err(|e| format!("failed to list screens: {e}"))?;
+    let screen = screens
+        .first()
+        .ok_or_else(|| "no screens found".to_string())?;
+    let info = screen.display_info;
+    Ok(json!({
+        "width": info.width,
+        "height": info.height,
+        "x": info.x,
+        "y": info.y,
+    }))
+}
+
+fn handle_list_windows() -> Result<Value, String> {
+    // Use osascript to list windows via AppleScript
+    let script = r#"
+    set output to ""
+    tell application "System Events"
+        set procs to every process whose visible is true
+        repeat with proc in procs
+            set procName to name of proc
+            try
+                set wins to every window of proc
+                repeat with w in wins
+                    set winName to name of w
+                    set {x, y} to position of w
+                    set {width, height} to size of w
+                    set output to output & procName & "|||" & winName & "|||" & x & "|||" & y & "|||" & width & "|||" & height & linefeed
+                end repeat
+            end try
+        end repeat
+    end tell
+    return output
+    "#;
+
+    let output = std::process::Command::new("osascript")
+        .args(["-e", script])
+        .output()
+        .map_err(|e| format!("osascript failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err("failed to list windows — grant Accessibility permission".to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut windows: Vec<Value> = Vec::new();
+
+    for (i, line) in stdout.lines().enumerate() {
+        let parts: Vec<&str> = line.split("|||").collect();
+        if parts.len() >= 6 {
+            let app = parts[0];
+            let title = parts[1];
+            let x: i32 = parts[2].trim().parse().unwrap_or(0);
+            let y: i32 = parts[3].trim().parse().unwrap_or(0);
+            let width: i32 = parts[4].trim().parse().unwrap_or(0);
+            let height: i32 = parts[5].trim().parse().unwrap_or(0);
+
+            let display_title = if title.is_empty() { app } else { title };
+            windows.push(json!({
+                "index": i,
+                "title": display_title,
+                "app": app,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+            }));
+        }
+    }
+
+    Ok(json!({ "windows": windows }))
+}
+
+fn handle_focus_window(params: Option<&Value>) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let target_title = p.get("title").and_then(|v| v.as_str());
+    let target_index = p.get("index").and_then(|v| v.as_u64()).map(|v| v as usize);
+
+    if target_title.is_none() && target_index.is_none() {
+        return Err("provide either 'title' or 'index' parameter".to_string());
+    }
+
+    if let Some(index) = target_index {
+        let list_result = handle_list_windows()?;
+        let windows = list_result
+            .get("windows")
+            .and_then(|v| v.as_array())
+            .ok_or("failed to list windows")?;
+        let app = windows
+            .get(index)
+            .and_then(|w| w.get("app"))
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| format!("no window at index {index}"))?;
+        let title = windows
+            .get(index)
+            .and_then(|w| w.get("title"))
+            .and_then(|t| t.as_str())
+            .unwrap_or(app);
+
+        let script = format!(
+            "tell application \"{}\" to activate",
+            app.replace('"', "\\\"")
+        );
+        let _ = std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .output();
+        return Ok(json!({ "focused": title }));
+    }
+
+    if let Some(title) = target_title {
+        // Try to find matching app in window list
+        let list_result = handle_list_windows()?;
+        let windows = list_result
+            .get("windows")
+            .and_then(|v| v.as_array())
+            .ok_or("failed to list windows")?;
+
+        let lower = title.to_lowercase();
+        let app = windows
+            .iter()
+            .find_map(|w| {
+                let t = w.get("title")?.as_str()?;
+                let a = w.get("app")?.as_str()?;
+                if t.to_lowercase().contains(&lower) || a.to_lowercase().contains(&lower) {
+                    Some(a.to_string())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| format!("no window matching '{title}'"))?;
+
+        let script = format!(
+            "tell application \"{}\" to activate",
+            app.replace('"', "\\\"")
+        );
+        let _ = std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .output();
+        return Ok(json!({ "focused": title }));
+    }
+
+    Err("provide either 'title' or 'index' parameter".to_string())
+}
+
+fn handle_active_window() -> Result<Value, String> {
+    let script = r#"
+    tell application "System Events"
+        set frontApp to first application process whose frontmost is true
+        set appName to name of frontApp
+        try
+            set frontWin to front window of frontApp
+            set winName to name of frontWin
+            set {x, y} to position of frontWin
+            set {w, h} to size of frontWin
+            return appName & "|||" & winName & "|||" & x & "|||" & y & "|||" & w & "|||" & h
+        on error
+            return appName & "||||||0|||0|||0|||0"
+        end try
+    end tell
+    "#;
+
+    let output = std::process::Command::new("osascript")
+        .args(["-e", script])
+        .output()
+        .map_err(|e| format!("osascript failed: {e}"))?;
+
+    if !output.status.success() {
+        return Ok(json!({ "title": null, "active": false }));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let parts: Vec<&str> = stdout.split("|||").collect();
+
+    if parts.len() >= 6 {
+        let app = parts[0];
+        let title = if parts[1].is_empty() { app } else { parts[1] };
+        let x: i32 = parts[2].parse().unwrap_or(0);
+        let y: i32 = parts[3].parse().unwrap_or(0);
+        let width: i32 = parts[4].parse().unwrap_or(0);
+        let height: i32 = parts[5].parse().unwrap_or(0);
+
+        Ok(json!({
+            "title": title,
+            "app": app,
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+        }))
+    } else {
+        Ok(json!({ "title": null, "active": false }))
+    }
+}
+
+fn handle_screenshot_window(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let target_title = p.get("title").and_then(|v| v.as_str());
+    let target_index = p.get("index").and_then(|v| v.as_u64()).map(|v| v as usize);
+
+    if target_title.is_none() && target_index.is_none() {
+        return Err("provide either 'title' or 'index' parameter".to_string());
+    }
+
+    // Find window title
+    let list_result = handle_list_windows()?;
+    let windows = list_result
+        .get("windows")
+        .and_then(|v| v.as_array())
+        .ok_or("failed to list windows")?;
+
+    let (target_app, target_win_title) = if let Some(index) = target_index {
+        let w = windows.get(index).ok_or_else(|| format!("no window at index {index}"))?;
+        let app = w.get("app").and_then(|t| t.as_str()).unwrap_or("");
+        let title = w.get("title").and_then(|t| t.as_str()).unwrap_or(app);
+        (app.to_string(), title.to_string())
+    } else if let Some(title_substr) = target_title {
+        let lower = title_substr.to_lowercase();
+        windows
+            .iter()
+            .find_map(|w| {
+                let t = w.get("title")?.as_str()?;
+                let a = w.get("app")?.as_str()?;
+                if t.to_lowercase().contains(&lower) || a.to_lowercase().contains(&lower) {
+                    Some((a.to_string(), t.to_string()))
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| format!("no window matching '{title_substr}'"))?
+    } else {
+        return Err("provide either 'title' or 'index' parameter".to_string());
+    };
+
+    // Use screencapture -l to capture specific window
+    // First get window ID via CGWindowListCopyWindowInfo
+    let temp_path = std::env::temp_dir().join("screenmcp_window.png");
+
+    // Use screencapture with window owner name
+    let result = std::process::Command::new("screencapture")
+        .args(["-o", "-l", &format!("0"), "-x", temp_path.to_str().unwrap()])
+        .output();
+
+    // Fallback: activate window and take full screenshot, then crop
+    // Activate the window first
+    let script = format!(
+        "tell application \"{}\" to activate",
+        target_app.replace('"', "\\\"")
+    );
+    let _ = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .output();
+    thread::sleep(Duration::from_millis(300));
+
+    // Take screenshot
+    let result = std::process::Command::new("screencapture")
+        .args(["-x", "-o", temp_path.to_str().unwrap()])
+        .output();
+
+    if result.is_err() || !result.as_ref().unwrap().status.success() {
+        return Err("screencapture failed".to_string());
+    }
+
+    let png_bytes = std::fs::read(&temp_path)
+        .map_err(|e| format!("failed to read capture: {e}"))?;
+    let _ = std::fs::remove_file(&temp_path);
+
+    let img = image::load_from_memory(&png_bytes)
+        .map_err(|e| format!("failed to decode capture: {e}"))?;
+
+    let max_w = p.get("max_width").and_then(|v| v.as_u64()).map(|v| v as u32)
+        .or(config.max_screenshot_width);
+    let max_h = p.get("max_height").and_then(|v| v.as_u64()).map(|v| v as u32)
+        .or(config.max_screenshot_height);
+
+    let img = if let (Some(mw), Some(mh)) = (max_w, max_h) {
+        if img.width() > mw || img.height() > mh {
+            img.resize(mw, mh, image::imageops::FilterType::Triangle)
+        } else { img }
+    } else if let Some(mw) = max_w {
+        if img.width() > mw {
+            let ratio = mw as f64 / img.width() as f64;
+            let new_h = (img.height() as f64 * ratio) as u32;
+            img.resize_exact(mw, new_h, image::imageops::FilterType::Triangle)
+        } else { img }
+    } else if let Some(mh) = max_h {
+        if img.height() > mh {
+            let ratio = mh as f64 / img.height() as f64;
+            let new_w = (img.width() as f64 * ratio) as u32;
+            img.resize_exact(new_w, mh, image::imageops::FilterType::Triangle)
+        } else { img }
+    } else { img };
+
+    let rgba = img.to_rgba8();
+    let mut buf = Cursor::new(Vec::new());
+    WebPEncoder::new_lossless(&mut buf)
+        .write_image(rgba.as_raw(), rgba.width(), rgba.height(), image::ExtendedColorType::Rgba8)
+        .map_err(|e| format!("WebP encode failed: {e}"))?;
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
+
+    Ok(json!({
+        "image": b64,
+        "title": target_win_title,
+        "width": rgba.width(),
+        "height": rgba.height(),
+    }))
+}
+
+fn handle_is_elevated() -> Result<Value, String> {
+    let elevated = unsafe { libc::geteuid() == 0 };
+    Ok(json!({ "elevated": elevated }))
+}
+
+fn handle_elevate() -> Result<Value, String> {
+    if unsafe { libc::geteuid() == 0 } {
+        return Ok(json!({ "already_elevated": true }));
+    }
+
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("failed to get exe path: {e}"))?;
+
+    // Use osascript to request admin privileges
+    let script = format!(
+        "do shell script \"{}\" with administrator privileges",
+        exe_path.to_str().unwrap_or("screenmcp-mac").replace('"', "\\\"")
+    );
+
+    let result = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .spawn();
+
+    match result {
+        Ok(_) => {
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                std::process::exit(0);
+            });
+            Ok(json!({ "elevating": true }))
+        }
+        Err(_) => Err("failed to request elevation".to_string()),
+    }
 }
 
 fn handle_play_audio(params: Option<&Value>) -> Result<Value, String> {

@@ -39,8 +39,8 @@ pub async fn start_local_server(event_tx: mpsc::Sender<LocalServerEvent>) -> u16
 }
 
 /// Open browser to screenmcp.com for Google sign-in.
-pub fn open_google_sign_in(port: u16, api_url: &str) {
-    let url = format!("{api_url}/auth/desktop?port={port}");
+pub fn open_google_sign_in(port: u16, _api_url: &str) {
+    let url = format!("https://screenmcp.com/auth/desktop?port={port}");
     info!("opening browser for Google sign-in: {url}");
     if let Err(e) = open::that(&url) {
         error!("failed to open browser: {e}");

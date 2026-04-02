@@ -530,6 +530,38 @@ class WebSocketClient(
                 }
             }
 
+            "get_screen_size" -> {
+                val dm = service.resources.displayMetrics
+                val result = JSONObject().apply {
+                    put("width", dm.widthPixels)
+                    put("height", dm.heightPixels)
+                    put("density", dm.density.toDouble())
+                }
+                sendResponse(ws, id, "ok", result = result)
+            }
+
+            "double_click" -> {
+                val x = params?.optDouble("x", -1.0) ?: -1.0
+                val y = params?.optDouble("y", -1.0) ?: -1.0
+                if (x < 0 || y < 0) {
+                    sendResponse(ws, id, "error", error = "missing x or y")
+                    return
+                }
+                // Two quick taps
+                service.performClick(x.toFloat(), y.toFloat()) { s1, _ ->
+                    if (s1) {
+                        handler.postDelayed({
+                            service.performClick(x.toFloat(), y.toFloat()) { s2, e2 ->
+                                if (s2) sendResponse(ws, id, "ok")
+                                else sendResponse(ws, id, "error", error = e2)
+                            }
+                        }, 50)
+                    } else {
+                        sendResponse(ws, id, "error", error = "first tap failed")
+                    }
+                }
+            }
+
             else -> sendResponse(ws, id, "error", error = "unknown command: $cmd")
         }
     }

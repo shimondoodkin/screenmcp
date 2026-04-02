@@ -52,7 +52,7 @@ async fn discover_worker(api_url: &str, token: &str) -> Result<String, String> {
     let resp = client
         .post(format!("{api_url}/api/discover"))
         .header("Authorization", format!("Bearer {token}"))
-        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({}))
         .send()
         .await
         .map_err(|e| format!("discovery request failed: {e}"))?;
