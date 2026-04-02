@@ -53,7 +53,7 @@ pub fn execute_command(
         "mouse_move" => handle_mouse_move(params),
         "double_click" => handle_double_click(params),
         "hotkey" => handle_hotkey(params),
-        "get_screen_size" => handle_get_screen_size(),
+        "get_screen_size" => handle_get_screen_size(params),
         "list_windows" => handle_list_windows(),
         "focus_window" => handle_focus_window(params),
         "active_window" => handle_active_window(),
@@ -275,17 +275,40 @@ fn handle_camera(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({ "image": b64 }))
 }
 
+/// Get actual screen dimensions for coordinate scaling.
+fn get_screen_dimensions() -> Result<(u32, u32), String> {
+    let screens = screenshots::Screen::all().map_err(|e| format!("failed to list screens: {e}"))?;
+    let screen = screens.first().ok_or("no screens found")?;
+    Ok((screen.display_info.width, screen.display_info.height))
+}
+
+/// Scale a coordinate from screenshot space to actual screen space.
+/// If max_width/max_height are 0 or absent, no scaling is applied.
+fn scale_xy(x: f64, y: f64, params: Option<&Value>) -> Result<(i32, i32), String> {
+    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+    if mw > 0.0 || mh > 0.0 {
+        let (sw, sh) = get_screen_dimensions()?;
+        let (sw, sh) = (sw as f64, sh as f64);
+        // If only one dimension provided, compute the other preserving aspect ratio
+        let (scale_w, scale_h) = match (mw > 0.0, mh > 0.0) {
+            (true, true) => (sw / mw, sh / mh),
+            (true, false) => { let s = sw / mw; (s, s) }
+            (false, true) => { let s = sh / mh; (s, s) }
+            _ => (1.0, 1.0),
+        };
+        Ok(((x * scale_w) as i32, (y * scale_h) as i32))
+    } else {
+        Ok((x as i32, y as i32))
+    }
+}
+
 fn get_xy(params: Option<&Value>) -> Result<(i32, i32), String> {
     let p = params.ok_or("missing params")?;
-    let x = p
-        .get("x")
-        .and_then(|v| v.as_f64())
-        .ok_or("missing x")? as i32;
-    let y = p
-        .get("y")
-        .and_then(|v| v.as_f64())
-        .ok_or("missing y")? as i32;
-    Ok((x, y))
+    let x = p.get("x").and_then(|v| v.as_f64()).ok_or("missing x")?;
+    let y = p.get("y").and_then(|v| v.as_f64()).ok_or("missing y")?;
+    scale_xy(x, y, params)
 }
 
 fn new_enigo() -> Result<Enigo, String> {
@@ -327,10 +350,16 @@ fn handle_long_click(params: Option<&Value>) -> Result<Value, String> {
 
 fn handle_drag(params: Option<&Value>) -> Result<Value, String> {
     let p = params.ok_or("missing params")?;
-    let start_x = p.get("startX").and_then(|v| v.as_f64()).ok_or("missing startX")? as i32;
-    let start_y = p.get("startY").and_then(|v| v.as_f64()).ok_or("missing startY")? as i32;
-    let end_x = p.get("endX").and_then(|v| v.as_f64()).ok_or("missing endX")? as i32;
-    let end_y = p.get("endY").and_then(|v| v.as_f64()).ok_or("missing endY")? as i32;
+    let (start_x, start_y) = scale_xy(
+        p.get("startX").and_then(|v| v.as_f64()).ok_or("missing startX")?,
+        p.get("startY").and_then(|v| v.as_f64()).ok_or("missing startY")?,
+        params,
+    )?;
+    let (end_x, end_y) = scale_xy(
+        p.get("endX").and_then(|v| v.as_f64()).ok_or("missing endX")?,
+        p.get("endY").and_then(|v| v.as_f64()).ok_or("missing endY")?,
+        params,
+    )?;
     let duration_ms = p.get("duration").and_then(|v| v.as_u64()).unwrap_or(300);
 
     let mut enigo = new_enigo()?;
@@ -366,13 +395,14 @@ fn handle_scroll(params: Option<&Value>) -> Result<Value, String> {
     // Support both direction-based (Android style) and dx/dy based scroll
     let mut enigo = new_enigo()?;
 
-    // If x,y provided, move mouse there first
+    // If x,y provided, move mouse there first (with optional scaling)
     if let (Some(x), Some(y)) = (
         p.get("x").and_then(|v| v.as_f64()),
         p.get("y").and_then(|v| v.as_f64()),
     ) {
+        let (sx, sy) = scale_xy(x, y, params)?;
         enigo
-            .move_mouse(x as i32, y as i32, Coordinate::Abs)
+            .move_mouse(sx, sy, Coordinate::Abs)
             .map_err(|e| format!("move_mouse failed: {e}"))?;
     }
 
@@ -697,18 +727,44 @@ fn handle_hotkey(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_get_screen_size() -> Result<Value, String> {
+fn handle_get_screen_size(params: Option<&Value>) -> Result<Value, String> {
     let screens = screenshots::Screen::all().map_err(|e| format!("failed to list screens: {e}"))?;
     let screen = screens
         .first()
         .ok_or_else(|| "no screens found".to_string())?;
     let info = screen.display_info;
-    Ok(json!({
-        "width": info.width,
-        "height": info.height,
-        "x": info.x,
-        "y": info.y,
-    }))
+    let (ow, oh) = (info.width, info.height);
+
+    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+    if mw > 0.0 || mh > 0.0 {
+        // Compute scaled dimensions preserving aspect ratio (same logic as screenshot resize)
+        let (sw, sh) = if mw > 0.0 && mh > 0.0 {
+            let rw = mw / ow as f64;
+            let rh = mh / oh as f64;
+            let r = rw.min(rh).min(1.0);
+            ((ow as f64 * r) as u32, (oh as f64 * r) as u32)
+        } else if mw > 0.0 {
+            let r = (mw / ow as f64).min(1.0);
+            ((ow as f64 * r) as u32, (oh as f64 * r) as u32)
+        } else {
+            let r = (mh / oh as f64).min(1.0);
+            ((ow as f64 * r) as u32, (oh as f64 * r) as u32)
+        };
+        Ok(json!({
+            "width": sw,
+            "height": sh,
+            "original_width": ow,
+            "original_height": oh,
+            "scaled": true,
+        }))
+    } else {
+        Ok(json!({
+            "width": ow,
+            "height": oh,
+        }))
+    }
 }
 
 #[cfg(windows)]
