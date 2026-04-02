@@ -14,6 +14,7 @@ Command support matrix across all projects. Reference: [commands.md](commands.md
 | 6 | Linux Client | `linux/` | Rust | Desktop client (wmctrl/xdotool) |
 | 7 | TypeScript SDK | `sdk/typescript/` | TypeScript | Client library + CLI example |
 | 8 | Python SDK | `sdk/python/` | Python | Client library (async) |
+| 9 | Rust SDK | `sdk/rust/` | Rust | Client library (async) |
 
 ## Command Support Matrix
 
@@ -72,24 +73,52 @@ The worker relays all commands — it does not interpret them. The matrix below 
 
 - Camera accepts any camera ID string. Use `list_cameras` to discover available IDs.
 
+### Audio
+
+| Command | Android | Windows | macOS | Linux | MCP Server | TS SDK | Python SDK | Rust SDK |
+|---------|---------|---------|-------|-------|------------|--------|------------|----------|
+| `play_audio` | yes | yes | yes | yes | yes | yes | yes | yes |
+
 ### Keyboard (Desktop Only)
 
-| Command | Android | Windows | macOS | Linux | MCP Server | TS SDK | Python SDK |
-|---------|---------|---------|-------|-------|------------|--------|------------|
-| `hold_key` | error | yes | yes | yes | yes | yes | yes |
-| `release_key` | error | yes | yes | yes | yes | yes | yes |
-| `press_key` | error | yes | yes | yes | yes | yes | yes |
+| Command | Android | Windows | macOS | Linux | MCP Server | TS SDK | Python SDK | Rust SDK |
+|---------|---------|---------|-------|-------|------------|--------|------------|----------|
+| `hold_key` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `release_key` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `press_key` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `hotkey` | unsupported | yes | yes | yes | yes | yes | yes | yes |
 
 ### Mouse (Desktop Only)
 
-| Command | Android | Windows | macOS | Linux | MCP Server | TS SDK | Python SDK |
-|---------|---------|---------|-------|-------|------------|--------|------------|
-| `right_click` | unsupported | yes | yes | yes | yes | generic | generic |
-| `middle_click` | unsupported | yes | yes | yes | yes | generic | generic |
-| `mouse_scroll` | unsupported | yes | yes | yes | yes | generic | generic |
+| Command | Android | Windows | macOS | Linux | MCP Server | TS SDK | Python SDK | Rust SDK |
+|---------|---------|---------|-------|-------|------------|--------|------------|----------|
+| `right_click` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `middle_click` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `mouse_scroll` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `mouse_move` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `double_click` | yes | yes | yes | yes | yes | yes | yes | yes |
 
-- SDKs can send these via `sendCommand()`. CLI example has shell commands for them.
+### Window Management
+
+| Command | Android | Windows | macOS | Linux | MCP Server | TS SDK | Python SDK | Rust SDK |
+|---------|---------|---------|-------|-------|------------|--------|------------|----------|
+| `get_screen_size` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `list_windows` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `focus_window` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `active_window` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `screenshot_window` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+
+### System (Desktop Only)
+
+| Command | Android | Windows | macOS | Linux | MCP Server | TS SDK | Python SDK | Rust SDK |
+|---------|---------|---------|-------|-------|------------|--------|------------|----------|
+| `is_elevated` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `elevate` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+
+### Coordinate Scaling
+
+All coordinate-based commands (`click`, `drag`, `scroll`, `mouse_move`, `double_click`, `right_click`, `middle_click`, `mouse_scroll`, `ui_tree`, `list_windows`, `get_screen_size`, `active_window`) support `max_width`/`max_height` parameters for automatic coordinate scaling. Default: 1456x819 (landscape).
 
 ## Gaps Summary
 
-All gaps resolved. Every command has full coverage across all projects.
+All commands have full coverage across all platforms and SDKs. Android returns `{unsupported: true}` for desktop-only commands.

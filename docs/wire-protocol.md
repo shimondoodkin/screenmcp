@@ -426,6 +426,151 @@ Response:
 { "id": 24, "status": "ok", "result": {} }
 ```
 
+### play_audio
+
+Full:
+```json
+{ "cmd": "play_audio", "params": { "audio_data": "<base64 wav or mp3>", "volume": 0.8 } }
+```
+
+Minimal:
+```json
+{ "cmd": "play_audio", "params": { "audio_data": "<base64>" } }
+```
+
+Response:
+```json
+{ "id": 25, "status": "ok", "result": {} }
+```
+
+### mouse_move (desktop only)
+
+```json
+{ "cmd": "mouse_move", "params": { "x": 200, "y": 300, "max_width": 1456, "max_height": 819 } }
+```
+
+Response:
+```json
+{ "id": 26, "status": "ok", "result": {} }
+```
+
+### double_click
+
+```json
+{ "cmd": "double_click", "params": { "x": 200, "y": 300, "max_width": 1456, "max_height": 819 } }
+```
+
+Response:
+```json
+{ "id": 27, "status": "ok", "result": {} }
+```
+
+### hotkey (desktop only)
+
+```json
+{ "cmd": "hotkey", "params": { "keys": ["ctrl", "shift", "s"] } }
+```
+
+Response:
+```json
+{ "id": 28, "status": "ok", "result": {} }
+```
+
+### get_screen_size
+
+Full (with scaling):
+```json
+{ "cmd": "get_screen_size", "params": { "max_width": 1456, "max_height": 819 } }
+```
+
+Response (scaled):
+```json
+{ "id": 29, "status": "ok", "result": { "width": 1456, "height": 819, "original_width": 3840, "original_height": 2160, "scaled": true } }
+```
+
+Response (no scaling):
+```json
+{ "id": 29, "status": "ok", "result": { "width": 3840, "height": 2160 } }
+```
+
+### list_windows
+
+```json
+{ "cmd": "list_windows", "params": { "max_width": 1456, "max_height": 819 } }
+```
+
+Response:
+```json
+{ "id": 30, "status": "ok", "result": { "windows": [ { "index": 0, "title": "Paint", "x": 0, "y": 0, "width": 800, "height": 600 } ] } }
+```
+
+### focus_window
+
+By title:
+```json
+{ "cmd": "focus_window", "params": { "title": "Paint" } }
+```
+
+By index:
+```json
+{ "cmd": "focus_window", "params": { "index": 0 } }
+```
+
+Response:
+```json
+{ "id": 31, "status": "ok", "result": { "focused": "Paint" } }
+```
+
+### active_window
+
+```json
+{ "cmd": "active_window", "params": { "max_width": 1456, "max_height": 819 } }
+```
+
+Response:
+```json
+{ "id": 32, "status": "ok", "result": { "title": "Paint", "x": 0, "y": 0, "width": 800, "height": 600 } }
+```
+
+### screenshot_window
+
+```json
+{ "cmd": "screenshot_window", "params": { "title": "Paint", "max_width": 1456, "max_height": 819 } }
+```
+
+Response:
+```json
+{ "id": 33, "status": "ok", "result": { "image": "<base64 webp>", "title": "Paint", "width": 800, "height": 600 } }
+```
+
+### is_elevated (desktop only)
+
+```json
+{ "cmd": "is_elevated" }
+```
+
+Response:
+```json
+{ "id": 34, "status": "ok", "result": { "elevated": false } }
+```
+
+### elevate (desktop only)
+
+```json
+{ "cmd": "elevate" }
+```
+
+Response:
+```json
+{ "id": 35, "status": "ok", "result": { "elevating": true } }
+```
+
+---
+
+## Coordinate Scaling
+
+All coordinate-based commands support optional `max_width` and `max_height` parameters. Default: 1456x819. This scales coordinates between screenshot space and actual screen resolution automatically. Set both to 0 to disable.
+
 ---
 
 ## Error Codes
