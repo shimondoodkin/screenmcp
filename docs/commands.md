@@ -346,7 +346,7 @@ Press a key combination atomically (e.g., Ctrl+C, Alt+Tab). All keys are pressed
 
 ---
 
-## Window Management (Desktop Only)
+## Window Management
 
 ### get_screen_size
 
@@ -365,7 +365,7 @@ Android also returns `"density"`.
 
 ### list_windows
 
-List all visible windows with titles and positions.
+List all visible windows with titles and positions. On Android, uses AccessibilityService to list app windows.
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -385,7 +385,7 @@ Mac also returns `"app"` (owning application name). Windows also returns `"minim
 
 ### focus_window
 
-Bring a window to the foreground by title substring or index from `list_windows`.
+Bring a window to the foreground by title substring or index from `list_windows`. On Android, launches the app by name.
 
 | Param | Type | Description |
 |-------|------|-------------|
@@ -398,9 +398,12 @@ Provide either `title` or `index`.
 
 ### active_window
 
-Get information about the currently focused window.
+Get information about the currently focused window. Supported on all platforms including Android.
 
-No parameters.
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_width` | integer | 0 | Scale returned coordinates to match screenshot space |
+| `max_height` | integer | 0 | Scale returned coordinates to match screenshot space |
 
 **Returns:** `{ "title": "Window Title", "x": 0, "y": 0, "width": 1920, "height": 1080 }`
 
