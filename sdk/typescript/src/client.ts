@@ -256,13 +256,20 @@ export class DeviceConnection extends EventEmitter {
   }
 
   /** Tap at the given screen coordinates. */
-  async click(x: number, y: number): Promise<void> {
-    await this.sendCommand("click", { x, y });
+  async click(x: number, y: number, duration?: number, maxWidth?: number, maxHeight?: number): Promise<void> {
+    const params: Record<string, unknown> = { x, y };
+    if (duration !== undefined) params.duration = duration;
+    if (maxWidth !== undefined) params.max_width = maxWidth;
+    if (maxHeight !== undefined) params.max_height = maxHeight;
+    await this.sendCommand("click", params);
   }
 
   /** Long-press at the given screen coordinates. */
-  async longClick(x: number, y: number): Promise<void> {
-    await this.sendCommand("long_click", { x, y });
+  async longClick(x: number, y: number, maxWidth?: number, maxHeight?: number): Promise<void> {
+    const params: Record<string, unknown> = { x, y };
+    if (maxWidth !== undefined) params.max_width = maxWidth;
+    if (maxHeight !== undefined) params.max_height = maxHeight;
+    await this.sendCommand("long_click", params);
   }
 
   /** Drag from (startX, startY) to (endX, endY). */
@@ -271,8 +278,15 @@ export class DeviceConnection extends EventEmitter {
     startY: number,
     endX: number,
     endY: number,
+    duration?: number,
+    maxWidth?: number,
+    maxHeight?: number,
   ): Promise<void> {
-    await this.sendCommand("drag", { startX, startY, endX, endY });
+    const params: Record<string, unknown> = { startX, startY, endX, endY };
+    if (duration !== undefined) params.duration = duration;
+    if (maxWidth !== undefined) params.max_width = maxWidth;
+    if (maxHeight !== undefined) params.max_height = maxHeight;
+    await this.sendCommand("drag", params);
   }
 
   /**
@@ -353,8 +367,11 @@ export class DeviceConnection extends EventEmitter {
   }
 
   /** Get the UI accessibility tree. */
-  async uiTree(): Promise<UiTreeResult> {
-    const resp = await this.sendCommand("ui_tree");
+  async uiTree(maxWidth?: number, maxHeight?: number): Promise<UiTreeResult> {
+    const params: Record<string, unknown> = {};
+    if (maxWidth !== undefined) params.max_width = maxWidth;
+    if (maxHeight !== undefined) params.max_height = maxHeight;
+    const resp = await this.sendCommand("ui_tree", Object.keys(params).length > 0 ? params : undefined);
     return { tree: (resp.result as UiTreeResult | undefined)?.tree ?? [] };
   }
 
@@ -410,6 +427,15 @@ export class DeviceConnection extends EventEmitter {
   async pressKey(key: string): Promise<void> {
     await this.sendCommand("press_key", { key });
   }
+
+  /** Right-click at coordinates (desktop only). */
+  async rightClick(x: number, y: number, maxWidth?: number, maxHeight?: number) { return this.sendCommand('right_click', { x, y, max_width: maxWidth, max_height: maxHeight }); }
+
+  /** Middle-click at coordinates (desktop only). */
+  async middleClick(x: number, y: number, maxWidth?: number, maxHeight?: number) { return this.sendCommand('middle_click', { x, y, max_width: maxWidth, max_height: maxHeight }); }
+
+  /** Mouse scroll at coordinates with pixel deltas (desktop only). */
+  async mouseScroll(x: number, y: number, dx: number, dy: number, maxWidth?: number, maxHeight?: number) { return this.sendCommand('mouse_scroll', { x, y, dx, dy, max_width: maxWidth, max_height: maxHeight }); }
 
   // -----------------------------------------------------------------------
   // Desktop commands

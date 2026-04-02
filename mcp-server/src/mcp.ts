@@ -376,9 +376,10 @@ const phoneTools = [
     description: 'Get information about the currently focused window (desktop only)',
     inputSchema: {
       device_id: deviceIdParam,
+      ...scalingParams,
     },
-    handler: async (phone: DeviceConnection) => {
-      return (await phone.sendCommand('active_window')).result;
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('active_window', params)).result;
     },
   },
   {

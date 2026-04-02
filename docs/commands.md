@@ -255,6 +255,19 @@ Returns empty image string if camera not available. Desktop clients return `{ "u
 
 ---
 
+## Audio
+
+### play_audio
+
+Play an audio file (WAV or MP3) on the device speaker.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `audio_data` | string | — | Base64-encoded audio file (WAV or MP3) (required) |
+| `volume` | number | 1.0 | Playback volume 0.0–1.0 |
+
+---
+
 ## Keyboard (Desktop Only)
 
 These commands are supported by desktop clients (Windows, Mac, Linux). On Android they return `{status: "error"}`.

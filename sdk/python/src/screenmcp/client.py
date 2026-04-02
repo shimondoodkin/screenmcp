@@ -285,14 +285,21 @@ class DeviceConnection:
         resp = await self.send_command("screenshot", params or None)
         return resp.result
 
-    async def click(self, x: int, y: int) -> dict[str, Any]:
+    async def click(self, x: int, y: int, duration: int = 0, max_width: int = 0, max_height: int = 0) -> dict[str, Any]:
         """Tap at (x, y)."""
-        resp = await self.send_command("click", {"x": x, "y": y})
+        params: dict[str, Any] = {"x": x, "y": y}
+        if duration: params["duration"] = duration
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        resp = await self.send_command("click", params)
         return resp.result
 
-    async def long_click(self, x: int, y: int) -> dict[str, Any]:
+    async def long_click(self, x: int, y: int, max_width: int = 0, max_height: int = 0) -> dict[str, Any]:
         """Long-press at (x, y)."""
-        resp = await self.send_command("long_click", {"x": x, "y": y})
+        params: dict[str, Any] = {"x": x, "y": y}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        resp = await self.send_command("long_click", params)
         return resp.result
 
     async def drag(
@@ -302,18 +309,20 @@ class DeviceConnection:
         end_x: int,
         end_y: int,
         duration: int = 300,
+        max_width: int = 0,
+        max_height: int = 0,
     ) -> dict[str, Any]:
         """Drag from (start_x, start_y) to (end_x, end_y)."""
-        resp = await self.send_command(
-            "drag",
-            {
-                "startX": start_x,
-                "startY": start_y,
-                "endX": end_x,
-                "endY": end_y,
-                "duration": duration,
-            },
-        )
+        params: dict[str, Any] = {
+            "startX": start_x,
+            "startY": start_y,
+            "endX": end_x,
+            "endY": end_y,
+            "duration": duration,
+        }
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        resp = await self.send_command("drag", params)
         return resp.result
 
     async def scroll(
@@ -408,9 +417,12 @@ class DeviceConnection:
         resp = await self.send_command("recents")
         return resp.result
 
-    async def ui_tree(self) -> dict[str, Any]:
+    async def ui_tree(self, max_width: int = 0, max_height: int = 0) -> dict[str, Any]:
         """Get the UI accessibility tree.  Returns dict with ``tree``."""
-        resp = await self.send_command("ui_tree")
+        params: dict[str, Any] = {}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        resp = await self.send_command("ui_tree", params or None)
         return resp.result
 
     async def list_cameras(self) -> dict[str, Any]:
@@ -481,6 +493,27 @@ class DeviceConnection:
         """Press and release a key in one action (desktop only)."""
         resp = await self.send_command("press_key", {"key": key})
         return resp.result
+
+    async def right_click(self, x: int, y: int, max_width: int = 0, max_height: int = 0):
+        """Right-click at coordinates (desktop only)."""
+        params = {"x": x, "y": y}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("right_click", params)
+
+    async def middle_click(self, x: int, y: int, max_width: int = 0, max_height: int = 0):
+        """Middle-click at coordinates (desktop only)."""
+        params = {"x": x, "y": y}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("middle_click", params)
+
+    async def mouse_scroll(self, x: int, y: int, dx: int = 0, dy: int = 0, max_width: int = 0, max_height: int = 0):
+        """Mouse scroll at coordinates with pixel deltas (desktop only)."""
+        params = {"x": x, "y": y, "dx": dx, "dy": dy}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("mouse_scroll", params)
 
     # ── Desktop commands ─────────────────────────────────────────────
 

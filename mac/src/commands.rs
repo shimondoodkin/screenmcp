@@ -56,7 +56,7 @@ pub fn execute_command(
         "get_screen_size" => handle_get_screen_size(params, config),
         "list_windows" => handle_list_windows(params, config),
         "focus_window" => handle_focus_window(params),
-        "active_window" => handle_active_window(),
+        "active_window" => handle_active_window(params, config),
         "screenshot_window" => handle_screenshot_window(params, config),
         "is_elevated" => handle_is_elevated(),
         "elevate" => handle_elevate(),
@@ -584,7 +584,7 @@ fn handle_middle_click(params: Option<&Value>, config: &Config) -> Result<Value,
 }
 
 fn handle_mouse_scroll(params: Option<&Value>, config: &Config) -> Result<Value, String> {
-    handle_scroll(params)
+    handle_scroll(params, config)
 }
 
 fn parse_key(key_name: &str) -> Result<Key, String> {
@@ -869,7 +869,7 @@ fn handle_focus_window(params: Option<&Value>) -> Result<Value, String> {
     Err("provide either 'title' or 'index' parameter".to_string())
 }
 
-fn handle_active_window() -> Result<Value, String> {
+fn handle_active_window(params: Option<&Value>, config: &Config) -> Result<Value, String> {
     let script = r#"
     tell application "System Events"
         set frontApp to first application process whose frontmost is true
@@ -901,10 +901,16 @@ fn handle_active_window() -> Result<Value, String> {
     if parts.len() >= 6 {
         let app = parts[0];
         let title = if parts[1].is_empty() { app } else { parts[1] };
-        let x: i32 = parts[2].parse().unwrap_or(0);
-        let y: i32 = parts[3].parse().unwrap_or(0);
-        let width: i32 = parts[4].parse().unwrap_or(0);
-        let height: i32 = parts[5].parse().unwrap_or(0);
+        let raw_x: i32 = parts[2].parse().unwrap_or(0);
+        let raw_y: i32 = parts[3].parse().unwrap_or(0);
+        let raw_w: i32 = parts[4].parse().unwrap_or(0);
+        let raw_h: i32 = parts[5].parse().unwrap_or(0);
+
+        let (sx, sy) = get_output_scale(params, config)?;
+        let x = (raw_x as f64 * sx).round() as i64;
+        let y = (raw_y as f64 * sy).round() as i64;
+        let width = (raw_w as f64 * sx).round() as i64;
+        let height = (raw_h as f64 * sy).round() as i64;
 
         Ok(json!({
             "title": title,

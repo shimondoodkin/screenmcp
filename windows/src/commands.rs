@@ -56,7 +56,7 @@ pub fn execute_command(
         "get_screen_size" => handle_get_screen_size(params, config),
         "list_windows" => handle_list_windows(params, config),
         "focus_window" => handle_focus_window(params),
-        "active_window" => handle_active_window(),
+        "active_window" => handle_active_window(params, config),
         "screenshot_window" => handle_screenshot_window(params, config),
         "elevate" => handle_elevate(),
         "is_elevated" => handle_is_elevated(),
@@ -1013,7 +1013,7 @@ fn handle_focus_window(params: Option<&Value>) -> Result<Value, String> {
 }
 
 #[cfg(windows)]
-fn handle_active_window() -> Result<Value, String> {
+fn handle_active_window(params: Option<&Value>, config: &Config) -> Result<Value, String> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -1033,19 +1033,25 @@ fn handle_active_window() -> Result<Value, String> {
     let mut rect = unsafe { std::mem::zeroed::<windows::Win32::Foundation::RECT>() };
     let _ = unsafe { GetWindowRect(hwnd, &mut rect) };
 
+    let (sx, sy) = get_output_scale(params, config)?;
+    let x = (rect.left as f64 * sx).round() as i64;
+    let y = (rect.top as f64 * sy).round() as i64;
+    let width = ((rect.right - rect.left) as f64 * sx).round() as i64;
+    let height = ((rect.bottom - rect.top) as f64 * sy).round() as i64;
+
     Ok(json!({
         "title": title,
-        "x": rect.left,
-        "y": rect.top,
-        "width": rect.right - rect.left,
-        "height": rect.bottom - rect.top,
+        "x": x,
+        "y": y,
+        "width": width,
+        "height": height,
         "minimized": unsafe { IsIconic(hwnd).as_bool() },
         "maximized": unsafe { IsZoomed(hwnd).as_bool() },
     }))
 }
 
 #[cfg(not(windows))]
-fn handle_active_window() -> Result<Value, String> {
+fn handle_active_window(params: Option<&Value>, config: &Config) -> Result<Value, String> {
     Err("active_window is only supported on Windows".to_string())
 }
 

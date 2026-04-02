@@ -404,10 +404,12 @@ class WebSocketClient(
             }
 
             "long_click" -> {
-                val x = params?.optDouble("x")?.toFloat() ?: run {
+                val rawX = params?.optDouble("x") ?: run {
                     sendResponse(ws, id, "error", error = "missing x param"); return
                 }
-                val y = params.optDouble("y").toFloat()
+                val rawY = params.optDouble("y")
+                val x = scaleX(rawX, params, dm)
+                val y = scaleY(rawY, params, dm)
                 service.longClick(x, y, object : AccessibilityService.GestureResultCallback() {
                     override fun onCompleted(g: android.accessibilityservice.GestureDescription?) {
                         sendResponse(ws, id, "ok")
@@ -681,6 +683,11 @@ class WebSocketClient(
                 } catch (e: Exception) {
                     sendResponse(ws, id, "error", error = "focus_window failed: ${e.message}")
                 }
+            }
+
+            "hold_key", "release_key", "press_key", "hotkey", "mouse_move",
+            "screenshot_window", "is_elevated", "elevate" -> {
+                sendResponse(ws, id, "ok", result = JSONObject().put("unsupported", true))
             }
 
             else -> sendResponse(ws, id, "error", error = "unknown command: $cmd")

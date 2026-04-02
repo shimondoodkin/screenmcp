@@ -56,7 +56,7 @@ pub fn execute_command(
         "get_screen_size" => handle_get_screen_size(params, config),
         "list_windows" => handle_list_windows(params, config),
         "focus_window" => handle_focus_window(params),
-        "active_window" => handle_active_window(),
+        "active_window" => handle_active_window(params, config),
         "screenshot_window" => handle_screenshot_window(params, config),
         "is_elevated" => handle_is_elevated(),
         "elevate" => handle_elevate(),
@@ -952,7 +952,7 @@ fn handle_focus_window(params: Option<&Value>) -> Result<Value, String> {
     Err("provide either 'title' or 'index' parameter".to_string())
 }
 
-fn handle_active_window() -> Result<Value, String> {
+fn handle_active_window(params: Option<&Value>, config: &Config) -> Result<Value, String> {
     // Try xdotool getactivewindow
     let output = std::process::Command::new("xdotool")
         .args(["getactivewindow"])
@@ -978,23 +978,29 @@ fn handle_active_window() -> Result<Value, String> {
         .args(["getwindowgeometry", "--shell", &win_id])
         .output();
 
-    let (mut x, mut y, mut width, mut height) = (0i32, 0i32, 0i32, 0i32);
+    let (mut raw_x, mut raw_y, mut raw_w, mut raw_h) = (0i32, 0i32, 0i32, 0i32);
     if let Ok(geo) = geo_out {
         if geo.status.success() {
             let geo_str = String::from_utf8_lossy(&geo.stdout);
             for line in geo_str.lines() {
                 if let Some(val) = line.strip_prefix("X=") {
-                    x = val.parse().unwrap_or(0);
+                    raw_x = val.parse().unwrap_or(0);
                 } else if let Some(val) = line.strip_prefix("Y=") {
-                    y = val.parse().unwrap_or(0);
+                    raw_y = val.parse().unwrap_or(0);
                 } else if let Some(val) = line.strip_prefix("WIDTH=") {
-                    width = val.parse().unwrap_or(0);
+                    raw_w = val.parse().unwrap_or(0);
                 } else if let Some(val) = line.strip_prefix("HEIGHT=") {
-                    height = val.parse().unwrap_or(0);
+                    raw_h = val.parse().unwrap_or(0);
                 }
             }
         }
     }
+
+    let (sx, sy) = get_output_scale(params, config)?;
+    let x = (raw_x as f64 * sx).round() as i64;
+    let y = (raw_y as f64 * sy).round() as i64;
+    let width = (raw_w as f64 * sx).round() as i64;
+    let height = (raw_h as f64 * sy).round() as i64;
 
     Ok(json!({
         "title": title,

@@ -465,6 +465,24 @@ impl DeviceConnection {
         Ok(())
     }
 
+    /// Right-click at coordinates (desktop only).
+    pub async fn right_click(&mut self, x: i32, y: i32) -> Result<serde_json::Value> {
+        let resp = self.send_command("right_click", Some(serde_json::json!({"x": x, "y": y}))).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Middle-click at coordinates (desktop only).
+    pub async fn middle_click(&mut self, x: i32, y: i32) -> Result<serde_json::Value> {
+        let resp = self.send_command("middle_click", Some(serde_json::json!({"x": x, "y": y}))).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Mouse scroll at coordinates with pixel deltas (desktop only).
+    pub async fn mouse_scroll(&mut self, x: i32, y: i32, dx: i32, dy: i32) -> Result<serde_json::Value> {
+        let resp = self.send_command("mouse_scroll", Some(serde_json::json!({"x": x, "y": y, "dx": dx, "dy": dy}))).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
     // -----------------------------------------------------------------------
     // Desktop commands
     // -----------------------------------------------------------------------
