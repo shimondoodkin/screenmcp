@@ -412,6 +412,60 @@ export class DeviceConnection extends EventEmitter {
   }
 
   // -----------------------------------------------------------------------
+  // Desktop commands
+  // -----------------------------------------------------------------------
+
+  /** Move the mouse cursor to coordinates (desktop only). */
+  async mouseMove(x: number, y: number, maxWidth?: number, maxHeight?: number) {
+    return this.sendCommand('mouse_move', { x, y, max_width: maxWidth, max_height: maxHeight });
+  }
+
+  /** Double-click at coordinates (desktop only). */
+  async doubleClick(x: number, y: number, maxWidth?: number, maxHeight?: number) {
+    return this.sendCommand('double_click', { x, y, max_width: maxWidth, max_height: maxHeight });
+  }
+
+  /** Press a key combination (desktop only). E.g. ["ctrl", "c"] for Ctrl+C. */
+  async hotkey(keys: string[]) {
+    return this.sendCommand('hotkey', { keys });
+  }
+
+  /** Get the screen dimensions (desktop only). */
+  async getScreenSize(maxWidth?: number, maxHeight?: number) {
+    return this.sendCommand('get_screen_size', { max_width: maxWidth, max_height: maxHeight });
+  }
+
+  /** List all visible windows on the desktop. */
+  async listWindows(maxWidth?: number, maxHeight?: number) {
+    return this.sendCommand('list_windows', { max_width: maxWidth, max_height: maxHeight });
+  }
+
+  /** Focus/activate a window by title or index (desktop only). */
+  async focusWindow(opts: { title?: string; index?: number }) {
+    return this.sendCommand('focus_window', opts);
+  }
+
+  /** Get information about the currently active window (desktop only). */
+  async activeWindow() {
+    return this.sendCommand('active_window');
+  }
+
+  /** Take a screenshot of a specific window (desktop only). */
+  async screenshotWindow(opts: { title?: string; index?: number; maxWidth?: number; maxHeight?: number }) {
+    return this.sendCommand('screenshot_window', { title: opts.title, index: opts.index, max_width: opts.maxWidth, max_height: opts.maxHeight });
+  }
+
+  /** Check if the desktop client is running with elevated/admin privileges. */
+  async isElevated() {
+    return this.sendCommand('is_elevated');
+  }
+
+  /** Request the desktop client to restart with elevated/admin privileges. */
+  async elevate() {
+    return this.sendCommand('elevate');
+  }
+
+  // -----------------------------------------------------------------------
   // Selector-based element methods
   // -----------------------------------------------------------------------
 

@@ -466,6 +466,76 @@ impl DeviceConnection {
     }
 
     // -----------------------------------------------------------------------
+    // Desktop commands
+    // -----------------------------------------------------------------------
+
+    /// Move the mouse cursor to coordinates (desktop only).
+    pub async fn mouse_move(&mut self, x: i32, y: i32) -> Result<serde_json::Value> {
+        let resp = self.send_command("mouse_move", Some(serde_json::json!({"x": x, "y": y}))).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Double-click at coordinates (desktop only).
+    pub async fn double_click(&mut self, x: i32, y: i32) -> Result<serde_json::Value> {
+        let resp = self.send_command("double_click", Some(serde_json::json!({"x": x, "y": y}))).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Press a key combination (desktop only).
+    pub async fn hotkey(&mut self, keys: &[&str]) -> Result<serde_json::Value> {
+        let resp = self.send_command("hotkey", Some(serde_json::json!({"keys": keys}))).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Get the screen dimensions (desktop only).
+    pub async fn get_screen_size(&mut self) -> Result<serde_json::Value> {
+        let resp = self.send_command("get_screen_size", None).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// List all visible windows on the desktop.
+    pub async fn list_windows(&mut self) -> Result<serde_json::Value> {
+        let resp = self.send_command("list_windows", None).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Focus/activate a window by title or index (desktop only).
+    pub async fn focus_window(&mut self, title: Option<&str>, index: Option<usize>) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({});
+        if let Some(t) = title { params["title"] = serde_json::json!(t); }
+        if let Some(i) = index { params["index"] = serde_json::json!(i); }
+        let resp = self.send_command("focus_window", Some(params)).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Get information about the currently active window (desktop only).
+    pub async fn active_window(&mut self) -> Result<serde_json::Value> {
+        let resp = self.send_command("active_window", None).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Take a screenshot of a specific window (desktop only).
+    pub async fn screenshot_window(&mut self, title: Option<&str>, index: Option<usize>) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({});
+        if let Some(t) = title { params["title"] = serde_json::json!(t); }
+        if let Some(i) = index { params["index"] = serde_json::json!(i); }
+        let resp = self.send_command("screenshot_window", Some(params)).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Check if the desktop client is running with elevated/admin privileges.
+    pub async fn is_elevated(&mut self) -> Result<serde_json::Value> {
+        let resp = self.send_command("is_elevated", None).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Request the desktop client to restart with elevated/admin privileges.
+    pub async fn elevate(&mut self) -> Result<serde_json::Value> {
+        let resp = self.send_command("elevate", None).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    // -----------------------------------------------------------------------
     // Generic command
     // -----------------------------------------------------------------------
 

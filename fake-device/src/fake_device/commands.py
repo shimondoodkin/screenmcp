@@ -286,15 +286,45 @@ def handle_command(
         return {"status": "ok", "result": {"text": "Fake clipboard content"}}
 
     # Simple ok commands: click, long_click, drag, scroll, select_all, paste,
-    # set_clipboard, back, home, recents, hold_key, release_key, press_key
+    # set_clipboard, back, home, recents, hold_key, release_key, press_key,
+    # mouse_move, double_click, hotkey, focus_window, elevate
     simple_commands = {
         "click", "long_click", "drag", "scroll",
         "select_all", "paste", "set_clipboard",
         "back", "home", "recents",
         "hold_key", "release_key", "press_key",
+        "mouse_move", "double_click", "hotkey", "focus_window", "elevate",
     }
     if cmd in simple_commands:
         return {"status": "ok", "result": {}}
+
+    if cmd == "get_screen_size":
+        return {"status": "ok", "result": {"width": 1920, "height": 1080}}
+
+    if cmd == "list_windows":
+        return {
+            "status": "ok",
+            "result": {
+                "windows": [
+                    {"index": 0, "title": "Test Window", "x": 0, "y": 0, "width": 800, "height": 600},
+                ]
+            },
+        }
+
+    if cmd == "active_window":
+        return {
+            "status": "ok",
+            "result": {"title": "Test Window", "x": 0, "y": 0, "width": 800, "height": 600},
+        }
+
+    if cmd == "screenshot_window":
+        return {
+            "status": "ok",
+            "result": {"image": "", "title": "Test Window", "width": 800, "height": 600},
+        }
+
+    if cmd == "is_elevated":
+        return {"status": "ok", "result": {"elevated": False}}
 
     # Desktop-only mouse commands: return unsupported (we pretend to be Android)
     desktop_only = {"right_click", "middle_click", "mouse_scroll"}

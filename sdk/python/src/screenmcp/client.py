@@ -482,6 +482,68 @@ class DeviceConnection:
         resp = await self.send_command("press_key", {"key": key})
         return resp.result
 
+    # ── Desktop commands ─────────────────────────────────────────────
+
+    async def mouse_move(self, x: int, y: int, max_width: int = 0, max_height: int = 0):
+        """Move the mouse cursor to coordinates (desktop only)."""
+        params = {"x": x, "y": y}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("mouse_move", params)
+
+    async def double_click(self, x: int, y: int, max_width: int = 0, max_height: int = 0):
+        """Double-click at coordinates (desktop only)."""
+        params = {"x": x, "y": y}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("double_click", params)
+
+    async def hotkey(self, keys: list[str]):
+        """Press a key combination (desktop only). E.g. [\"ctrl\", \"c\"] for Ctrl+C."""
+        return await self.send_command("hotkey", {"keys": keys})
+
+    async def get_screen_size(self, max_width: int = 0, max_height: int = 0):
+        """Get the screen dimensions (desktop only)."""
+        params = {}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("get_screen_size", params)
+
+    async def list_windows(self, max_width: int = 0, max_height: int = 0):
+        """List all visible windows on the desktop."""
+        params = {}
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("list_windows", params)
+
+    async def focus_window(self, title: str | None = None, index: int | None = None):
+        """Focus/activate a window by title or index (desktop only)."""
+        params = {}
+        if title is not None: params["title"] = title
+        if index is not None: params["index"] = index
+        return await self.send_command("focus_window", params)
+
+    async def active_window(self):
+        """Get information about the currently active window (desktop only)."""
+        return await self.send_command("active_window")
+
+    async def screenshot_window(self, title: str | None = None, index: int | None = None, max_width: int = 0, max_height: int = 0):
+        """Take a screenshot of a specific window (desktop only)."""
+        params = {}
+        if title is not None: params["title"] = title
+        if index is not None: params["index"] = index
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("screenshot_window", params)
+
+    async def is_elevated(self):
+        """Check if the desktop client is running with elevated/admin privileges."""
+        return await self.send_command("is_elevated")
+
+    async def elevate(self):
+        """Request the desktop client to restart with elevated/admin privileges."""
+        return await self.send_command("elevate")
+
     # ── Selector-based element interaction ─────────────────────────────
 
     def find(self, selector: str, *, timeout: float = 3.0) -> ElementHandle:
