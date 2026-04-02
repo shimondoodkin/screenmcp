@@ -110,12 +110,12 @@ fn handle_screenshot(
         .and_then(|p| p.get("max_width"))
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .or(config.max_screenshot_width);
+        .or(config.max_screenshot_width).or(Some(DEFAULT_SCALE_WIDTH as u32));
     let max_h = params
         .and_then(|p| p.get("max_height"))
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .or(config.max_screenshot_height);
+        .or(config.max_screenshot_height).or(Some(DEFAULT_SCALE_HEIGHT as u32));
 
     let img = if let (Some(mw), Some(mh)) = (max_w, max_h) {
         if width > mw || height > mh {
@@ -1007,9 +1007,9 @@ fn handle_screenshot_window(params: Option<&Value>, config: &Config) -> Result<V
         .map_err(|e| format!("failed to decode capture: {e}"))?;
 
     let max_w = p.get("max_width").and_then(|v| v.as_u64()).map(|v| v as u32)
-        .or(config.max_screenshot_width);
+        .or(config.max_screenshot_width).or(Some(DEFAULT_SCALE_WIDTH as u32));
     let max_h = p.get("max_height").and_then(|v| v.as_u64()).map(|v| v as u32)
-        .or(config.max_screenshot_height);
+        .or(config.max_screenshot_height).or(Some(DEFAULT_SCALE_HEIGHT as u32));
 
     let img = if let (Some(mw), Some(mh)) = (max_w, max_h) {
         if img.width() > mw || img.height() > mh {
