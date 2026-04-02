@@ -12,6 +12,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -105,6 +106,7 @@ class MainActivity : AppCompatActivity() {
         setupAccessibilityButton()
         setupPermissionsButton()
         setupRegistration()
+        setupStartOnBoot()
         setupScreenshotButton()
         setupClickButton()
         setupDragButton()
@@ -519,6 +521,15 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }.start()
+        }
+    }
+
+    private fun setupStartOnBoot() {
+        val cbStartOnBoot = findViewById<CheckBox>(R.id.cbStartOnBoot)
+        val prefs = getSharedPreferences("screenmcp", MODE_PRIVATE)
+        cbStartOnBoot.isChecked = prefs.getBoolean("start_on_boot", false)
+        cbStartOnBoot.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("start_on_boot", isChecked).apply()
         }
     }
 

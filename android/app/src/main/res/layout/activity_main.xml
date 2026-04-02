@@ -97,6 +97,13 @@
                 style="?attr/materialButtonOutlinedStyle" />
         </LinearLayout>
 
+        <CheckBox
+            android:id="@+id/cbStartOnBoot"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start on boot"
+            android:layout_marginBottom="8dp" />
+
         <!-- Worker Connection -->
         <TextView
             android:id="@+id/tvConnectionStatus"
