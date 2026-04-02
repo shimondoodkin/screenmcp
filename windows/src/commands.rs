@@ -58,6 +58,7 @@ pub fn execute_command(
         "focus_window" => handle_focus_window(params),
         "active_window" => handle_active_window(params, config),
         "screenshot_window" => handle_screenshot_window(params, config),
+        "screenshot_region" => handle_screenshot_region(params, config),
         "elevate" => handle_elevate(),
         "is_elevated" => handle_is_elevated(),
         _ => {
@@ -169,6 +170,97 @@ fn handle_screenshot(
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
 
+    Ok(json!({ "image": b64 }))
+}
+
+fn handle_screenshot_region(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let p = params.ok_or("missing params")?;
+    let min_x = p.get("min_x").and_then(|v| v.as_f64()).ok_or("missing min_x")?;
+    let min_y = p.get("min_y").and_then(|v| v.as_f64()).ok_or("missing min_y")?;
+    let max_x = p.get("max_x").and_then(|v| v.as_f64()).ok_or("missing max_x")?;
+    let max_y = p.get("max_y").and_then(|v| v.as_f64()).ok_or("missing max_y")?;
+
+    // Take full native screenshot
+    let screens = screenshots::Screen::all().map_err(|e| format!("failed to list screens: {e}"))?;
+    let screen = screens.first().ok_or("no screens found")?;
+    let capture = screen.capture().map_err(|e| format!("screenshot failed: {e}"))?;
+    let full_w = capture.width();
+    let full_h = capture.height();
+    let raw_pixels = capture.into_raw();
+    let full_img = image::RgbaImage::from_raw(full_w, full_h, raw_pixels)
+        .ok_or("failed to create image from capture")?;
+
+    // Get scale factor from screenshot space to actual pixels
+    let mw = p.get("max_width").and_then(|v| v.as_f64())
+        .or(config.max_screenshot_width.map(|v| v as f64))
+        .unwrap_or(DEFAULT_SCALE_WIDTH);
+    let mh = p.get("max_height").and_then(|v| v.as_f64())
+        .or(config.max_screenshot_height.map(|v| v as f64))
+        .unwrap_or(DEFAULT_SCALE_HEIGHT);
+
+    let (scale_x, scale_y) = if mw > 0.0 && mh > 0.0 {
+        (full_w as f64 / mw, full_h as f64 / mh)
+    } else if mw > 0.0 {
+        let s = full_w as f64 / mw; (s, s)
+    } else if mh > 0.0 {
+        let s = full_h as f64 / mh; (s, s)
+    } else {
+        (1.0, 1.0)
+    };
+
+    // Translate to actual pixel coordinates
+    let px_min_x = ((min_x * scale_x) as u32).min(full_w.saturating_sub(1));
+    let px_min_y = ((min_y * scale_y) as u32).min(full_h.saturating_sub(1));
+    let px_max_x = ((max_x * scale_x) as u32).min(full_w);
+    let px_max_y = ((max_y * scale_y) as u32).min(full_h);
+
+    if px_max_x <= px_min_x || px_max_y <= px_min_y {
+        return Err("region has zero or negative size".to_string());
+    }
+
+    let crop_w = px_max_x - px_min_x;
+    let crop_h = px_max_y - px_min_y;
+
+    // Crop
+    let cropped = image::DynamicImage::ImageRgba8(full_img)
+        .crop_imm(px_min_x, px_min_y, crop_w, crop_h)
+        .to_rgba8();
+
+    // Only scale DOWN if crop exceeds output max (never scale up)
+    let out_max_w = p.get("output_max_width").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let out_max_h = p.get("output_max_height").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let img = if let (Some(omw), Some(omh)) = (out_max_w, out_max_h) {
+        if cropped.width() > omw || cropped.height() > omh {
+            image::DynamicImage::ImageRgba8(cropped)
+                .resize(omw, omh, image::imageops::FilterType::Triangle)
+                .to_rgba8()
+        } else { cropped }
+    } else if let Some(omw) = out_max_w {
+        if cropped.width() > omw {
+            let r = omw as f64 / cropped.width() as f64;
+            let new_h = (cropped.height() as f64 * r) as u32;
+            image::DynamicImage::ImageRgba8(cropped)
+                .resize_exact(omw, new_h, image::imageops::FilterType::Triangle)
+                .to_rgba8()
+        } else { cropped }
+    } else if let Some(omh) = out_max_h {
+        if cropped.height() > omh {
+            let r = omh as f64 / cropped.height() as f64;
+            let new_w = (cropped.width() as f64 * r) as u32;
+            image::DynamicImage::ImageRgba8(cropped)
+                .resize_exact(new_w, omh, image::imageops::FilterType::Triangle)
+                .to_rgba8()
+        } else { cropped }
+    } else { cropped };
+
+    let quality = p.get("quality").and_then(|v| v.as_u64()).unwrap_or(100) as u8;
+    let _ = quality;
+    let mut buf = Cursor::new(Vec::new());
+    WebPEncoder::new_lossless(&mut buf)
+        .write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::Rgba8)
+        .map_err(|e| format!("WebP encode failed: {e}"))?;
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
     Ok(json!({ "image": b64 }))
 }
 

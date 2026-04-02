@@ -541,6 +541,12 @@ impl DeviceConnection {
         Ok(resp.result.unwrap_or(serde_json::json!({})))
     }
 
+    /// Capture a region of the screen (desktop only).
+    pub async fn screenshot_region(&mut self, min_x: f64, min_y: f64, max_x: f64, max_y: f64) -> Result<serde_json::Value> {
+        let resp = self.send_command("screenshot_region", Some(serde_json::json!({"min_x": min_x, "min_y": min_y, "max_x": max_x, "max_y": max_y}))).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
     /// Check if the desktop client is running with elevated/admin privileges.
     pub async fn is_elevated(&mut self) -> Result<serde_json::Value> {
         let resp = self.send_command("is_elevated", None).await?;

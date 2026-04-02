@@ -454,3 +454,21 @@ Request administrator/root privileges. Shows a confirmation dialog (Windows UAC,
 No parameters.
 
 **Returns:** `{ "elevating": true }` or `{ "already_elevated": true }`
+
+### screenshot_region
+
+Capture a region of the screen for detailed inspection. Use small regions (e.g. 200x200) to zoom into specific areas. Coordinates are in screenshot space. Only scales down, never up.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `min_x` | number | — | Left edge X coordinate (required) |
+| `min_y` | number | — | Top edge Y coordinate (required) |
+| `max_x` | number | — | Right edge X coordinate (required) |
+| `max_y` | number | — | Bottom edge Y coordinate (required) |
+| `quality` | integer | 100 | Image quality 1-100 |
+| `output_max_width` | integer | — | Max output width (only scales down) |
+| `output_max_height` | integer | — | Max output height (only scales down) |
+| `max_width` | integer | 0 | Screenshot space width for coordinate scaling |
+| `max_height` | integer | 0 | Screenshot space height for coordinate scaling |
+
+**Returns:** `{ "image": "<base64 webp>" }`

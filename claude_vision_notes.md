@@ -22,3 +22,9 @@ Claude downscales images that exceed ~1568px on any edge before processing them.
 Token cost formula: `tokens = (width × height) / 750`
 
 A 1092x1092 image uses ~1590 tokens. Smaller images (e.g. 800x800) use fewer tokens with similar accuracy.
+
+
+Image size	# of Tokens	Cost / image	Cost / 1k images
+200x200 px(0.04 megapixels)	~54	~$0.00016	~$0.16
+1000x1000 px(1 megapixel)	~1334	~$0.004	~$4.00
+1092x1092 px(1.19 megapixels)	~1590	~$0.0048	~$4.80

@@ -397,6 +397,24 @@ const phoneTools = [
     },
   },
   {
+    name: 'screenshot_region',
+    description: 'Capture a region of the screen. Returns base64 WebP image of the specified rectangular area (desktop only).',
+    inputSchema: {
+      device_id: deviceIdParam,
+      min_x: z.number().describe('Left edge X coordinate'),
+      min_y: z.number().describe('Top edge Y coordinate'),
+      max_x: z.number().describe('Right edge X coordinate'),
+      max_y: z.number().describe('Bottom edge Y coordinate'),
+      quality: z.number().int().optional().describe('Image quality 1-100'),
+      output_max_width: z.number().int().optional().describe('Max output width in pixels'),
+      output_max_height: z.number().int().optional().describe('Max output height in pixels'),
+      ...scalingParams,
+    },
+    handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
+      return (await phone.sendCommand('screenshot_region', params)).result;
+    },
+  },
+  {
     name: 'is_elevated',
     description: 'Check if the process has elevated/admin privileges (desktop only)',
     inputSchema: {

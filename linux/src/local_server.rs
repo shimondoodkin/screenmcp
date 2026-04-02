@@ -367,6 +367,25 @@ fn mcp_tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "screenshot_region",
+            "description": "Capture a region of the screen. Use for detailed inspection of small areas (e.g. 200x200). Coordinates are in screenshot space. Only scales down, never up.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "min_x": {"type": "number", "description": "Left edge X coordinate"},
+                    "min_y": {"type": "number", "description": "Top edge Y coordinate"},
+                    "max_x": {"type": "number", "description": "Right edge X coordinate"},
+                    "max_y": {"type": "number", "description": "Bottom edge Y coordinate"},
+                    "quality": {"type": "integer", "description": "Image quality 1-100 (default: 100)"},
+                    "output_max_width": {"type": "integer", "description": "Max output width (only scales down)"},
+                    "output_max_height": {"type": "integer", "description": "Max output height (only scales down)"},
+                    "max_width": sp["max_width"],
+                    "max_height": sp["max_height"]
+                },
+                "required": ["min_x", "min_y", "max_x", "max_y"]
+            }
+        }),
+        json!({
             "name": "get_screen_size",
             "description": "Get screen dimensions. Returns scaled dimensions matching screenshot space by default.",
             "inputSchema": {

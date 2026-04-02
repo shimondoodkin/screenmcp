@@ -323,6 +323,12 @@ def handle_command(
             "result": {"image": "", "title": "Test Window", "width": 800, "height": 600},
         }
 
+    if cmd == "screenshot_region":
+        return {
+            "status": "ok",
+            "result": {"image": "", "width": 200, "height": 200},
+        }
+
     if cmd == "is_elevated":
         return {"status": "ok", "result": {"elevated": False}}
 

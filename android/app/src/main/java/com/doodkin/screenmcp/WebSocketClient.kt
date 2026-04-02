@@ -697,7 +697,7 @@ class WebSocketClient(
             }
 
             "hold_key", "release_key", "press_key", "hotkey", "mouse_move",
-            "screenshot_window", "is_elevated", "elevate" -> {
+            "screenshot_window", "screenshot_region", "is_elevated", "elevate" -> {
                 sendResponse(ws, id, "ok", result = JSONObject().put("unsupported", true))
             }
 

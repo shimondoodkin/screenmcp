@@ -569,6 +569,16 @@ class DeviceConnection:
         if max_height: params["max_height"] = max_height
         return await self.send_command("screenshot_window", params)
 
+    async def screenshot_region(self, min_x: float, min_y: float, max_x: float, max_y: float, quality: int = 0, output_max_width: int = 0, output_max_height: int = 0, max_width: int = 0, max_height: int = 0):
+        """Capture a region of the screen (desktop only)."""
+        params = {"min_x": min_x, "min_y": min_y, "max_x": max_x, "max_y": max_y}
+        if quality: params["quality"] = quality
+        if output_max_width: params["output_max_width"] = output_max_width
+        if output_max_height: params["output_max_height"] = output_max_height
+        if max_width: params["max_width"] = max_width
+        if max_height: params["max_height"] = max_height
+        return await self.send_command("screenshot_region", params)
+
     async def is_elevated(self):
         """Check if the desktop client is running with elevated/admin privileges."""
         return await self.send_command("is_elevated")
