@@ -124,4 +124,4 @@ When enabled: auth uses `opensource_user_id` as Bearer token, SSE replaces FCM/p
 
 ## Supported Phone Commands
 
-`screenshot`, `click`, `long_click`, `drag`, `scroll`, `type`, `get_text`, `select_all`, `copy`, `paste`, `back`, `home`, `recents`, `ui_tree`, `camera`. Desktop-only keyboard commands: `hold_key`, `release_key`, `press_key` (PC/Mac/Linux). Unsupported desktop-only commands (`right_click`, `middle_click`, `mouse_scroll`) return `{status: "ok", unsupported: true}`.
+`screenshot`, `click`, `long_click`, `drag`, `scroll`, `type`, `get_text`, `select_all`, `copy`, `paste`, `back`, `home`, `recents`, `ui_tree`, `camera`, `list_cameras`, `get_clipboard`, `set_clipboard`, `play_audio`. Desktop-only keyboard commands: `hold_key`, `release_key`, `press_key`, `hotkey`. Desktop-only mouse: `right_click`, `middle_click`, `mouse_scroll`, `mouse_move`, `double_click`. Desktop-only window management: `list_windows`, `focus_window`, `active_window`, `screenshot_window`, `get_screen_size`. Desktop-only system: `is_elevated`, `elevate`.

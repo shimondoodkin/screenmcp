@@ -292,3 +292,115 @@ These are accepted but return unsupported on Android (for cross-platform CLI com
 | `dy` | number | Vertical delta |
 
 Returns `{ "unsupported": true }` on Android.
+
+### mouse_move
+
+Move the mouse cursor without clicking.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `x` | number | X coordinate (required) |
+| `y` | number | Y coordinate (required) |
+
+### double_click
+
+Double-click at coordinates. On Android, performs two rapid taps.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `x` | number | X coordinate (required) |
+| `y` | number | Y coordinate (required) |
+
+### hotkey
+
+Press a key combination atomically (e.g., Ctrl+C, Alt+Tab). All keys are pressed in order then released in reverse.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `keys` | string[] | Array of key names (required). Same key names as `press_key`. |
+
+**Example:** `{ "keys": ["ctrl", "shift", "s"] }` for Save As.
+
+---
+
+## Window Management (Desktop Only)
+
+### get_screen_size
+
+Get the primary display dimensions. On Android, returns screen resolution and density.
+
+No parameters.
+
+**Returns:** `{ "width": 1920, "height": 1080, "x": 0, "y": 0 }`
+Android also returns `"density"`.
+
+### list_windows
+
+List all visible windows with titles and positions.
+
+No parameters.
+
+**Returns:**
+```json
+{
+  "windows": [
+    { "index": 0, "title": "My Document", "x": 0, "y": 0, "width": 1920, "height": 1080 }
+  ]
+}
+```
+
+Mac also returns `"app"` (owning application name). Windows also returns `"minimized"` and `"maximized"`.
+
+### focus_window
+
+Bring a window to the foreground by title substring or index from `list_windows`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `title` | string | Window title substring (case-insensitive) |
+| `index` | integer | Window index from `list_windows` |
+
+Provide either `title` or `index`.
+
+**Returns:** `{ "focused": "window title" }`
+
+### active_window
+
+Get information about the currently focused window.
+
+No parameters.
+
+**Returns:** `{ "title": "Window Title", "x": 0, "y": 0, "width": 1920, "height": 1080 }`
+
+### screenshot_window
+
+Capture a specific window by title or index, without needing to focus it first (Windows). Mac and Linux may focus the window briefly.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `title` | string | — | Window title substring |
+| `index` | integer | — | Window index from `list_windows` |
+| `max_width` | integer | — | Max width in pixels |
+| `max_height` | integer | — | Max height in pixels |
+
+**Returns:** `{ "image": "<base64 webp>", "title": "...", "width": ..., "height": ... }`
+
+---
+
+## System (Desktop Only)
+
+### is_elevated
+
+Check if the process is running with elevated/admin privileges.
+
+No parameters.
+
+**Returns:** `{ "elevated": true }` or `{ "elevated": false }`
+
+### elevate
+
+Request administrator/root privileges. Shows a confirmation dialog (Windows UAC, macOS password prompt, Linux pkexec). The process restarts with elevated privileges.
+
+No parameters.
+
+**Returns:** `{ "elevating": true }` or `{ "already_elevated": true }`
