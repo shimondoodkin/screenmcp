@@ -11,11 +11,31 @@ const deviceConnections = new Map<string, DeviceConnection>();
 // Common device_id parameter added to every phone tool
 const deviceIdParam = z.number().int().describe('Device ID number. Use list_devices to see available devices.');
 
+// Default scaling resolution (landscape)
+const DEFAULT_SCALE_WIDTH = 1456;
+const DEFAULT_SCALE_HEIGHT = 819;
+
 // Optional coordinate scaling params — pass the same max_width/max_height used for screenshot
 const scalingParams = {
-  max_width: z.number().int().optional().describe('Screenshot width for coordinate auto-scaling (0 or omit to disable)'),
-  max_height: z.number().int().optional().describe('Screenshot height for coordinate auto-scaling (0 or omit to disable)'),
+  max_width: z.number().int().optional().describe(`Screenshot width for coordinate auto-scaling (default: ${DEFAULT_SCALE_WIDTH}, 0 to disable)`),
+  max_height: z.number().int().optional().describe(`Screenshot height for coordinate auto-scaling (default: ${DEFAULT_SCALE_HEIGHT}, 0 to disable)`),
 };
+
+// Tools that need default scaling injected
+const SCALING_TOOLS = new Set([
+  'screenshot', 'screenshot_window', 'click', 'long_click', 'double_click',
+  'right_click', 'middle_click', 'mouse_move', 'mouse_scroll', 'drag', 'scroll',
+  'ui_tree', 'list_windows', 'get_screen_size', 'active_window', 'camera',
+]);
+
+/** Inject default max_width/max_height if not specified and tool needs scaling. */
+function injectScalingDefaults(toolName: string, params: Record<string, unknown>): Record<string, unknown> {
+  if (!SCALING_TOOLS.has(toolName)) return params;
+  const p = { ...params };
+  if (p.max_width === undefined) p.max_width = DEFAULT_SCALE_WIDTH;
+  if (p.max_height === undefined) p.max_height = DEFAULT_SCALE_HEIGHT;
+  return p;
+}
 
 // MCP tools for phone control — descriptions match web/ exactly
 const phoneTools = [
@@ -501,7 +521,8 @@ export function createMcpHandler(
 
             const p = await getPhone(deviceId);
             const { device_id: _, ...phoneParams } = params;
-            const result = await tool.handler(p, phoneParams);
+            const scaledParams = injectScalingDefaults(tool.name, phoneParams);
+            const result = await tool.handler(p, scaledParams);
             return {
               content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
             };
