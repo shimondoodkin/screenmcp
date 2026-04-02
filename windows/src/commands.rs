@@ -26,10 +26,10 @@ pub fn execute_command(
 ) -> Value {
     let result = match cmd {
         "screenshot" => handle_screenshot(params, config),
-        "click" => handle_click(params),
-        "long_click" => handle_long_click(params),
-        "drag" => handle_drag(params),
-        "scroll" => handle_scroll(params),
+        "click" => handle_click(params, config),
+        "long_click" => handle_long_click(params, config),
+        "drag" => handle_drag(params, config),
+        "scroll" => handle_scroll(params, config),
         "type" => handle_type(params),
         "get_text" => handle_get_text(),
         "select_all" => handle_select_all(),
@@ -43,17 +43,17 @@ pub fn execute_command(
         "ui_tree" => handle_ui_tree(),
         "camera" => handle_camera(params),
         "list_cameras" => handle_list_cameras(),
-        "right_click" => handle_right_click(params),
-        "middle_click" => handle_middle_click(params),
-        "mouse_scroll" => handle_mouse_scroll(params),
+        "right_click" => handle_right_click(params, config),
+        "middle_click" => handle_middle_click(params, config),
+        "mouse_scroll" => handle_mouse_scroll(params, config),
         "hold_key" => handle_hold_key(params),
         "release_key" => handle_release_key(params),
         "press_key" => handle_press_key(params),
         "play_audio" => handle_play_audio(params),
-        "mouse_move" => handle_mouse_move(params),
-        "double_click" => handle_double_click(params),
+        "mouse_move" => handle_mouse_move(params, config),
+        "double_click" => handle_double_click(params, config),
         "hotkey" => handle_hotkey(params),
-        "get_screen_size" => handle_get_screen_size(params),
+        "get_screen_size" => handle_get_screen_size(params, config),
         "list_windows" => handle_list_windows(),
         "focus_window" => handle_focus_window(params),
         "active_window" => handle_active_window(),
@@ -284,14 +284,20 @@ fn get_screen_dimensions() -> Result<(u32, u32), String> {
 
 /// Scale a coordinate from screenshot space to actual screen space.
 /// If max_width/max_height are 0 or absent, no scaling is applied.
-fn scale_xy(x: f64, y: f64, params: Option<&Value>) -> Result<(i32, i32), String> {
-    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+/// Scale coordinates from screenshot space to actual screen space.
+/// Uses max_width/max_height from params first, then falls back to config defaults.
+/// If both are 0/absent, no scaling is applied.
+fn scale_xy(x: f64, y: f64, params: Option<&Value>, config: &Config) -> Result<(i32, i32), String> {
+    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
+        .or(config.max_screenshot_width.map(|v| v as f64))
+        .unwrap_or(0.0);
+    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
+        .or(config.max_screenshot_height.map(|v| v as f64))
+        .unwrap_or(0.0);
 
     if mw > 0.0 || mh > 0.0 {
         let (sw, sh) = get_screen_dimensions()?;
         let (sw, sh) = (sw as f64, sh as f64);
-        // If only one dimension provided, compute the other preserving aspect ratio
         let (scale_w, scale_h) = match (mw > 0.0, mh > 0.0) {
             (true, true) => (sw / mw, sh / mh),
             (true, false) => { let s = sw / mw; (s, s) }
@@ -304,19 +310,19 @@ fn scale_xy(x: f64, y: f64, params: Option<&Value>) -> Result<(i32, i32), String
     }
 }
 
-fn get_xy(params: Option<&Value>) -> Result<(i32, i32), String> {
+fn get_xy(params: Option<&Value>, config: &Config) -> Result<(i32, i32), String> {
     let p = params.ok_or("missing params")?;
     let x = p.get("x").and_then(|v| v.as_f64()).ok_or("missing x")?;
     let y = p.get("y").and_then(|v| v.as_f64()).ok_or("missing y")?;
-    scale_xy(x, y, params)
+    scale_xy(x, y, params, config)
 }
 
 fn new_enigo() -> Result<Enigo, String> {
     Enigo::new(&Settings::default()).map_err(|e| format!("failed to init enigo: {e}"))
 }
 
-fn handle_click(params: Option<&Value>) -> Result<Value, String> {
-    let (x, y) = get_xy(params)?;
+fn handle_click(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let (x, y) = get_xy(params, config)?;
     let mut enigo = new_enigo()?;
     enigo
         .move_mouse(x, y, Coordinate::Abs)
@@ -327,8 +333,8 @@ fn handle_click(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_long_click(params: Option<&Value>) -> Result<Value, String> {
-    let (x, y) = get_xy(params)?;
+fn handle_long_click(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let (x, y) = get_xy(params, config)?;
     let duration_ms = params
         .and_then(|p| p.get("duration"))
         .and_then(|v| v.as_u64())
@@ -348,17 +354,17 @@ fn handle_long_click(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_drag(params: Option<&Value>) -> Result<Value, String> {
+fn handle_drag(params: Option<&Value>, config: &Config) -> Result<Value, String> {
     let p = params.ok_or("missing params")?;
     let (start_x, start_y) = scale_xy(
         p.get("startX").and_then(|v| v.as_f64()).ok_or("missing startX")?,
         p.get("startY").and_then(|v| v.as_f64()).ok_or("missing startY")?,
-        params,
+        params, config,
     )?;
     let (end_x, end_y) = scale_xy(
         p.get("endX").and_then(|v| v.as_f64()).ok_or("missing endX")?,
         p.get("endY").and_then(|v| v.as_f64()).ok_or("missing endY")?,
-        params,
+        params, config,
     )?;
     let duration_ms = p.get("duration").and_then(|v| v.as_u64()).unwrap_or(300);
 
@@ -389,7 +395,7 @@ fn handle_drag(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_scroll(params: Option<&Value>) -> Result<Value, String> {
+fn handle_scroll(params: Option<&Value>, config: &Config) -> Result<Value, String> {
     let p = params.ok_or("missing params")?;
 
     // Support both direction-based (Android style) and dx/dy based scroll
@@ -400,7 +406,7 @@ fn handle_scroll(params: Option<&Value>) -> Result<Value, String> {
         p.get("x").and_then(|v| v.as_f64()),
         p.get("y").and_then(|v| v.as_f64()),
     ) {
-        let (sx, sy) = scale_xy(x, y, params)?;
+        let (sx, sy) = scale_xy(x, y, params, config)?;
         enigo
             .move_mouse(sx, sy, Coordinate::Abs)
             .map_err(|e| format!("move_mouse failed: {e}"))?;
@@ -577,8 +583,8 @@ fn handle_recents() -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_right_click(params: Option<&Value>) -> Result<Value, String> {
-    let (x, y) = get_xy(params)?;
+fn handle_right_click(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let (x, y) = get_xy(params, config)?;
     let mut enigo = new_enigo()?;
     enigo
         .move_mouse(x, y, Coordinate::Abs)
@@ -589,8 +595,8 @@ fn handle_right_click(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_middle_click(params: Option<&Value>) -> Result<Value, String> {
-    let (x, y) = get_xy(params)?;
+fn handle_middle_click(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let (x, y) = get_xy(params, config)?;
     let mut enigo = new_enigo()?;
     enigo
         .move_mouse(x, y, Coordinate::Abs)
@@ -601,8 +607,8 @@ fn handle_middle_click(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_mouse_scroll(params: Option<&Value>) -> Result<Value, String> {
-    handle_scroll(params)
+fn handle_mouse_scroll(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    handle_scroll(params, config)
 }
 
 fn parse_key(key_name: &str) -> Result<Key, String> {
@@ -669,8 +675,8 @@ fn handle_press_key(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_mouse_move(params: Option<&Value>) -> Result<Value, String> {
-    let (x, y) = get_xy(params)?;
+fn handle_mouse_move(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let (x, y) = get_xy(params, config)?;
     let mut enigo = new_enigo()?;
     enigo
         .move_mouse(x, y, Coordinate::Abs)
@@ -678,8 +684,8 @@ fn handle_mouse_move(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_double_click(params: Option<&Value>) -> Result<Value, String> {
-    let (x, y) = get_xy(params)?;
+fn handle_double_click(params: Option<&Value>, config: &Config) -> Result<Value, String> {
+    let (x, y) = get_xy(params, config)?;
     let mut enigo = new_enigo()?;
     enigo
         .move_mouse(x, y, Coordinate::Abs)
@@ -727,7 +733,7 @@ fn handle_hotkey(params: Option<&Value>) -> Result<Value, String> {
     Ok(json!({}))
 }
 
-fn handle_get_screen_size(params: Option<&Value>) -> Result<Value, String> {
+fn handle_get_screen_size(params: Option<&Value>, config: &Config) -> Result<Value, String> {
     let screens = screenshots::Screen::all().map_err(|e| format!("failed to list screens: {e}"))?;
     let screen = screens
         .first()
@@ -735,8 +741,12 @@ fn handle_get_screen_size(params: Option<&Value>) -> Result<Value, String> {
     let info = screen.display_info;
     let (ow, oh) = (info.width, info.height);
 
-    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
+        .or(config.max_screenshot_width.map(|v| v as f64))
+        .unwrap_or(0.0);
+    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
+        .or(config.max_screenshot_height.map(|v| v as f64))
+        .unwrap_or(0.0);
 
     if mw > 0.0 || mh > 0.0 {
         // Compute scaled dimensions preserving aspect ratio (same logic as screenshot resize)
