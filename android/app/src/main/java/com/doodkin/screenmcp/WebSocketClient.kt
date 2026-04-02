@@ -265,23 +265,28 @@ class WebSocketClient(
         }
     }
 
+    companion object {
+        const val DEFAULT_SCALE_WIDTH = 1456.0
+        const val DEFAULT_SCALE_HEIGHT = 819.0
+    }
+
     /** Scale coordinates from screenshot space to actual screen space using max_width/max_height params. */
     private fun scaleX(x: Double, params: JSONObject?, dm: android.util.DisplayMetrics): Float {
-        val mw = params?.optDouble("max_width", 0.0) ?: 0.0
+        val mw = params?.optDouble("max_width", DEFAULT_SCALE_WIDTH) ?: DEFAULT_SCALE_WIDTH
         if (mw > 0.0) return (x * dm.widthPixels / mw).toFloat()
         return x.toFloat()
     }
 
     private fun scaleY(y: Double, params: JSONObject?, dm: android.util.DisplayMetrics): Float {
-        val mh = params?.optDouble("max_height", 0.0) ?: 0.0
+        val mh = params?.optDouble("max_height", DEFAULT_SCALE_HEIGHT) ?: DEFAULT_SCALE_HEIGHT
         if (mh > 0.0) return (y * dm.heightPixels / mh).toFloat()
         return y.toFloat()
     }
 
     /** Get output scale factors (screen→screenshot space). Returns (sx, sy), both 1.0 if no scaling. */
     private fun getOutputScale(params: JSONObject?, dm: android.util.DisplayMetrics): Pair<Double, Double> {
-        val mw = params?.optDouble("max_width", 0.0) ?: 0.0
-        val mh = params?.optDouble("max_height", 0.0) ?: 0.0
+        val mw = params?.optDouble("max_width", DEFAULT_SCALE_WIDTH) ?: DEFAULT_SCALE_WIDTH
+        val mh = params?.optDouble("max_height", DEFAULT_SCALE_HEIGHT) ?: DEFAULT_SCALE_HEIGHT
         if (mw <= 0.0 && mh <= 0.0) return Pair(1.0, 1.0)
         val sx = if (mw > 0.0) mw / dm.widthPixels else mh / dm.heightPixels
         val sy = if (mh > 0.0) mh / dm.heightPixels else sx
@@ -338,8 +343,8 @@ class WebSocketClient(
                     return
                 }
                 val quality = params?.optInt("quality", 100) ?: 100
-                val maxWidth = if (params?.has("max_width") == true) params.optInt("max_width") else null
-                val maxHeight = if (params?.has("max_height") == true) params.optInt("max_height") else null
+                val maxWidth = if (params?.has("max_width") == true) params.optInt("max_width") else DEFAULT_SCALE_WIDTH.toInt()
+                val maxHeight = if (params?.has("max_height") == true) params.optInt("max_height") else DEFAULT_SCALE_HEIGHT.toInt()
 
                 service.takeScreenshot(object : AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
@@ -550,8 +555,8 @@ class WebSocketClient(
             "camera" -> {
                 val cameraId = params?.optString("camera", "0") ?: "0"
                 val quality = params?.optInt("quality", 80) ?: 80
-                val maxWidth = if (params?.has("max_width") == true) params.optInt("max_width") else null
-                val maxHeight = if (params?.has("max_height") == true) params.optInt("max_height") else null
+                val maxWidth = if (params?.has("max_width") == true) params.optInt("max_width") else DEFAULT_SCALE_WIDTH.toInt()
+                val maxHeight = if (params?.has("max_height") == true) params.optInt("max_height") else DEFAULT_SCALE_HEIGHT.toInt()
 
                 service.captureCamera(cameraId) { bitmap ->
                     if (bitmap == null) {
@@ -594,8 +599,8 @@ class WebSocketClient(
             "get_screen_size" -> {
                 val ow = dm.widthPixels
                 val oh = dm.heightPixels
-                val mw = params?.optDouble("max_width", 0.0) ?: 0.0
-                val mh = params?.optDouble("max_height", 0.0) ?: 0.0
+                val mw = params?.optDouble("max_width", DEFAULT_SCALE_WIDTH) ?: DEFAULT_SCALE_WIDTH
+                val mh = params?.optDouble("max_height", DEFAULT_SCALE_HEIGHT) ?: DEFAULT_SCALE_HEIGHT
                 val result = JSONObject()
                 if (mw > 0.0 || mh > 0.0) {
                     val r = when {
