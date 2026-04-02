@@ -264,6 +264,19 @@ class WebSocketClient(
         }
     }
 
+    /** Scale coordinates from screenshot space to actual screen space using max_width/max_height params. */
+    private fun scaleX(x: Double, params: JSONObject?, dm: android.util.DisplayMetrics): Float {
+        val mw = params?.optDouble("max_width", 0.0) ?: 0.0
+        if (mw > 0.0) return (x * dm.widthPixels / mw).toFloat()
+        return x.toFloat()
+    }
+
+    private fun scaleY(y: Double, params: JSONObject?, dm: android.util.DisplayMetrics): Float {
+        val mh = params?.optDouble("max_height", 0.0) ?: 0.0
+        if (mh > 0.0) return (y * dm.heightPixels / mh).toFloat()
+        return y.toFloat()
+    }
+
     private fun executeCommand(ws: WebSocket, json: JSONObject) {
         val id = json.getLong("id")
         val cmd = json.getString("cmd")
@@ -277,6 +290,8 @@ class WebSocketClient(
             sendResponse(ws, id, "error", error = "accessibility service not connected")
             return
         }
+
+        val dm = service.resources.displayMetrics
 
         when (cmd) {
             "screenshot" -> {
@@ -332,10 +347,12 @@ class WebSocketClient(
             }
 
             "click" -> {
-                val x = params?.optDouble("x")?.toFloat() ?: run {
+                val rawX = params?.optDouble("x") ?: run {
                     sendResponse(ws, id, "error", error = "missing x param"); return
                 }
-                val y = params.optDouble("y").toFloat()
+                val rawY = params.optDouble("y")
+                val x = scaleX(rawX, params, dm)
+                val y = scaleY(rawY, params, dm)
                 val duration = params.optLong("duration", 100)
                 service.click(x, y, duration, object : AccessibilityService.GestureResultCallback() {
                     override fun onCompleted(g: android.accessibilityservice.GestureDescription?) {
@@ -363,12 +380,13 @@ class WebSocketClient(
             }
 
             "drag" -> {
-                val sx = params?.optDouble("startX")?.toFloat() ?: run {
+                val rawSx = params?.optDouble("startX") ?: run {
                     sendResponse(ws, id, "error", error = "missing startX param"); return
                 }
-                val sy = params.optDouble("startY").toFloat()
-                val ex = params.optDouble("endX").toFloat()
-                val ey = params.optDouble("endY").toFloat()
+                val sx = scaleX(rawSx, params, dm)
+                val sy = scaleY(params.optDouble("startY"), params, dm)
+                val ex = scaleX(params.optDouble("endX"), params, dm)
+                val ey = scaleY(params.optDouble("endY"), params, dm)
                 val duration = params.optLong("duration", 300)
                 service.drag(sx, sy, ex, ey, duration, object : AccessibilityService.GestureResultCallback() {
                     override fun onCompleted(g: android.accessibilityservice.GestureDescription?) {
@@ -439,10 +457,11 @@ class WebSocketClient(
             }
 
             "scroll" -> {
-                val x = params?.optDouble("x")?.toFloat() ?: run {
+                val rawX = params?.optDouble("x") ?: run {
                     sendResponse(ws, id, "error", error = "missing x param"); return
                 }
-                val y = params.optDouble("y").toFloat()
+                val x = scaleX(rawX, params, dm)
+                val y = scaleY(params.optDouble("y"), params, dm)
                 val dx = params.optDouble("dx", 0.0).toFloat()
                 val dy = params.optDouble("dy", 0.0).toFloat()
                 val duration = params.optLong("duration", 300)
@@ -531,27 +550,44 @@ class WebSocketClient(
             }
 
             "get_screen_size" -> {
-                val dm = service.resources.displayMetrics
-                val result = JSONObject().apply {
-                    put("width", dm.widthPixels)
-                    put("height", dm.heightPixels)
-                    put("density", dm.density.toDouble())
+                val ow = dm.widthPixels
+                val oh = dm.heightPixels
+                val mw = params?.optDouble("max_width", 0.0) ?: 0.0
+                val mh = params?.optDouble("max_height", 0.0) ?: 0.0
+                val result = JSONObject()
+                if (mw > 0.0 || mh > 0.0) {
+                    val r = when {
+                        mw > 0.0 && mh > 0.0 -> minOf(mw / ow, mh / oh, 1.0)
+                        mw > 0.0 -> minOf(mw / ow, 1.0)
+                        else -> minOf(mh / oh, 1.0)
+                    }
+                    result.put("width", (ow * r).toInt())
+                    result.put("height", (oh * r).toInt())
+                    result.put("original_width", ow)
+                    result.put("original_height", oh)
+                    result.put("scaled", true)
+                } else {
+                    result.put("width", ow)
+                    result.put("height", oh)
                 }
+                result.put("density", dm.density.toDouble())
                 sendResponse(ws, id, "ok", result = result)
             }
 
             "double_click" -> {
-                val x = params?.optDouble("x", -1.0) ?: -1.0
-                val y = params?.optDouble("y", -1.0) ?: -1.0
-                if (x < 0 || y < 0) {
+                val rawX = params?.optDouble("x", -1.0) ?: -1.0
+                val rawY = params?.optDouble("y", -1.0) ?: -1.0
+                if (rawX < 0 || rawY < 0) {
                     sendResponse(ws, id, "error", error = "missing x or y")
                     return
                 }
+                val x = scaleX(rawX, params, dm)
+                val y = scaleY(rawY, params, dm)
                 // Two quick taps
-                service.performClick(x.toFloat(), y.toFloat()) { s1, _ ->
+                service.performClick(x, y) { s1, _ ->
                     if (s1) {
                         handler.postDelayed({
-                            service.performClick(x.toFloat(), y.toFloat()) { s2, e2 ->
+                            service.performClick(x, y) { s2, e2 ->
                                 if (s2) sendResponse(ws, id, "ok")
                                 else sendResponse(ws, id, "error", error = e2)
                             }
