@@ -390,6 +390,80 @@ async function runTests() {
     fail("find.click", (e as Error).message);
   }
 
+  // mouseMove
+  try {
+    await phone.mouseMove(100, 200);
+    pass("mouseMove(100, 200)");
+  } catch (e) {
+    fail("mouseMove", (e as Error).message);
+  }
+
+  // doubleClick
+  try {
+    await phone.doubleClick(100, 200);
+    pass("doubleClick(100, 200)");
+  } catch (e) {
+    fail("doubleClick", (e as Error).message);
+  }
+
+  // hotkey
+  try {
+    await phone.hotkey(["ctrl", "c"]);
+    pass("hotkey(['ctrl', 'c'])");
+  } catch (e) {
+    fail("hotkey", (e as Error).message);
+  }
+
+  // getScreenSize
+  try {
+    const result = await phone.getScreenSize();
+    pass(`getScreenSize() -> ${JSON.stringify(result)}`);
+  } catch (e) {
+    fail("getScreenSize", (e as Error).message);
+  }
+
+  // listWindows
+  try {
+    const result = await phone.listWindows();
+    pass(`listWindows() -> ${JSON.stringify(result)}`);
+  } catch (e) {
+    fail("listWindows", (e as Error).message);
+  }
+
+  // focusWindow
+  try {
+    await phone.focusWindow({ title: "Test" });
+    pass("focusWindow({ title: 'Test' })");
+  } catch (e) {
+    fail("focusWindow", (e as Error).message);
+  }
+
+  // activeWindow
+  try {
+    const result = await phone.activeWindow();
+    pass(`activeWindow() -> ${JSON.stringify(result)}`);
+  } catch (e) {
+    fail("activeWindow", (e as Error).message);
+  }
+
+  // screenshotWindow
+  try {
+    const result = await phone.screenshotWindow({ title: "Test" });
+    pass(`screenshotWindow({ title: 'Test' }) -> ${(result as any).image?.length ?? 0} base64 chars`);
+  } catch (e) {
+    fail("screenshotWindow", (e as Error).message);
+  }
+
+  // isElevated
+  try {
+    const result = await phone.isElevated();
+    pass(`isElevated() -> ${JSON.stringify(result)}`);
+  } catch (e) {
+    fail("isElevated", (e as Error).message);
+  }
+
+  // NOTE: elevate() skipped — destructive (would restart process)
+
   // Unknown command should error
   try {
     await phone.sendCommand("totally_fake_command_xyz");

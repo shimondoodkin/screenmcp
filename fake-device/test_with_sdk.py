@@ -424,6 +424,71 @@ async def test_with_python_sdk(
     except Exception as e:
         results.fail("drag", str(e))
 
+    # ── Test: mouse_move ─────────────────────────────────────────────
+    try:
+        result = await phone.mouse_move(100, 200)
+        results.ok("mouse_move(100, 200)")
+    except Exception as e:
+        results.fail("mouse_move", str(e))
+
+    # ── Test: double_click ────────────────────────────────────────────
+    try:
+        result = await phone.double_click(100, 200)
+        results.ok("double_click(100, 200)")
+    except Exception as e:
+        results.fail("double_click", str(e))
+
+    # ── Test: hotkey ──────────────────────────────────────────────────
+    try:
+        result = await phone.hotkey(["ctrl", "c"])
+        results.ok("hotkey(['ctrl', 'c'])")
+    except Exception as e:
+        results.fail("hotkey", str(e))
+
+    # ── Test: get_screen_size ─────────────────────────────────────────
+    try:
+        result = await phone.get_screen_size()
+        results.ok(f"get_screen_size() -> {result}")
+    except Exception as e:
+        results.fail("get_screen_size", str(e))
+
+    # ── Test: list_windows ────────────────────────────────────────────
+    try:
+        result = await phone.list_windows()
+        results.ok(f"list_windows() -> {result}")
+    except Exception as e:
+        results.fail("list_windows", str(e))
+
+    # ── Test: focus_window ────────────────────────────────────────────
+    try:
+        result = await phone.focus_window(title="Test")
+        results.ok("focus_window(title='Test')")
+    except Exception as e:
+        results.fail("focus_window", str(e))
+
+    # ── Test: active_window ───────────────────────────────────────────
+    try:
+        result = await phone.active_window()
+        results.ok(f"active_window() -> {result}")
+    except Exception as e:
+        results.fail("active_window", str(e))
+
+    # ── Test: screenshot_window ───────────────────────────────────────
+    try:
+        result = await phone.screenshot_window(title="Test")
+        results.ok(f"screenshot_window(title='Test') -> {len(result.get('image', ''))} base64 chars")
+    except Exception as e:
+        results.fail("screenshot_window", str(e))
+
+    # ── Test: is_elevated ─────────────────────────────────────────────
+    try:
+        result = await phone.is_elevated()
+        results.ok(f"is_elevated() -> {result}")
+    except Exception as e:
+        results.fail("is_elevated", str(e))
+
+    # ── NOTE: elevate() skipped — destructive (would restart process) ─
+
     # ── Test: unknown command returns error ────────────────────────────
     try:
         resp = await phone.send_command("totally_fake_command")

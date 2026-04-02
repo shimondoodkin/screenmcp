@@ -264,6 +264,62 @@ async fn main() {
         Err(e) => results.fail("hold_key", &e.to_string()),
     }
 
+    // mouse_move
+    match phone.mouse_move(100, 200).await {
+        Ok(_) => results.pass("mouse_move(100, 200)"),
+        Err(e) => results.fail("mouse_move", &e.to_string()),
+    }
+
+    // double_click
+    match phone.double_click(100, 200).await {
+        Ok(_) => results.pass("double_click(100, 200)"),
+        Err(e) => results.fail("double_click", &e.to_string()),
+    }
+
+    // hotkey
+    match phone.hotkey(&["ctrl", "c"]).await {
+        Ok(_) => results.pass("hotkey(['ctrl', 'c'])"),
+        Err(e) => results.fail("hotkey", &e.to_string()),
+    }
+
+    // get_screen_size
+    match phone.get_screen_size().await {
+        Ok(r) => results.pass(&format!("get_screen_size() -> {}", r)),
+        Err(e) => results.fail("get_screen_size", &e.to_string()),
+    }
+
+    // list_windows
+    match phone.list_windows().await {
+        Ok(r) => results.pass(&format!("list_windows() -> {}", r)),
+        Err(e) => results.fail("list_windows", &e.to_string()),
+    }
+
+    // focus_window
+    match phone.focus_window(Some("Test"), None).await {
+        Ok(_) => results.pass("focus_window(title='Test')"),
+        Err(e) => results.fail("focus_window", &e.to_string()),
+    }
+
+    // active_window
+    match phone.active_window().await {
+        Ok(r) => results.pass(&format!("active_window() -> {}", r)),
+        Err(e) => results.fail("active_window", &e.to_string()),
+    }
+
+    // screenshot_window
+    match phone.screenshot_window(Some("Test"), None).await {
+        Ok(r) => results.pass(&format!("screenshot_window(title='Test') -> {}", r)),
+        Err(e) => results.fail("screenshot_window", &e.to_string()),
+    }
+
+    // is_elevated
+    match phone.is_elevated().await {
+        Ok(r) => results.pass(&format!("is_elevated() -> {}", r)),
+        Err(e) => results.fail("is_elevated", &e.to_string()),
+    }
+
+    // NOTE: elevate() skipped — destructive (would restart process)
+
     // unknown command should return error
     match phone.send_command("totally_fake_command_xyz", None).await {
         Ok(_) => results.fail("unknown_command", "Expected error but got success"),
