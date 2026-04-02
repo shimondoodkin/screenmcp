@@ -14,6 +14,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
@@ -625,18 +626,23 @@ class WebSocketClient(
                 val x = scaleX(rawX, params, dm)
                 val y = scaleY(rawY, params, dm)
                 // Two quick taps
-                service.performClick(x, y) { s1, _ ->
-                    if (s1) {
+                service.click(x, y, 50, object : AccessibilityService.GestureResultCallback() {
+                    override fun onCompleted(g: android.accessibilityservice.GestureDescription?) {
                         handler.postDelayed({
-                            service.performClick(x, y) { s2, e2 ->
-                                if (s2) sendResponse(ws, id, "ok")
-                                else sendResponse(ws, id, "error", error = e2)
-                            }
+                            service.click(x, y, 50, object : AccessibilityService.GestureResultCallback() {
+                                override fun onCompleted(g: android.accessibilityservice.GestureDescription?) {
+                                    sendResponse(ws, id, "ok")
+                                }
+                                override fun onCancelled(g: android.accessibilityservice.GestureDescription?) {
+                                    sendResponse(ws, id, "error", error = "second tap cancelled")
+                                }
+                            })
                         }, 50)
-                    } else {
-                        sendResponse(ws, id, "error", error = "first tap failed")
                     }
-                }
+                    override fun onCancelled(g: android.accessibilityservice.GestureDescription?) {
+                        sendResponse(ws, id, "error", error = "first tap cancelled")
+                    }
+                })
             }
 
             "list_windows" -> {

@@ -351,11 +351,13 @@ fn handle_drag(params: Option<&Value>, config: &Config) -> Result<Value, String>
         p.get("startX").and_then(|v| v.as_f64()).ok_or("missing startX")?,
         p.get("startY").and_then(|v| v.as_f64()).ok_or("missing startY")?,
         params,
+        config,
     )?;
     let (end_x, end_y) = scale_xy(
         p.get("endX").and_then(|v| v.as_f64()).ok_or("missing endX")?,
         p.get("endY").and_then(|v| v.as_f64()).ok_or("missing endY")?,
         params,
+        config,
     )?;
     let duration_ms = p.get("duration").and_then(|v| v.as_u64()).unwrap_or(300);
 
@@ -568,7 +570,7 @@ fn handle_middle_click(params: Option<&Value>, config: &Config) -> Result<Value,
 }
 
 fn handle_mouse_scroll(params: Option<&Value>, config: &Config) -> Result<Value, String> {
-    handle_scroll(params)
+    handle_scroll(params, config)
 }
 
 fn parse_key(key_name: &str) -> Result<Key, String> {
