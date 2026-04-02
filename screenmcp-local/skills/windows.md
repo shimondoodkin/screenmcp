@@ -182,3 +182,22 @@ When UI elements don't respond to clicks or `ui_tree` returns empty for a window
 - Secondary monitors may be to the left (negative x coordinates) or above (negative y coordinates).
 - `ui_tree` and `screenshot` cover the primary monitor by default.
 - Use coordinates from `list_windows` to understand window placement across monitors.
+
+## Precise Clicking with screenshot_region
+
+The default screenshot is 1456x819 but the actual screen may be 3840x2160 or higher. When clicking small targets (icons, checkboxes, small buttons), your coordinate estimates from the full screenshot may be off by several pixels.
+
+**Use `screenshot_region` to zoom in and click precisely:**
+
+1. Take a full `screenshot` to locate the general area
+2. Call `screenshot_region(min_x, min_y, max_x, max_y)` with a tight box (100-200 units wide) around the target
+3. The returned image is at native resolution — much more detail than the full screenshot
+4. Find the target pixel `(px, py)` in the cropped image
+5. Convert back to screenshot coordinates:
+   ```
+   screen_x = min_x + (px / image_width)  * (max_x - min_x)
+   screen_y = min_y + (py / image_height) * (max_y - min_y)
+   ```
+6. `focus_window` then `click(screen_x, screen_y)`
+
+**Example:** A 120x90 region in screenshot space becomes ~316x238 native pixels on a 4K display. Each pixel you estimate maps to a smaller real area, so clicks land 2-3x closer to the target.

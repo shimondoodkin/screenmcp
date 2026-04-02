@@ -368,7 +368,7 @@ fn mcp_tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "screenshot_region",
-            "description": "Capture a region of the screen. Use for detailed inspection of small areas (e.g. 200x200). Coordinates are in screenshot space. Only scales down, never up.",
+            "description": "Capture a region of the screen at native resolution for precise inspection. Use tight regions (e.g. 120x90 in screenshot coords) to zoom into buttons, text, or small elements. To click precisely: take a region, find the target pixel in the cropped image, then compute screen_x = min_x + (pixel_x / image_width) * (max_x - min_x), screen_y = min_y + (pixel_y / image_height) * (max_y - min_y). Only scales down, never up.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

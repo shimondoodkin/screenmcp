@@ -26,6 +26,7 @@ All coordinates auto-scale between screenshot space and actual screen. Default: 
 
 ### Vision
 - **screenshot** — Take a screenshot. Returns base64 WebP image. Default 1456x819.
+- **screenshot_region** — Capture a region at native resolution for precise inspection. Pass `min_x, min_y, max_x, max_y` in screenshot coords. Use tight regions (e.g. 120x90) to zoom into small elements. See "Precision Clicking" below.
 - **ui_tree** — Get the accessibility tree with element names, types, bounds, text, clickable/focusable state. Bounds are in screenshot coordinates.
 - **screenshot_window** — Capture a specific window by `title` or `index` without focusing it.
 - **active_window** — Get title, position, size of the currently focused window.
@@ -131,6 +132,29 @@ focus_window(title: "Paint")
 drag(startX: 100, startY: 200, endX: 400, endY: 200, duration: 500)
 ```
 
+### Precision Clicking with screenshot_region
+
+When you need to click a small target precisely (icons, small buttons, checkboxes), use `screenshot_region` to zoom in and compute exact coordinates:
+
+```
+1. screenshot()                                    ← see the full screen
+2. Spot the target area, estimate rough bounds
+3. screenshot_region(min_x=400, min_y=300,         ← zoom into a tight region
+                     max_x=520, max_y=390)            (120x90 in screenshot space)
+4. The returned image is at native resolution       ← much more detail
+   (e.g. 316x238 pixels for a 120x90 region)
+5. Find the target at pixel (px, py) in the crop
+6. Convert back to screenshot coordinates:
+     screen_x = min_x + (px / image_width)  * (max_x - min_x)
+     screen_y = min_y + (py / image_height) * (max_y - min_y)
+7. focus_window(title: "target app")
+8. click(x: screen_x, y: screen_y)                ← precise click
+```
+
+**Why this works:** The full screenshot is 1456x819 but the actual screen might be 3840x2160. A 120x90 region in screenshot space maps to ~316x238 native pixels. You see 2-3x more detail, so your coordinate estimation is 2-3x more precise.
+
+**Tip:** Use regions of about 100-200 units in screenshot space. Too large defeats the purpose, too small might miss the target.
+
 ### Tips
 
 - **Always focus_window first** — clicks land on the focused window
@@ -138,3 +162,4 @@ drag(startX: 100, startY: 200, endX: 400, endY: 200, duration: 500)
 - **For text input:** Click the target field first, then `type`
 - **Verify after acting** — take a screenshot to confirm the action worked
 - **If a click seems to do nothing** — check if the right window is focused with `active_window`
+- **For precise clicks** — use `screenshot_region` workflow above instead of guessing from the full screenshot
