@@ -19,6 +19,41 @@ use crate::ws::{ConnectionStatus, WsCommand};
 /// Ok(true) = registered, Ok(false) = unregistered, Err = error message.
 type RegistrationResult = Option<Result<bool, String>>;
 
+// ── Autostart (Windows registry) ──
+
+#[cfg(windows)]
+pub fn is_autostart_enabled() -> bool {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok(key) = hkcu.open_subkey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run") {
+        key.get_value::<String, _>("ScreenMCP").is_ok()
+    } else {
+        false
+    }
+}
+
+#[cfg(windows)]
+pub fn set_autostart(enabled: bool) -> Result<(), String> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let key = hkcu
+        .open_subkey_with_flags(
+            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+            KEY_SET_VALUE | KEY_QUERY_VALUE,
+        )
+        .map_err(|e| format!("failed to open registry: {e}"))?;
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| format!("{e}"))?;
+        key.set_value("ScreenMCP", &exe.to_string_lossy().to_string())
+            .map_err(|e| format!("failed to set registry: {e}"))?;
+    } else {
+        let _ = key.delete_value("ScreenMCP");
+    }
+    Ok(())
+}
+
 /// IDs for menu items.
 struct MenuItems {
     status: MenuItem,
@@ -31,6 +66,7 @@ struct MenuItems {
     local_mode_status: MenuItem,
     local_mode_settings: MenuItem,
     run_as_admin: MenuItem,
+    autostart: MenuItem,
     about: MenuItem,
     quit: MenuItem,
 }
@@ -230,6 +266,13 @@ impl TrayApp {
         };
         let run_as_admin = MenuItem::new(admin_label, !is_elevated, None);
 
+        let autostart_label = if is_autostart_enabled() {
+            "\u{2713} Start with Windows"
+        } else {
+            "Start with Windows"
+        };
+        let autostart = MenuItem::new(autostart_label, true, None);
+
         let quit = MenuItem::new("Quit", true, None);
         let quit_id = quit.id().clone();
 
@@ -250,6 +293,7 @@ impl TrayApp {
         let _ = menu.append(&local_mode_status);
         let _ = menu.append(&local_mode_settings);
         let _ = menu.append(&run_as_admin);
+        let _ = menu.append(&autostart);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&quit);
 
@@ -281,6 +325,7 @@ impl TrayApp {
             local_mode_status,
             local_mode_settings,
             run_as_admin,
+            autostart,
             about,
             quit,
         };
@@ -450,6 +495,19 @@ impl TrayApp {
                 std::thread::spawn(|| {
                     let _ = crate::commands::execute_command(0, "elevate", None, &Config::load());
                 });
+            } else if event.id() == items.autostart.id() {
+                info!("menu: autostart toggled");
+                let currently_enabled = is_autostart_enabled();
+                if let Err(e) = set_autostart(!currently_enabled) {
+                    error!("failed to toggle autostart: {e}");
+                }
+                let new_state = is_autostart_enabled();
+                let label = if new_state {
+                    "\u{2713} Start with Windows"
+                } else {
+                    "Start with Windows"
+                };
+                let _ = items.autostart.set_text(label);
             } else if event.id() == items.about.id() {
                 info!("menu: about clicked");
                 let _ = open::that("https://screenmcp.com");

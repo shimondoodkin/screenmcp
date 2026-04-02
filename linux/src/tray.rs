@@ -19,6 +19,35 @@ use crate::ws::{ConnectionStatus, WsCommand};
 /// Ok(true) = registered, Ok(false) = unregistered, Err = error message.
 type RegistrationResult = Option<Result<bool, String>>;
 
+// ── Autostart (XDG autostart .desktop file) ──
+
+pub fn is_autostart_enabled() -> bool {
+    let desktop = dirs::config_dir()
+        .unwrap()
+        .join("autostart/screenmcp.desktop");
+    desktop.exists()
+}
+
+pub fn set_autostart(enabled: bool) -> Result<(), String> {
+    let desktop_path = dirs::config_dir()
+        .unwrap()
+        .join("autostart/screenmcp.desktop");
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| format!("{e}"))?;
+        let content = format!(
+            "[Desktop Entry]\nType=Application\nName=ScreenMCP\nExec={}\nX-GNOME-Autostart-enabled=true\nHidden=false\n",
+            exe.to_string_lossy()
+        );
+        if let Some(parent) = desktop_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("{e}"))?;
+        }
+        std::fs::write(&desktop_path, content).map_err(|e| format!("{e}"))?;
+    } else {
+        let _ = std::fs::remove_file(&desktop_path);
+    }
+    Ok(())
+}
+
 /// IDs for menu items.
 struct MenuItems {
     status: MenuItem,
@@ -30,6 +59,7 @@ struct MenuItems {
     test_window: MenuItem,
     local_mode_status: MenuItem,
     local_mode_settings: MenuItem,
+    autostart: MenuItem,
     about: MenuItem,
     quit: MenuItem,
 }
@@ -221,6 +251,13 @@ impl TrayApp {
         let local_mode_status = MenuItem::new(&local_status_text, false, None);
         let local_mode_settings = MenuItem::new("Local Mode Settings...", true, None);
 
+        let autostart_label = if is_autostart_enabled() {
+            "\u{2713} Start on Login"
+        } else {
+            "Start on Login"
+        };
+        let autostart = MenuItem::new(autostart_label, true, None);
+
         let quit = MenuItem::new("Quit", true, None);
         let quit_id = quit.id().clone();
 
@@ -240,6 +277,7 @@ impl TrayApp {
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&local_mode_status);
         let _ = menu.append(&local_mode_settings);
+        let _ = menu.append(&autostart);
         let _ = menu.append(&PredefinedMenuItem::separator());
         let _ = menu.append(&quit);
 
@@ -270,6 +308,7 @@ impl TrayApp {
             test_window,
             local_mode_status,
             local_mode_settings,
+            autostart,
             about,
             quit,
         };
@@ -432,6 +471,19 @@ impl TrayApp {
                 *self.local_mode_state.lock().unwrap() = crate::local_mode_window::LocalModeState::new();
                 self.show_local_mode.store(true, Ordering::SeqCst);
                 self.focus_local_mode.store(true, Ordering::SeqCst);
+            } else if event.id() == items.autostart.id() {
+                info!("menu: autostart toggled");
+                let currently_enabled = is_autostart_enabled();
+                if let Err(e) = set_autostart(!currently_enabled) {
+                    error!("failed to toggle autostart: {e}");
+                }
+                let new_state = is_autostart_enabled();
+                let label = if new_state {
+                    "\u{2713} Start on Login"
+                } else {
+                    "Start on Login"
+                };
+                let _ = items.autostart.set_text(label);
             } else if event.id() == items.about.id() {
                 info!("menu: about clicked");
                 let _ = open::that("https://screenmcp.com");
