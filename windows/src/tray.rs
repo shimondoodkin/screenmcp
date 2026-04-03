@@ -133,6 +133,7 @@ async fn do_register_device(api_url: &str, token: &str, device_id: &str) -> Resu
             "deviceId": device_id,
             "deviceName": hostname,
             "deviceModel": "Windows Desktop",
+            "platform": "windows",
             "role": "phone"
         }))
         .send()

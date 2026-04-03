@@ -438,6 +438,7 @@ class MainActivity : AppCompatActivity() {
                             put("fcmToken", fcmToken)
                             put("deviceName", android.os.Build.MODEL)
                             put("deviceModel", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                            put("platform", "android")
                             put("deviceId", getDeviceUUID())
                         }
 

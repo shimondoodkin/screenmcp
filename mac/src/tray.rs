@@ -139,6 +139,7 @@ async fn do_register_device(api_url: &str, token: &str, device_id: &str) -> Resu
             "deviceId": device_id,
             "deviceName": hostname,
             "deviceModel": "Mac Desktop",
+            "platform": "mac",
             "role": "phone"
         }))
         .send()

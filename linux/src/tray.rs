@@ -126,6 +126,7 @@ async fn do_register_device(api_url: &str, token: &str, device_id: &str) -> Resu
             "deviceId": device_id,
             "deviceName": hostname,
             "deviceModel": "Linux Desktop",
+            "platform": "linux",
             "role": "phone"
         }))
         .send()
