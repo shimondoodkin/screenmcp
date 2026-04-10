@@ -14,8 +14,8 @@ pub async fn run_sse_listener(
     ws_cmd_tx: mpsc::Sender<WsCommand>,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
 ) {
-    let api_url = config.opensource_api_url.trim_end_matches('/').to_string();
-    let token = config.opensource_user_id.clone();
+    let api_url = config.effective_api_url().trim_end_matches('/').to_string();
+    let token = config.effective_token().to_string();
     let device_id = config.device_id.clone();
 
     let mut backoff_secs: u64 = 1;

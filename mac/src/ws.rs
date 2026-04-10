@@ -107,9 +107,9 @@ pub async fn run_ws_manager(
         let _ = internal_tx.send(WsCommand::Connect).await;
     }
 
-    // Start SSE listener if opensource mode is enabled on startup
+    // Start SSE listener for connect events (both cloud and open-source modes)
     let mut sse_task: Option<tokio::task::JoinHandle<()>> = None;
-    if initial_config.opensource_server_enabled && initial_config.is_ready() {
+    if initial_config.is_ready() {
         let cfg = initial_config.clone();
         let sse_tx = internal_tx.clone();
         sse_task = Some(tokio::spawn(async move {
@@ -208,19 +208,19 @@ pub async fn run_ws_manager(
                 *config.write().await = new_config.clone();
                 info!("config updated");
 
-                // Restart SSE listener if opensource settings changed
+                // Restart SSE listener if settings changed
                 if oss_changed {
                     if let Some(handle) = sse_task.take() {
                         handle.abort();
                         info!("stopped previous SSE listener");
                     }
-                    if new_config.opensource_server_enabled && new_config.is_ready() {
+                    if new_config.is_ready() {
                         let cfg = new_config.clone();
                         let sse_tx = internal_tx.clone();
                         sse_task = Some(tokio::spawn(async move {
                             run_sse_listener(cfg, sse_tx).await;
                         }));
-                        info!("started SSE listener for opensource mode");
+                        info!("started SSE listener");
                     }
                 }
             }

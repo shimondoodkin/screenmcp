@@ -68,9 +68,9 @@ fn main() {
                 });
             }
 
-            // If opensource server mode is enabled, start SSE listener
-            if config_clone.opensource_server_enabled {
-                info!("opensource server mode enabled, starting SSE listener");
+            // Start SSE listener for connect events (both cloud and open-source modes)
+            if config_clone.is_ready() {
+                info!("starting SSE listener");
                 let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
                 let sse_config = config_clone.clone();
                 let sse_ws_tx = ws_cmd_tx_bg.clone();

@@ -207,20 +207,20 @@ pub async fn run_ws_manager(
 
                 *config.write().await = new_config.clone();
 
-                // Restart SSE listener if opensource settings changed
+                // Restart SSE listener if settings changed
                 if oss_changed {
                     if let Some(handle) = sse_task.take() {
                         handle.abort();
                         info!("stopped previous SSE listener");
                     }
-                    if new_config.opensource_server_enabled && new_config.is_ready() {
+                    if new_config.is_ready() {
                         let cfg = new_config.clone();
                         let sse_tx = internal_tx.clone();
                         let (_, sse_shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
                         sse_task = Some(tokio::spawn(async move {
                             crate::sse::run_sse_listener(cfg, sse_tx, sse_shutdown_rx).await;
                         }));
-                        info!("started SSE listener for opensource mode");
+                        info!("started SSE listener");
                     }
                 }
 
