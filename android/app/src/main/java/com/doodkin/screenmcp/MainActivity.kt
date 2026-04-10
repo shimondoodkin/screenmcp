@@ -427,6 +427,8 @@ class MainActivity : AppCompatActivity() {
         tvRegistrationStatus.text = "Registering..."
         tvRegistrationStatus.setBackgroundColor(0xFFFFF9C4.toInt())
 
+        val useSse = isUseSse()
+
         FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
             user.getIdToken(false).addOnSuccessListener { result ->
                 val idToken = result.token ?: return@addOnSuccessListener
@@ -435,7 +437,10 @@ class MainActivity : AppCompatActivity() {
                 Thread {
                     try {
                         val body = JSONObject().apply {
-                            put("fcmToken", fcmToken)
+                            // When SSE mode is enabled, omit FCM token so server uses SSE for notifications
+                            if (!useSse) {
+                                put("fcmToken", fcmToken)
+                            }
                             put("deviceName", android.os.Build.MODEL)
                             put("deviceModel", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
                             put("platform", "android")
@@ -451,7 +456,7 @@ class MainActivity : AppCompatActivity() {
                         val response = httpClient.newCall(request).execute()
                         runOnUiThread {
                             if (response.isSuccessful) {
-                                log("Phone registered successfully")
+                                log("Phone registered successfully" + if (useSse) " (SSE mode)" else "")
                                 // Also set the API URL for FcmService
                                 FcmService.apiBaseUrl = apiUrl
                                 // Verify registration status from server
