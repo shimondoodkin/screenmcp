@@ -113,6 +113,11 @@ impl ScreenMCPClient {
 
     /// Discover a worker for the given device, open a WebSocket connection,
     /// authenticate, and return a ready-to-use [`DeviceConnection`].
+    ///
+    /// The `device_id` is sent to the server which triggers a wake-up
+    /// notification (FCM/SSE) to the target device. If you pass an empty
+    /// string, the server returns a worker URL but does **not** wake the
+    /// device — it must already be connected.
     pub async fn connect(&self, device_id: &str) -> Result<DeviceConnection> {
         let ws_url = self.discover(device_id).await?;
         let mut conn = DeviceConnection::new(

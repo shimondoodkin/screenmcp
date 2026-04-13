@@ -26,6 +26,24 @@ Phone/CLI                 Discovery API              WS Server             Redis
   │                            │                        │                    │
 ```
 
+## Discovery API
+
+`POST /api/discover` — returns a worker WebSocket URL for connecting.
+
+**Request body:**
+```json
+{ "device_id": "a1b2c3d4e5f67890..." }
+```
+
+**Response:**
+```json
+{ "wsUrl": "wss://worker0.screenmcp.com" }
+```
+
+When `device_id` is included, the server sends a wake-up notification (FCM push or SSE event) to the target device, telling it to connect to the worker. **If `device_id` is omitted, the server returns a worker URL but does NOT wake the device** — the caller must ensure the device is already connected.
+
+Controllers should always pass `device_id` to ensure the target device is online and routed to the same worker.
+
 ## Message Format
 
 All messages are JSON over WebSocket.

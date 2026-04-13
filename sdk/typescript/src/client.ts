@@ -88,7 +88,9 @@ export class ScreenMCPClient {
    * Returns a {@link DeviceConnection} that provides all command methods.
    *
    * @param options - Optional connect options. If `deviceId` is omitted the
-   *   server picks the first available device.
+   *   server picks the first available device but does NOT send a wake-up
+   *   notification — the device must already be connected. Pass `deviceId`
+   *   to ensure the server wakes the target device via FCM/SSE.
    */
   async connect(options?: ConnectOptions): Promise<DeviceConnection> {
     const deviceId = options?.deviceId;

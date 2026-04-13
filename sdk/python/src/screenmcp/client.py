@@ -115,7 +115,10 @@ class ScreenMCPClient:
         ----------
         device_id:
             Target device UUID. If empty the server picks the first device
-            registered to the authenticated user.
+            registered to the authenticated user, but does **not** send a
+            wake-up notification — the device must already be connected.
+            Pass a device_id to ensure the server wakes the target device
+            via FCM/SSE.
 
         Returns
         -------
