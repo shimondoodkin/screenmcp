@@ -693,8 +693,87 @@ class WebSocketClient(
                 }
             }
 
+            "screenshot_region" -> {
+                if (service.isPhoneLocked()) {
+                    sendResponse(ws, id, "error", error = "phone is locked")
+                    return
+                }
+                val minX = params?.optDouble("min_x", Double.NaN) ?: Double.NaN
+                val minY = params?.optDouble("min_y", Double.NaN) ?: Double.NaN
+                val maxX = params?.optDouble("max_x", Double.NaN) ?: Double.NaN
+                val maxY = params?.optDouble("max_y", Double.NaN) ?: Double.NaN
+                if (minX.isNaN() || minY.isNaN() || maxX.isNaN() || maxY.isNaN()) {
+                    sendResponse(ws, id, "error", error = "missing min_x/min_y/max_x/max_y params")
+                    return
+                }
+                val quality = params?.optInt("quality", 100) ?: 100
+
+                service.takeScreenshot(object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+                        try {
+                            val hwBuffer = result.hardwareBuffer
+                            val colorSpace = result.colorSpace
+                            val bitmap = Bitmap.wrapHardwareBuffer(hwBuffer, colorSpace)
+                            if (bitmap == null) {
+                                sendResponse(ws, id, "error", error = "failed to create bitmap")
+                                return
+                            }
+                            val softBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                            bitmap.recycle()
+                            hwBuffer.close()
+
+                            val fullW = softBitmap.width.toDouble()
+                            val fullH = softBitmap.height.toDouble()
+
+                            // Scale from screenshot space to actual pixels
+                            val mw = params?.optDouble("max_width", DEFAULT_SCALE_WIDTH) ?: DEFAULT_SCALE_WIDTH
+                            val mh = params?.optDouble("max_height", DEFAULT_SCALE_HEIGHT) ?: DEFAULT_SCALE_HEIGHT
+                            val sx = if (mw > 0) fullW / mw else 1.0
+                            val sy = if (mh > 0) fullH / mh else 1.0
+
+                            val pxMinX = (minX * sx).toInt().coerceIn(0, softBitmap.width - 1)
+                            val pxMinY = (minY * sy).toInt().coerceIn(0, softBitmap.height - 1)
+                            val pxMaxX = (maxX * sx).toInt().coerceIn(0, softBitmap.width)
+                            val pxMaxY = (maxY * sy).toInt().coerceIn(0, softBitmap.height)
+
+                            val cropW = pxMaxX - pxMinX
+                            val cropH = pxMaxY - pxMinY
+                            if (cropW <= 0 || cropH <= 0) {
+                                softBitmap.recycle()
+                                sendResponse(ws, id, "error", error = "region has zero or negative size")
+                                return
+                            }
+
+                            var cropped = Bitmap.createBitmap(softBitmap, pxMinX, pxMinY, cropW, cropH)
+                            softBitmap.recycle()
+
+                            // Only scale down if output_max specified
+                            val outMaxW = params?.optInt("output_max_width", 0) ?: 0
+                            val outMaxH = params?.optInt("output_max_height", 0) ?: 0
+                            if (outMaxW > 0 || outMaxH > 0) {
+                                cropped = service.scaleBitmap(cropped,
+                                    if (outMaxW > 0) outMaxW else null,
+                                    if (outMaxH > 0) outMaxH else null)
+                            }
+
+                            val bytes = service.compressToWebP(cropped, quality)
+                            cropped.recycle()
+
+                            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                            sendResponse(ws, id, "ok", JSONObject().put("image", base64))
+                        } catch (e: Exception) {
+                            sendResponse(ws, id, "error", error = "screenshot_region failed: ${e.message}")
+                        }
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        sendResponse(ws, id, "error", error = "screenshot failed: $errorCode")
+                    }
+                })
+            }
+
             "hold_key", "release_key", "press_key", "hotkey", "mouse_move",
-            "screenshot_window", "screenshot_region", "is_elevated", "elevate" -> {
+            "screenshot_window", "is_elevated", "elevate" -> {
                 sendResponse(ws, id, "ok", result = JSONObject().put("unsupported", true))
             }
 

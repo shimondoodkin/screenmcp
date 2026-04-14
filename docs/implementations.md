@@ -107,6 +107,7 @@ The worker relays all commands — it does not interpret them. The matrix below 
 | `focus_window` | yes | yes | yes | yes | yes | yes | yes | yes |
 | `active_window` | yes | yes | yes | yes | yes | yes | yes | yes |
 | `screenshot_window` | unsupported | yes | yes | yes | yes | yes | yes | yes |
+| `screenshot_region` | yes | yes | yes | yes | yes | yes | yes | yes |
 
 ### System (Desktop Only)
 
