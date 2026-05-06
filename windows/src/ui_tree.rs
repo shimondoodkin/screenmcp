@@ -246,24 +246,40 @@ pub(crate) fn handle_ui_tree_raw(opts: &UiTreeOpts) -> Result<Value, String> {
     let vh = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
     let viewport = [vx, vy, vx + vw, vy + vh];
 
-    let mut children = Vec::new();
-    let mut covered_rects: Vec<[i32; 4]> = Vec::new();
-
-    let mut child = unsafe { walker.GetFirstChildElement(&root).ok() };
-    while let Some(ref el) = child {
-        // window scope filter (top-level only)
-        if !top_level_passes_window_scope(opts, el) {
-            child = unsafe { walker.GetNextSiblingElement(el).ok() };
-            continue;
+    match opts.format {
+        OutputFormat::Nested => {
+            let mut children = Vec::new();
+            let mut covered_rects: Vec<[i32; 4]> = Vec::new();
+            let mut child = unsafe { walker.GetFirstChildElement(&root).ok() };
+            while let Some(ref el) = child {
+                if !top_level_passes_window_scope(opts, el) {
+                    child = unsafe { walker.GetNextSiblingElement(el).ok() };
+                    continue;
+                }
+                let mut ancestors: Vec<String> = Vec::new();
+                if let Some(node) = walk_element(el, &walker, 1, opts, &mut covered_rects, &viewport, &mut ancestors) {
+                    children.push(node);
+                }
+                child = unsafe { walker.GetNextSiblingElement(el).ok() };
+            }
+            Ok(json!({ "tree": children, "os": "windows" }))
         }
-        let mut ancestors: Vec<String> = Vec::new();
-        if let Some(node) = walk_element(el, &walker, 1, opts, &mut covered_rects, &viewport, &mut ancestors) {
-            children.push(node);
+        OutputFormat::Flat => {
+            let mut flat: Vec<Value> = Vec::new();
+            let mut covered_rects: Vec<[i32; 4]> = Vec::new();
+            let mut child = unsafe { walker.GetFirstChildElement(&root).ok() };
+            while let Some(ref el) = child {
+                if !top_level_passes_window_scope(opts, el) {
+                    child = unsafe { walker.GetNextSiblingElement(el).ok() };
+                    continue;
+                }
+                let mut ancestors: Vec<String> = Vec::new();
+                flatten_walk(el, &walker, 1, opts, &mut covered_rects, &viewport, &mut ancestors, &mut flat);
+                child = unsafe { walker.GetNextSiblingElement(el).ok() };
+            }
+            Ok(json!({ "nodes": flat, "os": "windows" }))
         }
-        child = unsafe { walker.GetNextSiblingElement(el).ok() };
     }
-
-    Ok(json!({ "tree": children, "os": "windows" }))
 }
 
 #[cfg(windows)]
@@ -378,6 +394,64 @@ fn walk_element(
     }
 
     Some(node)
+}
+
+#[cfg(windows)]
+fn flatten_walk(
+    el: &windows::Win32::UI::Accessibility::IUIAutomationElement,
+    walker: &windows::Win32::UI::Accessibility::IUIAutomationTreeWalker,
+    depth: u32,
+    opts: &UiTreeOpts,
+    sibling_rects: &mut Vec<[i32; 4]>,
+    viewport: &[i32; 4],
+    ancestors: &mut Vec<String>,
+    out: &mut Vec<Value>,
+) {
+    let is_offscreen = unsafe { el.CurrentIsOffscreen().ok() }
+        .map(|b| b.as_bool()).unwrap_or(false);
+    if is_offscreen { return; }
+
+    let bounds_raw = unsafe { el.CurrentBoundingRectangle().ok() };
+    let bounds_arr = bounds_raw.as_ref().map(|r| [r.left, r.top, r.right, r.bottom]);
+    if let Some(b) = bounds_arr {
+        if b[2] <= viewport[0] || b[0] >= viewport[2] || b[3] <= viewport[1] || b[1] >= viewport[3] {
+            return;
+        }
+        if sibling_rects.iter().any(|sr| is_fully_enclosed(&b, sr)) {
+            return;
+        }
+    }
+
+    let name = unsafe { el.CurrentName().ok() }.map(|s| s.to_string()).unwrap_or_default();
+    let automation_id = unsafe { el.CurrentAutomationId().ok() }.map(|s| s.to_string()).unwrap_or_default();
+    let control_type_id = unsafe { el.CurrentControlType().unwrap_or_default() };
+    let ct_name = control_type_name(control_type_id);
+
+    // Emit self if it passes display filter (no breadcrumb policy in flat mode)
+    let self_passes = node_passes_display_filter(opts, ct_name, &name, bounds_arr.as_ref());
+    let leaf_noise = name.is_empty() && automation_id.is_empty();
+    if self_passes && !leaf_noise {
+        let raw = collect_raw_node(el, ct_name, &name, &automation_id, bounds_arr, ancestors);
+        out.push(build_node_value(&raw, opts));
+    }
+
+    if depth < opts.max_depth {
+        let label = if !name.is_empty() { name.clone() } else { ct_name.to_string() };
+        ancestors.push(label);
+        let mut child_sibling_rects: Vec<[i32; 4]> = Vec::new();
+        let mut child = unsafe { walker.GetFirstChildElement(el).ok() };
+        while let Some(ref c) = child {
+            flatten_walk(c, walker, depth + 1, opts, &mut child_sibling_rects, viewport, ancestors, out);
+            child = unsafe { walker.GetNextSiblingElement(c).ok() };
+        }
+        ancestors.pop();
+    }
+
+    if let Some(b) = bounds_arr {
+        if b[2] > b[0] && b[3] > b[1] {
+            sibling_rects.push(b);
+        }
+    }
 }
 
 #[cfg(windows)]
