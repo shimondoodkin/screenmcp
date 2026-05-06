@@ -207,23 +207,22 @@ fn parse_node_field(name: &str) -> Result<NodeField, String> {
 /// Walks the control view from the desktop root, extracting element properties
 /// and interaction patterns to match the Android ui_tree output format.
 #[cfg(windows)]
-pub fn handle_ui_tree_raw() -> Result<Value, String> {
+pub(crate) fn handle_ui_tree_raw(opts: &UiTreeOpts) -> Result<Value, String> {
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
     };
     use windows::Win32::UI::Accessibility::*;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+        SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    };
 
-    // COM guard: initialize on entry, uninitialize on drop
     struct ComGuard;
     impl Drop for ComGuard {
-        fn drop(&mut self) {
-            unsafe { CoUninitialize(); }
-        }
+        fn drop(&mut self) { unsafe { CoUninitialize(); } }
     }
-
     unsafe {
-        CoInitializeEx(None, COINIT_MULTITHREADED)
-            .ok()
+        CoInitializeEx(None, COINIT_MULTITHREADED).ok()
             .map_err(|e| format!("CoInitializeEx failed: {e}"))?;
     }
     let _com = ComGuard;
@@ -232,47 +231,58 @@ pub fn handle_ui_tree_raw() -> Result<Value, String> {
         CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL)
             .map_err(|e| format!("failed to create IUIAutomation: {e}"))?
     };
-
     let walker = unsafe {
-        automation
-            .ControlViewWalker()
+        automation.ControlViewWalker()
             .map_err(|e| format!("ControlViewWalker failed: {e}"))?
     };
-
     let root = unsafe {
-        automation
-            .GetRootElement()
+        automation.GetRootElement()
             .map_err(|e| format!("GetRootElement failed: {e}"))?
     };
 
-    // Virtual screen bounds (covers all monitors)
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-        SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-    };
     let vx = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
     let vy = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
     let vw = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
     let vh = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
     let viewport = [vx, vy, vx + vw, vy + vh];
 
-    // Walk top-level children of the desktop (each top-level window).
-    // ControlViewWalker returns siblings front-to-back (z-order), so we
-    // track rects of already-included siblings and skip any window whose
-    // bounds are fully enclosed by one in front of it.
     let mut children = Vec::new();
-    let max_depth: u32 = 10;
     let mut covered_rects: Vec<[i32; 4]> = Vec::new();
 
     let mut child = unsafe { walker.GetFirstChildElement(&root).ok() };
     while let Some(ref el) = child {
-        if let Some(node) = walk_element(el, &walker, 1, max_depth, &mut covered_rects, &viewport) {
+        // window scope filter (top-level only)
+        if !top_level_passes_window_scope(opts, el) {
+            child = unsafe { walker.GetNextSiblingElement(el).ok() };
+            continue;
+        }
+        let mut ancestors: Vec<String> = Vec::new();
+        if let Some(node) = walk_element(el, &walker, 1, opts, &mut covered_rects, &viewport, &mut ancestors) {
             children.push(node);
         }
         child = unsafe { walker.GetNextSiblingElement(el).ok() };
     }
 
     Ok(json!({ "tree": children, "os": "windows" }))
+}
+
+#[cfg(windows)]
+fn top_level_passes_window_scope(
+    opts: &UiTreeOpts,
+    el: &windows::Win32::UI::Accessibility::IUIAutomationElement,
+) -> bool {
+    match &opts.window {
+        None => true,
+        Some(WindowSelector::TitleSubstring(needle)) => {
+            let name = unsafe { el.CurrentName().ok() }.map(|s| s.to_string()).unwrap_or_default();
+            name.to_lowercase().contains(needle.as_str())
+        }
+        Some(WindowSelector::Hwnd(target)) => {
+            let h = unsafe { el.CurrentNativeWindowHandle().ok() }
+                .map(|h| h.0 as u64).unwrap_or(0);
+            h == *target
+        }
+    }
 }
 
 /// Check if rect `inner` is fully enclosed by rect `outer`.
@@ -291,195 +301,153 @@ fn walk_element(
     el: &windows::Win32::UI::Accessibility::IUIAutomationElement,
     walker: &windows::Win32::UI::Accessibility::IUIAutomationTreeWalker,
     depth: u32,
-    max_depth: u32,
+    opts: &UiTreeOpts,
     sibling_rects: &mut Vec<[i32; 4]>,
     viewport: &[i32; 4],
+    ancestors: &mut Vec<String>,
 ) -> Option<Value> {
-    use windows::core::Interface;
     use windows::Win32::UI::Accessibility::*;
 
-    // ── Phase 1: cheap filters (2-3 COM calls) ── skip entire subtrees early
-
-    // Skip offscreen / invisible elements (and don't recurse into them)
+    // Phase 1: cheap filters — offscreen, viewport, occlusion
     let is_offscreen = unsafe { el.CurrentIsOffscreen().ok() }
-        .map(|b| b.as_bool())
-        .unwrap_or(false);
-    if is_offscreen {
-        return None;
-    }
+        .map(|b| b.as_bool()).unwrap_or(false);
+    if is_offscreen { return None; }
 
-    // Spatial filtering on bounding rect
     let bounds_raw = unsafe { el.CurrentBoundingRectangle().ok() };
     let has_real_bounds = bounds_raw.as_ref().map_or(false, |r| r.right > r.left && r.bottom > r.top);
-    if has_real_bounds {
-        let r = bounds_raw.as_ref().unwrap();
-        let rect = [r.left, r.top, r.right, r.bottom];
-        // Skip elements entirely outside the viewport
-        if rect[2] <= viewport[0] || rect[0] >= viewport[2]
-            || rect[3] <= viewport[1] || rect[1] >= viewport[3]
-        {
+    let bounds_arr = bounds_raw.as_ref().map(|r| [r.left, r.top, r.right, r.bottom]);
+
+    if let Some(b) = bounds_arr {
+        if b[2] <= viewport[0] || b[0] >= viewport[2] || b[3] <= viewport[1] || b[1] >= viewport[3] {
             return None;
         }
-        // Z-order occlusion: skip elements fully covered by a sibling in front
-        if sibling_rects.iter().any(|sr| is_fully_enclosed(&rect, sr)) {
+        if sibling_rects.iter().any(|sr| is_fully_enclosed(&b, sr)) {
             return None;
         }
     }
 
-    // ── Phase 2: minimal props for noise filter (2 COM calls) + recurse
+    // Phase 2: minimal props for filter check
+    let name = unsafe { el.CurrentName().ok() }.map(|s| s.to_string()).unwrap_or_default();
+    let automation_id = unsafe { el.CurrentAutomationId().ok() }.map(|s| s.to_string()).unwrap_or_default();
+    let control_type_id = unsafe { el.CurrentControlType().unwrap_or_default() };
+    let ct_name = control_type_name(control_type_id);
 
-    let name = unsafe { el.CurrentName().ok() }
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    let automation_id = unsafe { el.CurrentAutomationId().ok() }
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-
-    // Recurse into children (fresh sibling_rects per level for occlusion)
+    // Recurse (max_depth from opts)
     let mut child_nodes = Vec::new();
-    if depth < max_depth {
+    if depth < opts.max_depth {
+        // Push self onto ancestor stack for children
+        let label = if !name.is_empty() { name.clone() } else { ct_name.to_string() };
+        ancestors.push(label);
+
         let mut child_sibling_rects: Vec<[i32; 4]> = Vec::new();
         let mut child = unsafe { walker.GetFirstChildElement(el).ok() };
         while let Some(ref c) = child {
-            if let Some(node) = walk_element(c, walker, depth + 1, max_depth, &mut child_sibling_rects, viewport) {
+            if let Some(node) = walk_element(c, walker, depth + 1, opts, &mut child_sibling_rects, viewport, ancestors) {
                 child_nodes.push(node);
             }
             child = unsafe { walker.GetNextSiblingElement(c).ok() };
         }
+        ancestors.pop();
     }
 
-    // Noise filter: skip leaf nodes with empty name AND empty automationId
+    // Noise filter (legacy): leaf with empty name AND empty automationId
     if child_nodes.is_empty() && name.is_empty() && automation_id.is_empty() {
         return None;
     }
-
-    // Skip zero/no-bounds elements that have no visible children
+    // Skip zero-bounds with no children
     if !has_real_bounds && child_nodes.is_empty() {
         return None;
     }
 
-    // ── Phase 3: full properties + patterns (only for nodes that survive) ──
+    // Display filter — pass=keep self; fail=keep only if children survive (breadcrumb)
+    let self_passes = node_passes_display_filter(opts, ct_name, &name, bounds_arr.as_ref());
+    if !self_passes && child_nodes.is_empty() {
+        return None;
+    }
 
-    let class_name = unsafe { el.CurrentClassName().ok() }
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    let help_text = unsafe { el.CurrentHelpText().ok() }
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    let control_type_id = unsafe { el.CurrentControlType().unwrap_or_default() };
-    let is_enabled = unsafe { el.CurrentIsEnabled().ok() }
-        .map(|b| b.as_bool())
-        .unwrap_or(true);
-    let is_focusable = unsafe { el.CurrentIsKeyboardFocusable().ok() }
-        .map(|b| b.as_bool())
-        .unwrap_or(false);
+    // Phase 3: full property snapshot + emit
+    let raw = collect_raw_node(el, ct_name, &name, &automation_id, bounds_arr, ancestors);
+    let mut node = build_node_value(&raw, opts);
+
+    if !child_nodes.is_empty() {
+        node.as_object_mut().unwrap().insert("children".into(), json!(child_nodes));
+    }
+
+    if let Some(b) = bounds_arr {
+        if b[2] > b[0] && b[3] > b[1] {
+            sibling_rects.push(b);
+        }
+    }
+
+    Some(node)
+}
+
+#[cfg(windows)]
+fn collect_raw_node(
+    el: &windows::Win32::UI::Accessibility::IUIAutomationElement,
+    ct_name: &str,
+    name: &str,
+    automation_id: &str,
+    bounds: Option<[i32; 4]>,
+    ancestors: &[String],
+) -> RawNode {
+    use windows::core::Interface;
+    use windows::Win32::UI::Accessibility::*;
+
+    let class_name = unsafe { el.CurrentClassName().ok() }.map(|s| s.to_string()).unwrap_or_default();
+    let help_text = unsafe { el.CurrentHelpText().ok() }.map(|s| s.to_string()).unwrap_or_default();
+    let is_enabled = unsafe { el.CurrentIsEnabled().ok() }.map(|b| b.as_bool()).unwrap_or(true);
+    let is_focusable = unsafe { el.CurrentIsKeyboardFocusable().ok() }.map(|b| b.as_bool()).unwrap_or(false);
     let has_focus = if is_focusable {
-        unsafe { el.CurrentHasKeyboardFocus().ok() }
-            .map(|b| b.as_bool())
-            .unwrap_or(false)
-    } else {
-        false
-    };
-    let native_hwnd = unsafe { el.CurrentNativeWindowHandle().ok() }
-        .map(|h| h.0 as u64)
-        .unwrap_or(0);
+        unsafe { el.CurrentHasKeyboardFocus().ok() }.map(|b| b.as_bool()).unwrap_or(false)
+    } else { false };
+    let native_hwnd = unsafe { el.CurrentNativeWindowHandle().ok() }.map(|h| h.0 as u64).unwrap_or(0);
 
-    // Bounds as {left, top, right, bottom, width, height}
-    let bounds_json = bounds_raw
-        .as_ref()
-        .map(|r| {
-            let left = r.left as i32;
-            let top = r.top as i32;
-            let right = r.right as i32;
-            let bottom = r.bottom as i32;
-            let width = right - left;
-            let height = bottom - top;
-            json!({"left": left, "top": top, "right": right, "bottom": bottom, "width": width, "height": height})
-        })
-        .unwrap_or(json!({"left": 0, "top": 0, "right": 0, "bottom": 0, "width": 0, "height": 0}));
-
-    let clickable = unsafe {
-        el.GetCurrentPattern(UIA_InvokePatternId).is_ok()
-    };
+    let clickable = unsafe { el.GetCurrentPattern(UIA_InvokePatternId).is_ok() };
     let (editable, value) = unsafe {
         match el.GetCurrentPattern(UIA_ValuePatternId) {
-            Ok(pat) => {
-                let vp: Result<IUIAutomationValuePattern, _> = pat.cast();
-                match vp {
-                    Ok(vp) => {
-                        let v = vp.CurrentValue().ok().map(|s| s.to_string()).unwrap_or_default();
-                        (true, v)
-                    }
-                    Err(_) => (true, String::new()),
-                }
-            }
+            Ok(pat) => match pat.cast::<IUIAutomationValuePattern>() {
+                Ok(vp) => (true, vp.CurrentValue().ok().map(|s| s.to_string()).unwrap_or_default()),
+                Err(_) => (true, String::new()),
+            },
             Err(_) => (false, String::new()),
         }
     };
     let (checkable, checked) = unsafe {
         match el.GetCurrentPattern(UIA_TogglePatternId) {
-            Ok(pat) => {
-                let tp: Result<IUIAutomationTogglePattern, _> = pat.cast();
-                match tp {
-                    Ok(tp) => {
-                        let state = tp.CurrentToggleState().unwrap_or(ToggleState_Off);
-                        (true, state == ToggleState_On)
-                    }
-                    Err(_) => (true, false),
-                }
-            }
+            Ok(pat) => match pat.cast::<IUIAutomationTogglePattern>() {
+                Ok(tp) => (true, tp.CurrentToggleState().unwrap_or(ToggleState_Off) == ToggleState_On),
+                Err(_) => (true, false),
+            },
             Err(_) => (false, false),
         }
     };
-    let scrollable = unsafe {
-        el.GetCurrentPattern(UIA_ScrollPatternId).is_ok()
+    let scrollable = unsafe { el.GetCurrentPattern(UIA_ScrollPatternId).is_ok() };
+
+    let path = if ancestors.is_empty() { String::new() } else {
+        let labels: Vec<&str> = ancestors.iter().map(|s| s.as_str()).collect();
+        build_path(&labels)
     };
 
-    let ct_name = control_type_name(control_type_id);
-
-    // Sparse JSON: only include non-default / non-empty values.
-    // Key insertion order = output order (preserve_order feature).
-    let mut node = json!({});
-    let m = node.as_object_mut().unwrap();
-
-    // 1. Text / identity
-    if !name.is_empty() { m.insert("text".into(), json!(name)); }
-    if editable && !value.is_empty() { m.insert("value".into(), json!(value)); }
-    m.insert("controlType".into(), json!(ct_name));
-    if !class_name.is_empty() { m.insert("className".into(), json!(class_name)); }
-    if !automation_id.is_empty() { m.insert("resourceId".into(), json!(automation_id)); }
-    if !help_text.is_empty() { m.insert("contentDescription".into(), json!(help_text)); }
-
-    // 2. Bounds
-    m.insert("bounds".into(), bounds_json);
-
-    // 3. State & interaction flags (only non-defaults)
-    if !is_enabled { m.insert("enabled".into(), json!(false)); }
-    if clickable { m.insert("clickable".into(), json!(true)); }
-    if editable { m.insert("editable".into(), json!(true)); }
-    if scrollable { m.insert("scrollable".into(), json!(true)); }
-    if checkable {
-        m.insert("checked".into(), json!(checked));
+    RawNode {
+        text: name.to_string(),
+        value,
+        control_type: ct_name.to_string(),
+        class_name,
+        resource_id: automation_id.to_string(),
+        content_description: help_text,
+        bounds,
+        enabled: is_enabled,
+        clickable,
+        editable,
+        scrollable,
+        checkable,
+        checked,
+        focusable: is_focusable,
+        focused: has_focus,
+        hwnd: native_hwnd,
+        path,
     }
-    if is_focusable {
-        m.insert("focused".into(), json!(has_focus));
-    }
-    if native_hwnd != 0 { m.insert("hwnd".into(), json!(native_hwnd)); }
-
-    // 4. Children last
-    if !child_nodes.is_empty() {
-        m.insert("children".into(), json!(child_nodes));
-    }
-
-    // Register this element's rect so later siblings can be culled if fully behind it
-    if let Some(ref r) = bounds_raw {
-        let rect = [r.left, r.top, r.right, r.bottom];
-        if rect[2] > rect[0] && rect[3] > rect[1] {
-            sibling_rects.push(rect);
-        }
-    }
-
-    Some(node)
 }
 
 /// Map UIA control type ID to a human-readable string.
@@ -534,17 +502,49 @@ fn control_type_name(id: windows::Win32::UI::Accessibility::UIA_CONTROLTYPE_ID) 
 }
 
 #[cfg(not(windows))]
-pub fn handle_ui_tree_raw() -> Result<Value, String> {
+pub fn handle_ui_tree_raw(_opts: &UiTreeOpts) -> Result<Value, String> {
     Err("ui_tree is not supported on this platform".to_string())
 }
 
 pub fn handle_ui_tree(params: Option<&Value>, config: &Config) -> Result<Value, String> {
-    let result = handle_ui_tree_raw()?;
+    let opts = parse_ui_tree_opts(params)?;
+    let result = handle_ui_tree_raw(&opts)?;
     let (sx, sy) = get_output_scale(params, config)?;
     if sx == 1.0 && sy == 1.0 {
         return Ok(result);
     }
-    Ok(scale_bounds_in_value(&result, sx, sy))
+    Ok(scale_coords_in_value(&result, sx, sy))
+}
+
+/// Like the legacy `scale_bounds_in_value`, but also scales `cx` and `cy` if present.
+fn scale_coords_in_value(v: &Value, sx: f64, sy: f64) -> Value {
+    // Reuse the existing scale_bounds_in_value to handle bounds, then walk and
+    // also rewrite cx/cy.
+    let mut scaled = scale_bounds_in_value(v, sx, sy);
+    scale_cx_cy_in_place(&mut scaled, sx, sy);
+    scaled
+}
+
+fn scale_cx_cy_in_place(v: &mut Value, sx: f64, sy: f64) {
+    match v {
+        Value::Object(map) => {
+            if let Some(cx) = map.get_mut("cx") {
+                if let Some(n) = cx.as_i64() { *cx = json!(((n as f64) * sx).round() as i64); }
+            }
+            if let Some(cy) = map.get_mut("cy") {
+                if let Some(n) = cy.as_i64() { *cy = json!(((n as f64) * sy).round() as i64); }
+            }
+            for (_, child) in map.iter_mut() {
+                scale_cx_cy_in_place(child, sx, sy);
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                scale_cx_cy_in_place(item, sx, sy);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Returns true if the node passes all per-node display filters
