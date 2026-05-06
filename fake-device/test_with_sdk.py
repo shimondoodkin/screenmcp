@@ -236,6 +236,21 @@ async def test_with_python_sdk(
     except Exception as e:
         results.fail("ui_tree", str(e))
 
+    # ── Test: ui_tree (flat mode) ─────────────────────────────────────
+    try:
+        result = await phone.ui_tree(format="flat", fields=["text", "cx", "cy"])
+        nodes = result.get("nodes", None)
+        if nodes is None:
+            results.fail("ui_tree(flat)", "No 'nodes' key in result")
+        elif not isinstance(nodes, list):
+            results.fail("ui_tree(flat)", f"'nodes' is not a list: {type(nodes)}")
+        elif not all("controlType" in n for n in nodes):
+            results.fail("ui_tree(flat)", "Some nodes missing 'controlType'")
+        else:
+            results.ok(f"ui_tree(flat) ({len(nodes)} nodes)")
+    except Exception as e:
+        results.fail("ui_tree(flat)", str(e))
+
     # ── Test: back ────────────────────────────────────────────────────
     try:
         result = await phone.back()

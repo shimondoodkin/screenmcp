@@ -6,5 +6,6 @@ pub use client::{DeviceConnection, ScreenMCPClient};
 pub use error::{Result, ScreenMCPError};
 pub use types::{
     CameraInfo, CameraResult, ClipboardResult, ClientOptions, CommandResponse, CopyResult,
-    DeviceInfo, ListCamerasResult, ScreenshotResult, ScrollDirection, TextResult, UiTreeResult,
+    DeviceInfo, ListCamerasResult, ScreenshotResult, ScrollDirection, TextResult, UiTreeFlatResult,
+    UiTreeOpts, UiTreeResult, UiTreeResultEither,
 };

@@ -169,6 +169,25 @@ async function runTests() {
     fail("uiTree", (e as Error).message);
   }
 
+  // uiTree (flat mode)
+  try {
+    const flatResult = await phone.uiTree({ format: "flat", fields: ["text", "cx", "cy"] }) as { nodes?: unknown[] };
+    if (!("nodes" in flatResult)) {
+      fail("uiTree(flat)", "expected 'nodes' key in result");
+    } else if (!Array.isArray(flatResult.nodes)) {
+      fail("uiTree(flat)", "nodes should be an array");
+    } else {
+      const badNode = flatResult.nodes.find((n) => typeof (n as Record<string, unknown>).controlType !== "string");
+      if (badNode !== undefined) {
+        fail("uiTree(flat)", "some node missing controlType string");
+      } else {
+        pass(`uiTree(flat) (${flatResult.nodes.length} nodes)`);
+      }
+    }
+  } catch (e) {
+    fail("uiTree(flat)", (e as Error).message);
+  }
+
   // back
   try {
     await phone.back();

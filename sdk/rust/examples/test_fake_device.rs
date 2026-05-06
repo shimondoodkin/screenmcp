@@ -3,7 +3,7 @@
 //! Run with:
 //!   cargo run --example test_fake_device -- --api-url http://localhost:3199 --api-key pk_test123 --device-id faketest001
 
-use screenmcp::{ClientOptions, ScreenMCPClient, ScreenMCPError, ScrollDirection};
+use screenmcp::{ClientOptions, ScreenMCPClient, ScreenMCPError, ScrollDirection, UiTreeOpts};
 use std::time::Duration;
 
 fn get_arg(args: &[String], name: &str, default: &str) -> String {
@@ -169,6 +169,33 @@ async fn main() {
             }
         }
         Err(e) => results.fail("ui_tree", &e.to_string()),
+    }
+
+    // ui_tree (flat mode)
+    {
+        let opts = UiTreeOpts {
+            format: Some("flat".into()),
+            fields: Some(vec!["text".into(), "cx".into(), "cy".into()]),
+            ..Default::default()
+        };
+        match phone.ui_tree_with(&opts).await {
+            Ok(r) => {
+                match r.into_flat() {
+                    Some(flat) => {
+                        let all_have_control_type = flat.nodes.iter().all(|n| {
+                            n.get("controlType").and_then(|v| v.as_str()).is_some()
+                        });
+                        if all_have_control_type {
+                            results.pass(&format!("ui_tree_with(flat) ({} nodes)", flat.nodes.len()));
+                        } else {
+                            results.fail("ui_tree_with(flat)", "some node missing controlType");
+                        }
+                    }
+                    None => results.fail("ui_tree_with(flat)", "expected flat result"),
+                }
+            }
+            Err(e) => results.fail("ui_tree_with(flat)", &e.to_string()),
+        }
     }
 
     // back
