@@ -19,6 +19,9 @@ import type {
   ScrollDirection,
   ServerMessage,
   TextResult,
+  UiTreeFlatNode,
+  UiTreeFlatResult,
+  UiTreeOptions,
   UiTreeResult,
 } from "./types.js";
 
@@ -368,13 +371,31 @@ export class DeviceConnection extends EventEmitter {
     await this.sendCommand("recents");
   }
 
-  /** Get the UI accessibility tree. */
-  async uiTree(maxWidth?: number, maxHeight?: number): Promise<UiTreeResult> {
+  /** Get the UI accessibility tree.
+   *
+   * Pass an options object to scope, filter, or change output shape (Windows only).
+   * Default: full nested tree (legacy behavior).
+   */
+  async uiTree(opts?: UiTreeOptions): Promise<UiTreeResult | UiTreeFlatResult> {
     const params: Record<string, unknown> = {};
-    if (maxWidth !== undefined) params.max_width = maxWidth;
-    if (maxHeight !== undefined) params.max_height = maxHeight;
+    if (opts?.maxWidth !== undefined) params.max_width = opts.maxWidth;
+    if (opts?.maxHeight !== undefined) params.max_height = opts.maxHeight;
+    if (opts?.window !== undefined) params.window = opts.window;
+    if (opts?.region !== undefined) params.region = opts.region;
+    if (opts?.regionMode !== undefined) params.region_mode = opts.regionMode;
+    if (opts?.types !== undefined) params.types = opts.types;
+    if (opts?.textMatch !== undefined) params.text_match = opts.textMatch;
+    if (opts?.regex !== undefined) params.regex = opts.regex;
+    if (opts?.maxDepth !== undefined) params.max_depth = opts.maxDepth;
+    if (opts?.format !== undefined) params.format = opts.format;
+    if (opts?.fields !== undefined) params.fields = opts.fields;
+
     const resp = await this.sendCommand("ui_tree", Object.keys(params).length > 0 ? params : undefined);
-    return { tree: (resp.result as UiTreeResult | undefined)?.tree ?? [] };
+    const result = resp.result as Record<string, unknown> | undefined;
+    if (opts?.format === "flat") {
+      return { nodes: (result?.nodes as UiTreeFlatNode[] | undefined) ?? [], os: result?.os as string | undefined };
+    }
+    return { tree: (result?.tree as any[]) ?? [] };
   }
 
   /**
@@ -515,7 +536,7 @@ export class DeviceConnection extends EventEmitter {
     const timeout = options?.timeout ?? 3000;
     const deadline = Date.now() + timeout;
     while (true) {
-      const { tree } = await this.uiTree();
+      const { tree } = (await this.uiTree()) as UiTreeResult;
       const found = findElements(tree, selector);
       if (found.length > 0) return found;
       if (Date.now() >= deadline) return [];
@@ -531,7 +552,7 @@ export class DeviceConnection extends EventEmitter {
     const timeout = options?.timeout ?? 0;
     const deadline = Date.now() + timeout;
     while (true) {
-      const { tree } = await this.uiTree();
+      const { tree } = (await this.uiTree()) as UiTreeResult;
       const found = findElements(tree, selector);
       if (found.length > 0) return true;
       if (Date.now() >= deadline) return false;
@@ -547,7 +568,7 @@ export class DeviceConnection extends EventEmitter {
     const timeout = options?.timeout ?? 3000;
     const deadline = Date.now() + timeout;
     while (true) {
-      const { tree } = await this.uiTree();
+      const { tree } = (await this.uiTree()) as UiTreeResult;
       const found = findElements(tree, selector);
       if (found.length > 0) return found[0];
       if (Date.now() >= deadline) {
@@ -565,7 +586,7 @@ export class DeviceConnection extends EventEmitter {
     const timeout = options?.timeout ?? 3000;
     const deadline = Date.now() + timeout;
     while (true) {
-      const { tree } = await this.uiTree();
+      const { tree } = (await this.uiTree()) as UiTreeResult;
       const found = findElements(tree, selector);
       if (found.length === 0) return;
       if (Date.now() >= deadline) {

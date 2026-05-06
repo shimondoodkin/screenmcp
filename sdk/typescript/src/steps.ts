@@ -621,7 +621,7 @@ export class StepsRunner {
   ): Promise<FoundElement> {
     const deadline = Date.now() + timeout;
     while (true) {
-      const { tree } = await this.client.uiTree();
+      const { tree } = (await this.client.uiTree()) as { tree: unknown[] };
       const { findElements } = await import("./selector.js");
       const found = findElements(tree, selector);
       if (found.length > 0) return found[0];

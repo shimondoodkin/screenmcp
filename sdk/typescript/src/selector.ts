@@ -354,7 +354,7 @@ export class ElementHandle {
   private async resolve(): Promise<FoundElement> {
     const deadline = Date.now() + this.timeout;
     while (true) {
-      const { tree } = await this.client.uiTree();
+      const { tree } = (await this.client.uiTree()) as { tree: unknown[] };
       const found = findElements(tree, this.selector);
       if (found.length > 0) return found[0];
       if (Date.now() >= deadline) {

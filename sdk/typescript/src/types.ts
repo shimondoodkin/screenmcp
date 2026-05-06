@@ -48,6 +48,47 @@ export interface UiTreeResult {
   tree: unknown[];
 }
 
+/** Options for ui_tree. */
+export interface UiTreeOptions {
+  maxWidth?: number;
+  maxHeight?: number;
+  window?: string | number;
+  region?: { min_x: number; min_y: number; max_x: number; max_y: number };
+  regionMode?: "inside" | "intersect";
+  types?: string[];
+  textMatch?: string;
+  regex?: boolean;
+  maxDepth?: number;
+  format?: "nested" | "flat";
+  fields?: string[];
+}
+
+/** Flat-mode node. All fields except controlType are optional (may be absent if not in `fields`). */
+export interface UiTreeFlatNode {
+  controlType: string;
+  text?: string;
+  value?: string;
+  className?: string;
+  resourceId?: string;
+  contentDescription?: string;
+  bounds?: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+  cx?: number;
+  cy?: number;
+  enabled?: boolean;
+  clickable?: boolean;
+  editable?: boolean;
+  scrollable?: boolean;
+  checked?: boolean;
+  focused?: boolean;
+  hwnd?: number;
+  path?: string;
+}
+
+export interface UiTreeFlatResult {
+  nodes: UiTreeFlatNode[];
+  os?: string;
+}
+
 export interface CameraResult {
   /** Base64-encoded image (WebP) */
   image: string;
