@@ -157,7 +157,7 @@ async function runTests() {
 
   // uiTree
   try {
-    const result = await phone.uiTree();
+    const result = (await phone.uiTree()) as { tree: unknown[] };
     if (!result.tree || result.tree.length === 0) {
       fail("uiTree", "Empty tree");
     } else {
@@ -327,7 +327,7 @@ async function runTests() {
 
   // ── Selector engine tests ─────────────────────────────────────────
   try {
-    const { tree } = await phone.uiTree();
+    const { tree } = (await phone.uiTree()) as { tree: unknown[] };
 
     // text selector
     const settingsEls = findElements(tree, "text:Settings");
