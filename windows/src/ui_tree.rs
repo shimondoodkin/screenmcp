@@ -306,8 +306,6 @@ fn walk_element(
     viewport: &[i32; 4],
     ancestors: &mut Vec<String>,
 ) -> Option<Value> {
-    use windows::Win32::UI::Accessibility::*;
-
     // Phase 1: cheap filters — offscreen, viewport, occlusion
     let is_offscreen = unsafe { el.CurrentIsOffscreen().ok() }
         .map(|b| b.as_bool()).unwrap_or(false);
