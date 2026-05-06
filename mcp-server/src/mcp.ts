@@ -35,8 +35,33 @@ const phoneTools = [
   },
   {
     name: 'ui_tree',
-    description: 'Get the accessibility tree of the current screen. Returns array of UI nodes with bounds, text, clickable state, etc.',
-    inputSchema: { device_id: deviceIdParam, ...scalingParams },
+    description: 'Get the accessibility tree of the current screen. Supports scoping to one window, filtering by control type / text / region, capping depth, and a flat output shape with precomputed center coordinates.',
+    inputSchema: {
+      device_id: deviceIdParam,
+      ...scalingParams,
+      window: z.union([z.string(), z.number()]).optional()
+        .describe('Title substring (string) or hwnd (number). Scopes to one top-level window. Windows only.'),
+      region: z.object({
+        min_x: z.number().int(),
+        min_y: z.number().int(),
+        max_x: z.number().int(),
+        max_y: z.number().int(),
+      }).optional().describe('Filter to nodes whose bounds match this rect (in screenshot space). Windows only.'),
+      region_mode: z.enum(['inside', 'intersect']).optional()
+        .describe('"inside" (default): node bounds fully inside region. "intersect": any overlap.'),
+      types: z.array(z.string()).optional()
+        .describe('Whitelist of controlType values, case-insensitive (e.g. ["Button","Edit","MenuItem"]). Windows only.'),
+      text_match: z.string().optional()
+        .describe('Filter on text. Substring (case-insensitive) by default; regex if regex=true. Windows only.'),
+      regex: z.boolean().optional()
+        .describe('If true, text_match is a regex. Default false.'),
+      max_depth: z.number().int().min(1).optional()
+        .describe('Cap recursion depth (default 10). Windows only.'),
+      format: z.enum(['nested', 'flat']).optional()
+        .describe('"nested" (default): tree shape, byte-compatible with legacy output. "flat": array of {controlType,text,cx,cy,hwnd,path}.'),
+      fields: z.array(z.string()).optional()
+        .describe('Per-node fields to emit. Available: text, value, controlType, className, resourceId, contentDescription, bounds, cx, cy, enabled, clickable, editable, scrollable, checked, focused, hwnd, path. controlType is always included.'),
+    },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       const res = await phone.sendCommand('ui_tree', params);
       return res.result;
