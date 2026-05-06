@@ -547,6 +547,58 @@ pub fn handle_ui_tree(params: Option<&Value>, config: &Config) -> Result<Value, 
     Ok(scale_bounds_in_value(&result, sx, sy))
 }
 
+/// Returns true if the node passes all per-node display filters
+/// (`types`, `text_match`, `region`).
+///
+/// `bounds` is `[left, top, right, bottom]` in viewport coords (pre-scale).
+/// `text` and `control_type` are the raw UIA values (PascalCase for control_type).
+pub(crate) fn node_passes_display_filter(
+    opts: &UiTreeOpts,
+    control_type: &str,
+    text: &str,
+    bounds: Option<&[i32; 4]>,
+) -> bool {
+    if let Some(ref types) = opts.types {
+        let lc = control_type.to_lowercase();
+        if !types.iter().any(|t| t == &lc) {
+            return false;
+        }
+    }
+    if let Some(ref tm) = opts.text_match {
+        match tm {
+            TextMatcher::Substring(needle) => {
+                if !text.to_lowercase().contains(needle.as_str()) {
+                    return false;
+                }
+            }
+            TextMatcher::Regex(re) => {
+                if !re.is_match(text) {
+                    return false;
+                }
+            }
+        }
+    }
+    if let Some(ref r) = opts.region {
+        let b = match bounds {
+            Some(b) => b,
+            None => return false,
+        };
+        match opts.region_mode {
+            RegionMode::Inside => {
+                if !(b[0] >= r.min_x && b[1] >= r.min_y && b[2] <= r.max_x && b[3] <= r.max_y) {
+                    return false;
+                }
+            }
+            RegionMode::Intersect => {
+                if b[2] <= r.min_x || b[0] >= r.max_x || b[3] <= r.min_y || b[1] >= r.max_y {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod parse_tests {
     use super::*;
@@ -676,5 +728,102 @@ mod parse_tests {
     fn unknown_field_errors() {
         let err = parse(json!({"fields": ["text", "blorp"]})).unwrap_err();
         assert!(err.contains("blorp"));
+    }
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+
+    fn opts_with_types(types: Vec<&str>) -> UiTreeOpts {
+        let mut o = UiTreeOpts::default();
+        o.types = Some(types.into_iter().map(|s| s.to_lowercase()).collect());
+        o
+    }
+
+    fn opts_with_text(s: &str) -> UiTreeOpts {
+        let mut o = UiTreeOpts::default();
+        o.text_match = Some(TextMatcher::Substring(s.to_lowercase()));
+        o
+    }
+
+    fn opts_with_regex(re: &str) -> UiTreeOpts {
+        let mut o = UiTreeOpts::default();
+        o.text_match = Some(TextMatcher::Regex(regex::Regex::new(re).unwrap()));
+        o
+    }
+
+    fn opts_with_region(r: Region, mode: RegionMode) -> UiTreeOpts {
+        let mut o = UiTreeOpts::default();
+        o.region = Some(r);
+        o.region_mode = mode;
+        o
+    }
+
+    #[test]
+    fn no_filters_passes() {
+        let opts = UiTreeOpts::default();
+        assert!(node_passes_display_filter(&opts, "Button", "Save", Some(&[10, 10, 50, 50])));
+    }
+
+    #[test]
+    fn types_match_case_insensitive() {
+        let opts = opts_with_types(vec!["button", "edit"]);
+        assert!(node_passes_display_filter(&opts, "Button", "Save", None));
+        assert!(node_passes_display_filter(&opts, "BUTTON", "Save", None));
+        assert!(!node_passes_display_filter(&opts, "Pane", "Save", None));
+    }
+
+    #[test]
+    fn text_substring_case_insensitive() {
+        let opts = opts_with_text("save");
+        assert!(node_passes_display_filter(&opts, "Button", "Save As...", None));
+        assert!(node_passes_display_filter(&opts, "Button", "save", None));
+        assert!(!node_passes_display_filter(&opts, "Button", "Cancel", None));
+    }
+
+    #[test]
+    fn text_regex_matches_anchored_pattern() {
+        let opts = opts_with_regex(r"^Save( As)?$");
+        assert!(node_passes_display_filter(&opts, "Button", "Save", None));
+        assert!(node_passes_display_filter(&opts, "Button", "Save As", None));
+        assert!(!node_passes_display_filter(&opts, "Button", "Save As...", None));
+    }
+
+    #[test]
+    fn region_inside_strict() {
+        let r = Region { min_x: 0, min_y: 0, max_x: 100, max_y: 100 };
+        let opts = opts_with_region(r, RegionMode::Inside);
+        assert!(node_passes_display_filter(&opts, "Button", "X", Some(&[10, 10, 50, 50])));
+        assert!(!node_passes_display_filter(&opts, "Button", "X", Some(&[10, 10, 150, 50])));
+        assert!(!node_passes_display_filter(&opts, "Button", "X", Some(&[-10, 10, 50, 50])));
+    }
+
+    #[test]
+    fn region_intersect_partial_overlap() {
+        let r = Region { min_x: 0, min_y: 0, max_x: 100, max_y: 100 };
+        let opts = opts_with_region(r, RegionMode::Intersect);
+        assert!(node_passes_display_filter(&opts, "Button", "X", Some(&[10, 10, 50, 50])));
+        assert!(node_passes_display_filter(&opts, "Button", "X", Some(&[80, 80, 200, 200])));
+        assert!(!node_passes_display_filter(&opts, "Button", "X", Some(&[200, 200, 300, 300])));
+    }
+
+    #[test]
+    fn region_with_no_bounds_fails() {
+        let r = Region { min_x: 0, min_y: 0, max_x: 100, max_y: 100 };
+        let opts = opts_with_region(r, RegionMode::Inside);
+        assert!(!node_passes_display_filter(&opts, "Button", "X", None));
+    }
+
+    #[test]
+    fn all_filters_combined_must_all_match() {
+        let mut opts = opts_with_types(vec!["button"]);
+        opts.text_match = Some(TextMatcher::Substring("save".into()));
+        opts.region = Some(Region { min_x: 0, min_y: 0, max_x: 100, max_y: 100 });
+        opts.region_mode = RegionMode::Inside;
+        assert!(node_passes_display_filter(&opts, "Button", "Save", Some(&[10, 10, 50, 50])));
+        assert!(!node_passes_display_filter(&opts, "Pane", "Save", Some(&[10, 10, 50, 50])));
+        assert!(!node_passes_display_filter(&opts, "Button", "Cancel", Some(&[10, 10, 50, 50])));
+        assert!(!node_passes_display_filter(&opts, "Button", "Save", Some(&[10, 10, 200, 50])));
     }
 }
