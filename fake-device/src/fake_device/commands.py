@@ -257,6 +257,22 @@ def handle_command(
         return {"status": "ok", "result": {}}
 
     if cmd == "ui_tree":
+        p = params or {}
+        fmt = p.get("format", "nested")
+        if fmt == "flat":
+            # Canned flat response: a few buttons with cx/cy/path.
+            nodes = [
+                {"controlType": "Button", "text": "Save", "cx": 100, "cy": 200, "hwnd": 1, "path": "FakeApp / File menu"},
+                {"controlType": "Button", "text": "Cancel", "cx": 200, "cy": 200, "hwnd": 1, "path": "FakeApp / File menu"},
+                {"controlType": "Edit", "text": "", "cx": 150, "cy": 100, "hwnd": 1, "path": "FakeApp"},
+            ]
+            fields = p.get("fields")
+            if fields:
+                always = {"controlType"}
+                wanted = always | set(fields)
+                nodes = [{k: v for k, v in n.items() if k in wanted} for n in nodes]
+            return {"status": "ok", "result": {"nodes": nodes, "os": "fake"}}
+        # Nested mode (legacy): leave existing tree shape.
         return {"status": "ok", "result": {"tree": _UI_TREE}}
 
     if cmd == "get_text":
