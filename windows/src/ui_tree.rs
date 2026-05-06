@@ -1004,8 +1004,7 @@ mod build_node_tests {
             control_type: "Button".into(),
             bounds: Some(bounds),
             clickable: true,
-            enabled: true,
-            ..RawNode::default()
+            ..RawNode::for_test()
         }
     }
 
@@ -1063,7 +1062,7 @@ mod build_node_tests {
 
     #[test]
     fn sparse_rule_drops_empty_text() {
-        let n = RawNode { control_type: "Pane".into(), enabled: true, ..RawNode::default() };
+        let n = RawNode { control_type: "Pane".into(), ..RawNode::for_test() };
         let opts = UiTreeOpts::default();
         let v = build_node_value(&n, &opts);
         let obj = v.as_object().unwrap();
@@ -1076,8 +1075,7 @@ mod build_node_tests {
         let n = RawNode {
             text: "Save".into(),
             control_type: "Button".into(),
-            enabled: true,
-            ..RawNode::default()
+            ..RawNode::for_test()
         };
         let mut opts = UiTreeOpts::default();
         opts.format = OutputFormat::Flat;
