@@ -605,6 +605,145 @@ pub(crate) fn build_path(ancestors: &[&str]) -> String {
     ancestors.join(" / ")
 }
 
+/// Snapshot of a UIA element's properties — the raw input to `build_node_value`.
+/// Walker fills this from COM calls; tests construct it directly.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct RawNode {
+    pub text: String,
+    pub value: String,
+    pub control_type: String, // PascalCase, e.g. "Button"
+    pub class_name: String,
+    pub resource_id: String,
+    pub content_description: String,
+    pub bounds: Option<[i32; 4]>, // [left, top, right, bottom]
+    pub enabled: bool,            // default true
+    pub clickable: bool,
+    pub editable: bool,
+    pub scrollable: bool,
+    pub checkable: bool,
+    pub checked: bool,
+    pub focusable: bool,
+    pub focused: bool,
+    pub hwnd: u64,
+    pub path: String, // pre-built breadcrumb (flat mode)
+}
+
+impl RawNode {
+    pub fn for_test() -> Self {
+        Self { enabled: true, ..Default::default() }
+    }
+}
+
+/// Default field set when `fields` is unset and format is Nested.
+/// This must match the legacy output exactly.
+fn default_nested_fields() -> &'static [NodeField] {
+    use NodeField::*;
+    &[Text, Value, ControlType, ClassName, ResourceId, ContentDescription,
+      Bounds, Enabled, Clickable, Editable, Scrollable, Checked, Focused, Hwnd]
+}
+
+/// Default field set when `fields` is unset and format is Flat.
+fn default_flat_fields() -> &'static [NodeField] {
+    use NodeField::*;
+    &[ControlType, Text, Cx, Cy, Hwnd, Path]
+}
+
+/// Returns the active field set: explicit `opts.fields` if set, else format default.
+pub(crate) fn active_fields<'a>(opts: &'a UiTreeOpts) -> &'a [NodeField] {
+    if let Some(ref f) = opts.fields {
+        f.as_slice()
+    } else {
+        match opts.format {
+            OutputFormat::Nested => default_nested_fields(),
+            OutputFormat::Flat => default_flat_fields(),
+        }
+    }
+}
+
+/// Returns true if the field should be emitted given the active set.
+fn wants(fields: &[NodeField], f: NodeField) -> bool {
+    fields.iter().any(|x| *x == f)
+}
+
+/// Build the per-node JSON object honoring `fields` selection.
+/// `controlType` is always emitted (filter logic depends on it).
+/// `children` is appended by the caller in nested mode (not handled here).
+pub(crate) fn build_node_value(node: &RawNode, opts: &UiTreeOpts) -> Value {
+    let fields = active_fields(opts);
+    let mut out = serde_json::Map::new();
+
+    // 1. text / identity
+    if wants(fields, NodeField::Text) && !node.text.is_empty() {
+        out.insert("text".into(), json!(node.text));
+    }
+    if wants(fields, NodeField::Value) && node.editable && !node.value.is_empty() {
+        out.insert("value".into(), json!(node.value));
+    }
+    // controlType: always emitted
+    out.insert("controlType".into(), json!(node.control_type));
+    if wants(fields, NodeField::ClassName) && !node.class_name.is_empty() {
+        out.insert("className".into(), json!(node.class_name));
+    }
+    if wants(fields, NodeField::ResourceId) && !node.resource_id.is_empty() {
+        out.insert("resourceId".into(), json!(node.resource_id));
+    }
+    if wants(fields, NodeField::ContentDescription) && !node.content_description.is_empty() {
+        out.insert("contentDescription".into(), json!(node.content_description));
+    }
+
+    // 2. bounds + cx/cy
+    if wants(fields, NodeField::Bounds) {
+        if let Some(b) = node.bounds {
+            out.insert("bounds".into(), json!({
+                "left": b[0], "top": b[1], "right": b[2], "bottom": b[3],
+                "width": b[2] - b[0], "height": b[3] - b[1],
+            }));
+        } else {
+            out.insert("bounds".into(), json!({"left":0,"top":0,"right":0,"bottom":0,"width":0,"height":0}));
+        }
+    }
+    if wants(fields, NodeField::Cx) {
+        if let Some(b) = node.bounds {
+            out.insert("cx".into(), json!((b[0] + b[2]) / 2));
+        }
+    }
+    if wants(fields, NodeField::Cy) {
+        if let Some(b) = node.bounds {
+            out.insert("cy".into(), json!((b[1] + b[3]) / 2));
+        }
+    }
+
+    // 3. state flags (sparse — only non-defaults)
+    if wants(fields, NodeField::Enabled) && !node.enabled {
+        out.insert("enabled".into(), json!(false));
+    }
+    if wants(fields, NodeField::Clickable) && node.clickable {
+        out.insert("clickable".into(), json!(true));
+    }
+    if wants(fields, NodeField::Editable) && node.editable {
+        out.insert("editable".into(), json!(true));
+    }
+    if wants(fields, NodeField::Scrollable) && node.scrollable {
+        out.insert("scrollable".into(), json!(true));
+    }
+    if wants(fields, NodeField::Checked) && node.checkable {
+        out.insert("checked".into(), json!(node.checked));
+    }
+    if wants(fields, NodeField::Focused) && node.focusable {
+        out.insert("focused".into(), json!(node.focused));
+    }
+    if wants(fields, NodeField::Hwnd) && node.hwnd != 0 {
+        out.insert("hwnd".into(), json!(node.hwnd));
+    }
+
+    // 4. path (only meaningful in flat mode; emitted if requested)
+    if wants(fields, NodeField::Path) {
+        out.insert("path".into(), json!(node.path));
+    }
+
+    Value::Object(out)
+}
+
 #[cfg(test)]
 mod parse_tests {
     use super::*;
@@ -852,5 +991,99 @@ mod path_tests {
     fn joins_with_slash_space() {
         assert_eq!(build_path(&["Notepad", "Document area", "File menu"]),
                    "Notepad / Document area / File menu");
+    }
+}
+
+#[cfg(test)]
+mod build_node_tests {
+    use super::*;
+
+    fn button(text: &str, bounds: [i32; 4]) -> RawNode {
+        RawNode {
+            text: text.into(),
+            control_type: "Button".into(),
+            bounds: Some(bounds),
+            clickable: true,
+            enabled: true,
+            ..RawNode::default()
+        }
+    }
+
+    #[test]
+    fn nested_default_emits_legacy_fields() {
+        let n = button("Save", [10, 20, 110, 60]);
+        let opts = UiTreeOpts::default();
+        let v = build_node_value(&n, &opts);
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj.get("text").unwrap(), "Save");
+        assert_eq!(obj.get("controlType").unwrap(), "Button");
+        assert_eq!(obj.get("clickable").unwrap(), true);
+        assert!(obj.contains_key("bounds"));
+        // legacy field set excludes cx/cy/path
+        assert!(!obj.contains_key("cx"));
+        assert!(!obj.contains_key("cy"));
+        assert!(!obj.contains_key("path"));
+    }
+
+    #[test]
+    fn flat_default_includes_cx_cy_path_drops_bounds() {
+        let mut n = button("Save", [10, 20, 110, 60]);
+        n.path = "Notepad / File menu".into();
+        n.hwnd = 7777;
+        let mut opts = UiTreeOpts::default();
+        opts.format = OutputFormat::Flat;
+        let v = build_node_value(&n, &opts);
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj.get("controlType").unwrap(), "Button");
+        assert_eq!(obj.get("text").unwrap(), "Save");
+        assert_eq!(obj.get("cx").unwrap(), 60);
+        assert_eq!(obj.get("cy").unwrap(), 40);
+        assert_eq!(obj.get("hwnd").unwrap(), 7777);
+        assert_eq!(obj.get("path").unwrap(), "Notepad / File menu");
+        assert!(!obj.contains_key("bounds"));
+    }
+
+    #[test]
+    fn explicit_fields_only_emits_requested() {
+        let n = button("Save", [10, 20, 110, 60]);
+        let mut opts = UiTreeOpts::default();
+        opts.fields = Some(vec![NodeField::Text, NodeField::Cx, NodeField::Cy]);
+        let v = build_node_value(&n, &opts);
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj.get("text").unwrap(), "Save");
+        assert_eq!(obj.get("cx").unwrap(), 60);
+        assert_eq!(obj.get("cy").unwrap(), 40);
+        // controlType is always implicit
+        assert_eq!(obj.get("controlType").unwrap(), "Button");
+        // Everything else absent
+        assert!(!obj.contains_key("bounds"));
+        assert!(!obj.contains_key("clickable"));
+        assert!(!obj.contains_key("hwnd"));
+    }
+
+    #[test]
+    fn sparse_rule_drops_empty_text() {
+        let n = RawNode { control_type: "Pane".into(), enabled: true, ..RawNode::default() };
+        let opts = UiTreeOpts::default();
+        let v = build_node_value(&n, &opts);
+        let obj = v.as_object().unwrap();
+        assert!(!obj.contains_key("text"));
+        assert_eq!(obj.get("controlType").unwrap(), "Pane");
+    }
+
+    #[test]
+    fn cx_cy_absent_when_no_bounds() {
+        let n = RawNode {
+            text: "Save".into(),
+            control_type: "Button".into(),
+            enabled: true,
+            ..RawNode::default()
+        };
+        let mut opts = UiTreeOpts::default();
+        opts.format = OutputFormat::Flat;
+        let v = build_node_value(&n, &opts);
+        let obj = v.as_object().unwrap();
+        assert!(!obj.contains_key("cx"));
+        assert!(!obj.contains_key("cy"));
     }
 }
