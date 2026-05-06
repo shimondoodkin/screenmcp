@@ -430,11 +430,13 @@ fn flatten_walk(
     // Emit self if it passes display filter (no breadcrumb policy in flat mode)
     let self_passes = node_passes_display_filter(opts, ct_name, &name, bounds_arr.as_ref());
     let leaf_noise = name.is_empty() && automation_id.is_empty();
-    if self_passes && !leaf_noise {
+    let emitted_self = self_passes && !leaf_noise;
+    if emitted_self {
         let raw = collect_raw_node(el, ct_name, &name, &automation_id, bounds_arr, ancestors);
         out.push(build_node_value(&raw, opts));
     }
 
+    let len_before_children = out.len();
     if depth < opts.max_depth {
         let label = if !name.is_empty() { name.clone() } else { ct_name.to_string() };
         ancestors.push(label);
@@ -447,9 +449,15 @@ fn flatten_walk(
         ancestors.pop();
     }
 
-    if let Some(b) = bounds_arr {
-        if b[2] > b[0] && b[3] > b[1] {
-            sibling_rects.push(b);
+    // Only contribute to sibling occlusion when something was actually emitted
+    // from this subtree. Mirrors walk_element's push-on-keep semantics so a
+    // filter-rejected full-area Pane doesn't cull a sibling Button behind it.
+    let emitted_descendants = out.len() > len_before_children;
+    if emitted_self || emitted_descendants {
+        if let Some(b) = bounds_arr {
+            if b[2] > b[0] && b[3] > b[1] {
+                sibling_rects.push(b);
+            }
         }
     }
 }
