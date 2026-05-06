@@ -599,6 +599,12 @@ pub(crate) fn node_passes_display_filter(
     true
 }
 
+/// Joins ancestor labels with " / " to produce the `path` field for flat-mode nodes.
+/// Caller is responsible for picking the label per ancestor (text or fallback to controlType).
+pub(crate) fn build_path(ancestors: &[&str]) -> String {
+    ancestors.join(" / ")
+}
+
 #[cfg(test)]
 mod parse_tests {
     use super::*;
@@ -825,5 +831,26 @@ mod filter_tests {
         assert!(!node_passes_display_filter(&opts, "Pane", "Save", Some(&[10, 10, 50, 50])));
         assert!(!node_passes_display_filter(&opts, "Button", "Cancel", Some(&[10, 10, 50, 50])));
         assert!(!node_passes_display_filter(&opts, "Button", "Save", Some(&[10, 10, 200, 50])));
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn empty_when_no_ancestors() {
+        assert_eq!(build_path(&[]), "");
+    }
+
+    #[test]
+    fn single_ancestor_just_its_label() {
+        assert_eq!(build_path(&["Notepad"]), "Notepad");
+    }
+
+    #[test]
+    fn joins_with_slash_space() {
+        assert_eq!(build_path(&["Notepad", "Document area", "File menu"]),
+                   "Notepad / Document area / File menu");
     }
 }
