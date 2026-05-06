@@ -420,11 +420,38 @@ class DeviceConnection:
         resp = await self.send_command("recents")
         return resp.result
 
-    async def ui_tree(self, max_width: int = 0, max_height: int = 0) -> dict[str, Any]:
-        """Get the UI accessibility tree.  Returns dict with ``tree``."""
+    async def ui_tree(
+        self,
+        max_width: int = 0,
+        max_height: int = 0,
+        *,
+        window: str | int | None = None,
+        region: dict[str, int] | None = None,
+        region_mode: str | None = None,        # "inside" | "intersect"
+        types: list[str] | None = None,
+        text_match: str | None = None,
+        regex: bool | None = None,
+        max_depth: int | None = None,
+        format: str | None = None,             # "nested" | "flat"
+        fields: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Get the UI accessibility tree.
+
+        Returns a dict with ``tree`` (nested mode) or ``nodes`` (flat mode).
+        Filtering and scoping params are Windows-only; other platforms ignore them.
+        """
         params: dict[str, Any] = {}
-        if max_width: params["max_width"] = max_width
-        if max_height: params["max_height"] = max_height
+        if max_width:        params["max_width"] = max_width
+        if max_height:       params["max_height"] = max_height
+        if window is not None: params["window"] = window
+        if region is not None: params["region"] = region
+        if region_mode:      params["region_mode"] = region_mode
+        if types:            params["types"] = types
+        if text_match is not None: params["text_match"] = text_match
+        if regex is not None:    params["regex"] = regex
+        if max_depth is not None: params["max_depth"] = max_depth
+        if format:           params["format"] = format
+        if fields:           params["fields"] = fields
         resp = await self.send_command("ui_tree", params or None)
         return resp.result
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────
@@ -104,3 +104,36 @@ SCROLL_VECTORS: dict[ScrollDirection, tuple[int, int]] = {
     "left": (-1, 0),
     "right": (1, 0),
 }
+
+
+# ── UI Tree (ui_tree command) ───────────────────────────────────────────
+
+class UiTreeRegion(TypedDict):
+    """Bounding region for ui_tree region filtering."""
+
+    min_x: int
+    min_y: int
+    max_x: int
+    max_y: int
+
+
+class UiTreeFlatNode(TypedDict, total=False):
+    """Flat-mode UI tree node with optional fields."""
+
+    controlType: str
+    text: str
+    value: str
+    className: str
+    resourceId: str
+    contentDescription: str
+    bounds: dict[str, Any]
+    cx: int
+    cy: int
+    enabled: bool
+    clickable: bool
+    editable: bool
+    scrollable: bool
+    checked: bool
+    focused: bool
+    hwnd: int
+    path: str
