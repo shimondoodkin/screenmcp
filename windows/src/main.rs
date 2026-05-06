@@ -9,6 +9,7 @@ mod login_window;
 mod sse;
 mod test_window;
 mod tray;
+mod ui_tree;
 mod ws;
 
 use config::Config;
