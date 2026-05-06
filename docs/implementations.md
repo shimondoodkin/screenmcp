@@ -27,6 +27,8 @@ The worker relays all commands — it does not interpret them. The matrix below 
 | `screenshot` | yes | yes | yes | yes | yes | yes | yes |
 | `ui_tree` | yes | yes | yes | yes | yes | yes | yes |
 
+- `ui_tree` extended params (`window`, `region`, `region_mode`, `types`, `text_match`, `regex`, `max_depth`, `format`, `fields`) are Windows-only. Other platforms accept and ignore them.
+
 ### Touch & Gestures
 
 | Command | Android | Windows | macOS | Linux | MCP Server | TS SDK | Python SDK |

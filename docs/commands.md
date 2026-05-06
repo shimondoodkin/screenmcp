@@ -62,8 +62,41 @@ Get the accessibility tree of the current screen.
 |-------|------|---------|-------------|
 | `max_width` | integer | 0 | Scale returned bounds to match screenshot space |
 | `max_height` | integer | 0 | Scale returned bounds to match screenshot space |
+| `window` | string \| number | — | (Windows) Title substring or hwnd. Scopes the walk to one top-level window. |
+| `region` | object | — | (Windows) `{min_x, min_y, max_x, max_y}` in screenshot space. Filter by bounds. |
+| `region_mode` | string | `"inside"` | (Windows) `"inside"` (fully inside) or `"intersect"` (any overlap). |
+| `types` | string[] | all | (Windows) Whitelist of `controlType` values. Case-insensitive. |
+| `text_match` | string | — | (Windows) Filter on `text`. Substring (case-insensitive) by default. |
+| `regex` | boolean | false | (Windows) If true, `text_match` is treated as a regex. |
+| `max_depth` | integer | 10 | (Windows) Cap recursion depth. |
+| `format` | string | `"nested"` | (Windows) `"nested"` (default) or `"flat"`. |
+| `fields` | string[] | per-format | (Windows) Per-node fields to emit. See node fields below. |
 
-**Returns:** `{ "tree": [ ...nodes ] }`
+**Returns (nested):** `{ "tree": [ ...nodes ] }`
+
+**Returns (flat):** `{ "nodes": [ {controlType, text, cx, cy, hwnd, path}, ... ] }`
+
+**Available `fields` values:** `text, value, controlType, className, resourceId, contentDescription, bounds, cx, cy, enabled, clickable, editable, scrollable, checked, focused, hwnd, path`. `controlType` is always emitted; `children` is always emitted in nested mode.
+
+**Examples:**
+
+Scope to one window, list buttons only:
+
+```json
+{"cmd":"ui_tree","params":{"window":"Notepad","types":["button"]}}
+```
+
+Flat mode, ready-to-click center coords:
+
+```json
+{"cmd":"ui_tree","params":{"format":"flat","window":"Notepad"}}
+```
+
+Region filter, intersect:
+
+```json
+{"cmd":"ui_tree","params":{"region":{"min_x":0,"min_y":0,"max_x":500,"max_y":500},"region_mode":"intersect"}}
+```
 
 **Android node fields:**
 

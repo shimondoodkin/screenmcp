@@ -125,6 +125,21 @@ Response:
 { "id": 2, "status": "ok", "result": { "tree": [ { "className": "FrameLayout", "bounds": { "left": 0, "top": 0, "right": 1080, "bottom": 1920 }, "children": [] } ] } }
 ```
 
+**ui_tree request (flat mode):**
+```json
+{"id": 1, "cmd": "ui_tree", "params": {"format": "flat", "window": "Notepad", "types": ["button"]}}
+```
+
+**ui_tree response (flat mode):**
+```json
+{"id": 1, "status": "ok", "result": {
+  "nodes": [
+    {"controlType": "Button", "text": "Save", "cx": 512, "cy": 300, "hwnd": 1234, "path": "Notepad / File"}
+  ],
+  "os": "windows"
+}}
+```
+
 ### click
 
 Full:

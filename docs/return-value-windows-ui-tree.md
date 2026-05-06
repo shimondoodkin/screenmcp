@@ -35,3 +35,21 @@ The `ui_tree` command returns a JSON object with a single key `tree` containing 
 - **Offscreen filtering**: Elements flagged as offscreen by UIA are excluded.
 - **Max depth**: 10 levels.
 - **Property order**: text, value, controlType, className, resourceId, contentDescription, bounds, state flags, hwnd, children (uses serde_json `preserve_order` feature).
+
+## New optional fields
+
+| Property | Type | Notes |
+|---|---|---|
+| `cx` | number | Center X coord (precomputed). Only emitted when `fields` includes `cx`. |
+| `cy` | number | Center Y coord (precomputed). Only emitted when `fields` includes `cy`. |
+| `path` | string | Breadcrumb of ancestor labels joined with ` / `. Only meaningful in flat mode. |
+
+## Flat-mode response shape
+
+When the request includes `"format": "flat"`, the response shape is:
+
+```json
+{ "nodes": [ ...nodes ], "os": "windows" }
+```
+
+Each node is the same per-node JSON object as nested mode (same field rules), but with no `children` and with `path` instead of structural ancestors. Default `fields` for flat mode: `controlType`, `text`, `cx`, `cy`, `hwnd`, `path`.
