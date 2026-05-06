@@ -161,6 +161,81 @@ pub(crate) enum ServerMessage {
     CommandResponse(CommandResponse),
 }
 
+/// Options for ui_tree_with().
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct UiTreeOpts {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_height: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<UiTreeWindowSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<UiTreeRegion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region_mode: Option<String>, // "inside" | "intersect"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub types: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_match: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regex: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_depth: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>, // "nested" | "flat"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Vec<String>>,
+}
+
+/// Window selector for ui_tree_with(): either a title string or an HWND integer.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum UiTreeWindowSelector {
+    Title(String),
+    Hwnd(u64),
+}
+
+/// Region filter for ui_tree_with().
+#[derive(Debug, Clone, Serialize)]
+pub struct UiTreeRegion {
+    pub min_x: i32,
+    pub min_y: i32,
+    pub max_x: i32,
+    pub max_y: i32,
+}
+
+/// Result returned by ui_tree_with() when format = "flat".
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UiTreeFlatResult {
+    #[serde(default)]
+    pub nodes: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub os: Option<String>,
+}
+
+/// Either a nested or flat ui_tree result, depending on opts.format.
+#[derive(Debug, Clone)]
+pub enum UiTreeResultEither {
+    Nested(UiTreeResult),
+    Flat(UiTreeFlatResult),
+}
+
+impl UiTreeResultEither {
+    pub fn into_nested(self) -> Option<UiTreeResult> {
+        match self {
+            Self::Nested(r) => Some(r),
+            _ => None,
+        }
+    }
+    pub fn into_flat(self) -> Option<UiTreeFlatResult> {
+        match self {
+            Self::Flat(r) => Some(r),
+            _ => None,
+        }
+    }
+}
+
 impl ServerMessage {
     pub fn parse(text: &str) -> Option<Self> {
         let v: serde_json::Value = serde_json::from_str(text).ok()?;

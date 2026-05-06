@@ -402,14 +402,27 @@ impl DeviceConnection {
         Ok(())
     }
 
-    /// Get the UI accessibility tree.
+    /// Get the UI accessibility tree (legacy: full nested output).
     pub async fn ui_tree(&mut self) -> Result<UiTreeResult> {
-        let resp = self.send_command("ui_tree", None).await?;
-        let result: UiTreeResult = resp
-            .result
-            .map(|v| serde_json::from_value(v).unwrap_or(UiTreeResult { tree: vec![] }))
-            .unwrap_or(UiTreeResult { tree: vec![] });
-        Ok(result)
+        self.ui_tree_with(&UiTreeOpts::default()).await
+            .map(|either| either.into_nested().unwrap_or(UiTreeResult { tree: vec![] }))
+    }
+
+    /// Get the UI accessibility tree with full options.
+    /// Returns either a nested or flat result depending on `opts.format`.
+    pub async fn ui_tree_with(&mut self, opts: &UiTreeOpts) -> Result<UiTreeResultEither> {
+        let params = serde_json::to_value(opts).ok();
+        let send_params = match &params {
+            Some(serde_json::Value::Object(m)) if !m.is_empty() => params,
+            _ => None,
+        };
+        let resp = self.send_command("ui_tree", send_params).await?;
+        let v = resp.result.unwrap_or(serde_json::Value::Null);
+        Ok(if opts.format.as_deref() == Some("flat") {
+            UiTreeResultEither::Flat(serde_json::from_value(v).unwrap_or_default())
+        } else {
+            UiTreeResultEither::Nested(serde_json::from_value(v).unwrap_or(UiTreeResult { tree: vec![] }))
+        })
     }
 
     /// List available cameras on the device.
