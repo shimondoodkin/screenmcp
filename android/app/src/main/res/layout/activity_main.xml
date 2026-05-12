@@ -417,6 +417,52 @@
                 android:padding="8dp" />
         </HorizontalScrollView>
 
+        <!-- Debug File Logging -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp" />
+
+        <CheckBox
+            android:id="@+id/cbFileLogging"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Write debug log to file" />
+
+        <TextView
+            android:id="@+id/tvLogPath"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="10sp"
+            android:fontFamily="monospace"
+            android:textColor="#666666"
+            android:visibility="gone"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+
+            <Button
+                android:id="@+id/btnOpenLogsFolder"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Open Logs Folder"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btnClearLogs"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Clear Logs" />
+        </LinearLayout>
+
         <!-- Log Output -->
         <TextView
             android:id="@+id/tvLog"
