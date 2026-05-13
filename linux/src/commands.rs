@@ -1259,7 +1259,7 @@ fn handle_elevate() -> Result<Value, String> {
 
     // Try pkexec first, then gksudo
     let result = std::process::Command::new("pkexec")
-        .arg(exe_path.to_str().unwrap_or("screenmcp-linux"))
+        .arg(exe_path.to_str().unwrap_or("screenmcp"))
         .spawn();
 
     match result {

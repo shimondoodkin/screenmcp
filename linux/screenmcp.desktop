@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=ScreenMCP
 Comment=AI desktop control via MCP
-Exec=/usr/bin/screenmcp-linux
+Exec=/usr/bin/screenmcp
 Icon=screenmcp
 Type=Application
 Categories=Utility;RemoteAccess;

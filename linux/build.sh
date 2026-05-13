@@ -5,10 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 APP_NAME="ScreenMCP"
-BINARY_NAME="screenmcp-linux"
-VERSION="0.3.6"
+CARGO_BIN_NAME="screenmcp-linux"   # name cargo produces in target/release
+INSTALL_BIN_NAME="screenmcp"       # name we install into /usr/bin
+PKG_NAME="screenmcp"               # .deb Package name (also drives .deb filename)
+VERSION="0.3.7"
 ARCH="amd64"
-DEB_NAME="${BINARY_NAME}_${VERSION}_${ARCH}"
+DEB_NAME="${PKG_NAME}_${VERSION}_${ARCH}"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "=== ScreenMCP Linux Build + Package ==="
@@ -17,7 +19,7 @@ echo "=== ScreenMCP Linux Build + Package ==="
 echo ""
 echo "[1/3] Building release binary..."
 cargo build --release
-BINARY="target/release/${BINARY_NAME}"
+BINARY="target/release/${CARGO_BIN_NAME}"
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: Binary not found at $BINARY"
     exit 1
@@ -30,11 +32,11 @@ echo "[2/3] Creating .deb package..."
 DEB_DIR="/tmp/${DEB_NAME}"
 rm -rf "$DEB_DIR"
 
-# Binary
+# Binary — install as plain `screenmcp` (not `screenmcp-linux`)
 mkdir -p "$DEB_DIR/usr/bin"
-cp "$BINARY" "$DEB_DIR/usr/bin/${BINARY_NAME}"
-chmod 755 "$DEB_DIR/usr/bin/${BINARY_NAME}"
-strip "$DEB_DIR/usr/bin/${BINARY_NAME}" 2>/dev/null || true
+cp "$BINARY" "$DEB_DIR/usr/bin/${INSTALL_BIN_NAME}"
+chmod 755 "$DEB_DIR/usr/bin/${INSTALL_BIN_NAME}"
+strip "$DEB_DIR/usr/bin/${INSTALL_BIN_NAME}" 2>/dev/null || true
 
 # Desktop entry
 mkdir -p "$DEB_DIR/usr/share/applications"
@@ -50,13 +52,13 @@ INSTALLED_SIZE=$(du -sk "$DEB_DIR" | cut -f1)
 # DEBIAN control file
 mkdir -p "$DEB_DIR/DEBIAN"
 cat > "$DEB_DIR/DEBIAN/control" <<EOF
-Package: screenmcp
+Package: ${PKG_NAME}
 Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
 Installed-Size: ${INSTALLED_SIZE}
-Depends: libgtk-3-0 | libgtk-3-0t64, libssl3 | libssl1.1, libxdo3, libxkbcommon-x11-0, wmctrl, libayatana-appindicator3-1 | libappindicator3-1
+Depends: libgtk-3-0 | libgtk-3-0t64, libssl3 | libssl1.1, libxdo3, libxkbcommon-x11-0, wmctrl, libasound2, libayatana-appindicator3-1 | libappindicator3-1
 Maintainer: ScreenMCP <support@screenmcp.com>
 Homepage: https://screenmcp.com
 Description: AI desktop control via MCP

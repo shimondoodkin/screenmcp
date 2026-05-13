@@ -375,8 +375,8 @@ jobs:
           mkdir -p "${pkg}/usr/share/applications"
           mkdir -p "${pkg}/usr/share/icons/hicolor/512x512/apps"
 
-          cp "$binary" "${pkg}/usr/bin/screenmcp-linux"
-          chmod 755 "${pkg}/usr/bin/screenmcp-linux"
+          cp "$binary" "${pkg}/usr/bin/screenmcp"
+          chmod 755 "${pkg}/usr/bin/screenmcp"
           cp linux/screenmcp.desktop "${pkg}/usr/share/applications/"
           cp linux/assets/icon-app.png "${pkg}/usr/share/icons/hicolor/512x512/apps/screenmcp.png"
 
@@ -389,7 +389,7 @@ jobs:
           Priority: optional
           Architecture: ${arch}
           Installed-Size: ${installed_size}
-          Depends: libgtk-3-0, libssl3 | libssl1.1, libxdo3, wmctrl, libasound2
+          Depends: libgtk-3-0 | libgtk-3-0t64, libssl3 | libssl1.1, libxdo3, libxkbcommon-x11-0, wmctrl, libasound2, libayatana-appindicator3-1 | libappindicator3-1
           Maintainer: ScreenMCP <support@screenmcp.com>
           Homepage: https://screenmcp.com
           Description: AI desktop control via MCP
