@@ -56,7 +56,7 @@ Section: utils
 Priority: optional
 Architecture: ${ARCH}
 Installed-Size: ${INSTALLED_SIZE}
-Depends: libgtk-3-0, libssl3 | libssl1.1, libxdo3, wmctrl
+Depends: libgtk-3-0 | libgtk-3-0t64, libssl3 | libssl1.1, libxdo3, libxkbcommon-x11-0, wmctrl, libayatana-appindicator3-1 | libappindicator3-1
 Maintainer: ScreenMCP <support@screenmcp.com>
 Homepage: https://screenmcp.com
 Description: AI desktop control via MCP
