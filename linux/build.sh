@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 APP_NAME="ScreenMCP"
 BINARY_NAME="screenmcp-linux"
-VERSION="0.1.0"
+VERSION="0.3.6"
 ARCH="amd64"
 DEB_NAME="${BINARY_NAME}_${VERSION}_${ARCH}"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
