@@ -9,6 +9,11 @@ const zod_1 = require("zod");
 const deviceConnections = new Map();
 // Common device_id parameter added to every phone tool
 const deviceIdParam = zod_1.z.number().int().describe('Device ID number. Use list_devices to see available devices.');
+// Optional coordinate scaling params — device applies defaults based on its own screen ratio
+const scalingParams = {
+    max_width: zod_1.z.number().int().optional().describe('Screenshot width for coordinate auto-scaling (device applies default if omitted, 0 to disable)'),
+    max_height: zod_1.z.number().int().optional().describe('Screenshot height for coordinate auto-scaling (device applies default if omitted, 0 to disable)'),
+};
 // MCP tools for phone control — descriptions match web/ exactly
 const phoneTools = [
     {
@@ -27,10 +32,35 @@ const phoneTools = [
     },
     {
         name: 'ui_tree',
-        description: 'Get the accessibility tree of the current screen. Returns array of UI nodes with bounds, text, clickable state, etc.',
-        inputSchema: { device_id: deviceIdParam },
-        handler: async (phone) => {
-            const res = await phone.sendCommand('ui_tree');
+        description: 'Get the accessibility tree of the current screen. Supports scoping to one window, filtering by control type / text / region, capping depth, and a flat output shape with precomputed center coordinates.',
+        inputSchema: {
+            device_id: deviceIdParam,
+            ...scalingParams,
+            window: zod_1.z.union([zod_1.z.string(), zod_1.z.number()]).optional()
+                .describe('Title substring (string) or hwnd (number). Scopes to one top-level window. Windows only.'),
+            region: zod_1.z.object({
+                min_x: zod_1.z.number().int(),
+                min_y: zod_1.z.number().int(),
+                max_x: zod_1.z.number().int(),
+                max_y: zod_1.z.number().int(),
+            }).optional().describe('Filter to nodes whose bounds match this rect (in screenshot space). Windows only.'),
+            region_mode: zod_1.z.enum(['inside', 'intersect']).optional()
+                .describe('"inside" (default): node bounds fully inside region. "intersect": any overlap.'),
+            types: zod_1.z.array(zod_1.z.string()).optional()
+                .describe('Whitelist of controlType values, case-insensitive (e.g. ["Button","Edit","MenuItem"]). Windows only.'),
+            text_match: zod_1.z.string().optional()
+                .describe('Filter on text. Substring (case-insensitive) by default; regex if regex=true. Windows only.'),
+            regex: zod_1.z.boolean().optional()
+                .describe('If true, text_match is a regex. Default false.'),
+            max_depth: zod_1.z.number().int().min(1).optional()
+                .describe('Cap recursion depth (default 10). Windows only.'),
+            format: zod_1.z.enum(['nested', 'flat']).optional()
+                .describe('"nested" (default): tree shape, byte-compatible with legacy output. "flat": array of {controlType,text,cx,cy,hwnd,path}.'),
+            fields: zod_1.z.array(zod_1.z.string()).optional()
+                .describe('Per-node fields to emit. Available: text, value, controlType, className, resourceId, contentDescription, bounds, cx, cy, enabled, clickable, editable, scrollable, checked, focused, hwnd, path. controlType is always included.'),
+        },
+        handler: async (phone, params) => {
+            const res = await phone.sendCommand('ui_tree', params);
             return res.result;
         },
     },
@@ -39,9 +69,10 @@ const phoneTools = [
         description: 'Tap on the screen at coordinates',
         inputSchema: {
             device_id: deviceIdParam,
-            x: zod_1.z.number().int().describe('X coordinate'),
-            y: zod_1.z.number().int().describe('Y coordinate'),
+            x: zod_1.z.number().describe('X coordinate'),
+            y: zod_1.z.number().describe('Y coordinate'),
             duration: zod_1.z.number().optional().describe('Press duration in ms (default: 100)'),
+            ...scalingParams,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('click', params)).result;
@@ -52,8 +83,9 @@ const phoneTools = [
         description: 'Long press at coordinates (1000ms)',
         inputSchema: {
             device_id: deviceIdParam,
-            x: zod_1.z.number().int().describe('X coordinate'),
-            y: zod_1.z.number().int().describe('Y coordinate'),
+            x: zod_1.z.number().describe('X coordinate'),
+            y: zod_1.z.number().describe('Y coordinate'),
+            ...scalingParams,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('long_click', params)).result;
@@ -64,10 +96,11 @@ const phoneTools = [
         description: 'Scroll the screen with a finger-drag gesture',
         inputSchema: {
             device_id: deviceIdParam,
-            x: zod_1.z.number().int().describe('Start X'),
-            y: zod_1.z.number().int().describe('Start Y'),
-            dx: zod_1.z.number().int().describe('Horizontal delta'),
-            dy: zod_1.z.number().int().describe('Vertical delta (negative = scroll content up)'),
+            x: zod_1.z.number().describe('Start X'),
+            y: zod_1.z.number().describe('Start Y'),
+            dx: zod_1.z.number().describe('Horizontal delta'),
+            dy: zod_1.z.number().describe('Vertical delta (negative = scroll content up)'),
+            ...scalingParams,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('scroll', params)).result;
@@ -78,11 +111,12 @@ const phoneTools = [
         description: 'Drag from one point to another',
         inputSchema: {
             device_id: deviceIdParam,
-            startX: zod_1.z.number().int(),
-            startY: zod_1.z.number().int(),
-            endX: zod_1.z.number().int(),
-            endY: zod_1.z.number().int(),
+            startX: zod_1.z.number(),
+            startY: zod_1.z.number(),
+            endX: zod_1.z.number(),
+            endY: zod_1.z.number(),
             duration: zod_1.z.number().optional().describe('Duration in ms (default: 300)'),
+            ...scalingParams,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('drag', params)).result;
@@ -240,8 +274,9 @@ const phoneTools = [
         description: 'Right-click at coordinates (desktop only). Returns unsupported on Android.',
         inputSchema: {
             device_id: deviceIdParam,
-            x: zod_1.z.number().int().describe('X coordinate'),
-            y: zod_1.z.number().int().describe('Y coordinate'),
+            x: zod_1.z.number().describe('X coordinate'),
+            y: zod_1.z.number().describe('Y coordinate'),
+            ...scalingParams,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('right_click', params)).result;
@@ -252,8 +287,9 @@ const phoneTools = [
         description: 'Middle-click at coordinates (desktop only). Returns unsupported on Android.',
         inputSchema: {
             device_id: deviceIdParam,
-            x: zod_1.z.number().int().describe('X coordinate'),
-            y: zod_1.z.number().int().describe('Y coordinate'),
+            x: zod_1.z.number().describe('X coordinate'),
+            y: zod_1.z.number().describe('Y coordinate'),
+            ...scalingParams,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('middle_click', params)).result;
@@ -264,10 +300,11 @@ const phoneTools = [
         description: 'Raw mouse scroll at coordinates with pixel deltas (desktop only). Returns unsupported on Android.',
         inputSchema: {
             device_id: deviceIdParam,
-            x: zod_1.z.number().int().describe('X coordinate'),
-            y: zod_1.z.number().int().describe('Y coordinate'),
-            dx: zod_1.z.number().int().describe('Horizontal delta'),
-            dy: zod_1.z.number().int().describe('Vertical delta'),
+            x: zod_1.z.number().describe('X coordinate'),
+            y: zod_1.z.number().describe('Y coordinate'),
+            dx: zod_1.z.number().describe('Horizontal delta'),
+            dy: zod_1.z.number().describe('Vertical delta'),
+            ...scalingParams,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('mouse_scroll', params)).result;
@@ -283,6 +320,140 @@ const phoneTools = [
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('play_audio', params)).result;
+        },
+    },
+    {
+        name: 'mouse_move',
+        description: 'Move the mouse cursor without clicking (desktop only)',
+        inputSchema: {
+            device_id: deviceIdParam,
+            x: zod_1.z.number().describe('X coordinate'),
+            y: zod_1.z.number().describe('Y coordinate'),
+            ...scalingParams,
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('mouse_move', params)).result;
+        },
+    },
+    {
+        name: 'double_click',
+        description: 'Double-click at coordinates (desktop: two clicks, Android: two rapid taps)',
+        inputSchema: {
+            device_id: deviceIdParam,
+            x: zod_1.z.number().describe('X coordinate'),
+            y: zod_1.z.number().describe('Y coordinate'),
+            ...scalingParams,
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('double_click', params)).result;
+        },
+    },
+    {
+        name: 'hotkey',
+        description: 'Press a key combination atomically, e.g. ["ctrl","c"] for copy (desktop only)',
+        inputSchema: {
+            device_id: deviceIdParam,
+            keys: zod_1.z.array(zod_1.z.string()).describe('Array of key names to press together'),
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('hotkey', params)).result;
+        },
+    },
+    {
+        name: 'get_screen_size',
+        description: 'Get the primary display dimensions. With max_width/max_height, returns scaled dimensions plus originals.',
+        inputSchema: {
+            device_id: deviceIdParam,
+            ...scalingParams,
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('get_screen_size', params)).result;
+        },
+    },
+    {
+        name: 'list_windows',
+        description: 'List all visible windows with titles and positions (desktop only). Coordinates scaled when max_width/max_height set.',
+        inputSchema: {
+            device_id: deviceIdParam,
+            ...scalingParams,
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('list_windows', params)).result;
+        },
+    },
+    {
+        name: 'focus_window',
+        description: 'Bring a window to the foreground by title substring or index (desktop only)',
+        inputSchema: {
+            device_id: deviceIdParam,
+            title: zod_1.z.string().optional().describe('Window title substring (case-insensitive)'),
+            index: zod_1.z.number().int().optional().describe('Window index from list_windows'),
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('focus_window', params)).result;
+        },
+    },
+    {
+        name: 'active_window',
+        description: 'Get information about the currently focused window (desktop only)',
+        inputSchema: {
+            device_id: deviceIdParam,
+            ...scalingParams,
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('active_window', params)).result;
+        },
+    },
+    {
+        name: 'screenshot_window',
+        description: 'Capture a specific window by title or index without focusing it (desktop only)',
+        inputSchema: {
+            device_id: deviceIdParam,
+            title: zod_1.z.string().optional().describe('Window title substring'),
+            index: zod_1.z.number().int().optional().describe('Window index from list_windows'),
+            max_width: zod_1.z.number().int().optional().describe('Max width in pixels'),
+            max_height: zod_1.z.number().int().optional().describe('Max height in pixels'),
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('screenshot_window', params)).result;
+        },
+    },
+    {
+        name: 'screenshot_region',
+        description: 'Capture a region of the screen. Returns base64 WebP image of the specified rectangular area (desktop only).',
+        inputSchema: {
+            device_id: deviceIdParam,
+            min_x: zod_1.z.number().describe('Left edge X coordinate'),
+            min_y: zod_1.z.number().describe('Top edge Y coordinate'),
+            max_x: zod_1.z.number().describe('Right edge X coordinate'),
+            max_y: zod_1.z.number().describe('Bottom edge Y coordinate'),
+            quality: zod_1.z.number().int().optional().describe('Image quality 1-100'),
+            output_max_width: zod_1.z.number().int().optional().describe('Max output width in pixels'),
+            output_max_height: zod_1.z.number().int().optional().describe('Max output height in pixels'),
+            ...scalingParams,
+        },
+        handler: async (phone, params) => {
+            return (await phone.sendCommand('screenshot_region', params)).result;
+        },
+    },
+    {
+        name: 'is_elevated',
+        description: 'Check if the process has elevated/admin privileges (desktop only)',
+        inputSchema: {
+            device_id: deviceIdParam,
+        },
+        handler: async (phone) => {
+            return (await phone.sendCommand('is_elevated')).result;
+        },
+    },
+    {
+        name: 'elevate',
+        description: 'Request administrator/root privileges with user confirmation (desktop only)',
+        inputSchema: {
+            device_id: deviceIdParam,
+        },
+        handler: async (phone) => {
+            return (await phone.sendCommand('elevate')).result;
         },
     },
 ];
