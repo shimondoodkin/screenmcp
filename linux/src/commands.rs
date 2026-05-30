@@ -103,17 +103,10 @@ fn handle_screenshot(
     let img = image::RgbaImage::from_raw(width, height, raw_pixels)
         .ok_or_else(|| "failed to create image from capture".to_string())?;
 
-    // Determine max dimensions from params or config
-    let max_w = params
-        .and_then(|p| p.get("max_width"))
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or(config.max_screenshot_width).or(Some(DEFAULT_SCALE_WIDTH as u32));
-    let max_h = params
-        .and_then(|p| p.get("max_height"))
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or(config.max_screenshot_height).or(Some(DEFAULT_SCALE_HEIGHT as u32));
+    // Determine max dimensions: explicit params > model default > config > legacy.
+    let (mw_f, mh_f) = resolve_scale_dims(params, config);
+    let max_w = if mw_f > 0.0 { Some(mw_f as u32) } else { None };
+    let max_h = if mh_f > 0.0 { Some(mh_f as u32) } else { None };
 
     let img = if let (Some(mw), Some(mh)) = (max_w, max_h) {
         if width > mw || height > mh {
@@ -189,12 +182,7 @@ fn handle_screenshot_region(params: Option<&Value>, config: &Config) -> Result<V
         .ok_or("failed to create image from capture")?;
 
     // Get scale factor from screenshot space to actual pixels
-    let mw = p.get("max_width").and_then(|v| v.as_f64())
-        .or(config.max_screenshot_width.map(|v| v as f64))
-        .unwrap_or(DEFAULT_SCALE_WIDTH);
-    let mh = p.get("max_height").and_then(|v| v.as_f64())
-        .or(config.max_screenshot_height.map(|v| v as f64))
-        .unwrap_or(DEFAULT_SCALE_HEIGHT);
+    let (mw, mh) = resolve_scale_dims(Some(p), config);
 
     let (scale_x, scale_y) = if mw > 0.0 && mh > 0.0 {
         (full_w as f64 / mw, full_h as f64 / mh)
@@ -374,13 +362,34 @@ fn get_screen_dimensions() -> Result<(u32, u32), String> {
 const DEFAULT_SCALE_WIDTH: f64 = 1456.0;
 const DEFAULT_SCALE_HEIGHT: f64 = 819.0;
 
+/// Effective (max_width, max_height) for scaling. Precedence:
+/// explicit params > model-based provider default > config > legacy constant.
+/// Returns f64 with the existing "<= 0 disables" convention so both the screenshot
+/// output sizing and the coordinate scaling resolve to the SAME dimensions.
+fn resolve_scale_dims(params: Option<&Value>, config: &Config) -> (f64, f64) {
+    let pw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64());
+    let ph = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64());
+    if pw.is_some() || ph.is_some() {
+        return (
+            pw.or(config.max_screenshot_width.map(|v| v as f64)).unwrap_or(DEFAULT_SCALE_WIDTH),
+            ph.or(config.max_screenshot_height.map(|v| v as f64)).unwrap_or(DEFAULT_SCALE_HEIGHT),
+        );
+    }
+    if let Some(model) = params.and_then(|p| p.get("model")).and_then(|v| v.as_str()) {
+        if let Ok((sw, sh)) = get_screen_dimensions() {
+            if let Some((mw, mh)) = crate::provider_sizing::provider_default_size(model, sw, sh) {
+                return (mw as f64, mh as f64);
+            }
+        }
+    }
+    (
+        config.max_screenshot_width.map(|v| v as f64).unwrap_or(DEFAULT_SCALE_WIDTH),
+        config.max_screenshot_height.map(|v| v as f64).unwrap_or(DEFAULT_SCALE_HEIGHT),
+    )
+}
+
 fn scale_xy(x: f64, y: f64, params: Option<&Value>, config: &Config) -> Result<(i32, i32), String> {
-    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
-        .or(config.max_screenshot_width.map(|v| v as f64))
-        .unwrap_or(DEFAULT_SCALE_WIDTH);
-    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
-        .or(config.max_screenshot_height.map(|v| v as f64))
-        .unwrap_or(DEFAULT_SCALE_HEIGHT);
+    let (mw, mh) = resolve_scale_dims(params, config);
 
     if mw > 0.0 || mh > 0.0 {
         let (sw, sh) = get_screen_dimensions()?;
@@ -864,8 +873,23 @@ fn handle_get_screen_size(params: Option<&Value>, config: &Config) -> Result<Val
     let info = screen.display_info;
     let (ow, oh) = (info.width, info.height);
 
-    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64()).or(config.max_screenshot_width.map(|v| v as f64)).unwrap_or(DEFAULT_SCALE_WIDTH);
-    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64()).or(config.max_screenshot_height.map(|v| v as f64)).unwrap_or(DEFAULT_SCALE_HEIGHT);
+    // Model-based default (when injected by the server and no explicit size) keeps the
+    // reported screen size consistent with the model-sized screenshots.
+    let model_dims = if params.and_then(|p| p.get("max_width")).is_none()
+        && params.and_then(|p| p.get("max_height")).is_none()
+    {
+        params.and_then(|p| p.get("model")).and_then(|v| v.as_str())
+            .and_then(|m| crate::provider_sizing::provider_default_size(m, ow, oh))
+    } else {
+        None
+    };
+    let (mw, mh) = if let Some((dw, dh)) = model_dims {
+        (dw as f64, dh as f64)
+    } else {
+        let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64()).or(config.max_screenshot_width.map(|v| v as f64)).unwrap_or(DEFAULT_SCALE_WIDTH);
+        let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64()).or(config.max_screenshot_height.map(|v| v as f64)).unwrap_or(DEFAULT_SCALE_HEIGHT);
+        (mw, mh)
+    };
 
     if mw > 0.0 || mh > 0.0 {
         let r = if mw > 0.0 && mh > 0.0 {
@@ -1176,15 +1200,18 @@ fn handle_screenshot_window(params: Option<&Value>, config: &Config) -> Result<V
     let img = image::load_from_memory(&png_bytes)
         .map_err(|e| format!("failed to decode capture: {e}"))?;
 
-    let max_w = p
-        .get("max_width")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+    // Model-based default (no explicit size) computed from the captured WINDOW dimensions.
+    let model_dims = if p.get("max_width").is_none() && p.get("max_height").is_none() {
+        p.get("model").and_then(|v| v.as_str())
+            .and_then(|m| crate::provider_sizing::provider_default_size(m, img.width(), img.height()))
+    } else {
+        None
+    };
+    let max_w = model_dims.map(|(w, _)| w)
+        .or(p.get("max_width").and_then(|v| v.as_u64()).map(|v| v as u32))
         .or(config.max_screenshot_width).or(Some(DEFAULT_SCALE_WIDTH as u32));
-    let max_h = p
-        .get("max_height")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+    let max_h = model_dims.map(|(_, h)| h)
+        .or(p.get("max_height").and_then(|v| v.as_u64()).map(|v| v as u32))
         .or(config.max_screenshot_height).or(Some(DEFAULT_SCALE_HEIGHT as u32));
 
     let img = if let (Some(mw), Some(mh)) = (max_w, max_h) {
@@ -1275,12 +1302,7 @@ fn handle_elevate() -> Result<Value, String> {
 }
 
 fn get_output_scale(params: Option<&Value>, config: &Config) -> Result<(f64, f64), String> {
-    let mw = params.and_then(|p| p.get("max_width")).and_then(|v| v.as_f64())
-        .or(config.max_screenshot_width.map(|v| v as f64))
-        .unwrap_or(DEFAULT_SCALE_WIDTH);
-    let mh = params.and_then(|p| p.get("max_height")).and_then(|v| v.as_f64())
-        .or(config.max_screenshot_height.map(|v| v as f64))
-        .unwrap_or(DEFAULT_SCALE_HEIGHT);
+    let (mw, mh) = resolve_scale_dims(params, config);
     if mw > 0.0 || mh > 0.0 {
         let (sw, sh) = get_screen_dimensions()?;
         let (sw, sh) = (sw as f64, sh as f64);
