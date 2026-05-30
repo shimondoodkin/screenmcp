@@ -50,6 +50,7 @@ Take a screenshot of the device screen. Returns base64 WebP image.
 | `quality` | integer | 100 | 1–99 lossy WebP, 100 = lossless |
 | `max_width` | integer | — | Max width in pixels (aspect ratio preserved) |
 | `max_height` | integer | — | Max height in pixels (aspect ratio preserved) |
+| `model` | string | — | `claude`/`gemini`/`chatgpt`. Provider-tuned default size when `max_width`/`max_height` are omitted. Usually set by the connection `?model=` param, not per call. See [model-sizing.md](model-sizing.md). |
 
 **Returns:** `{ "image": "<base64 webp>" }`
 **Errors:** `"phone is locked"` if keyguard active.
@@ -62,6 +63,7 @@ Get the accessibility tree of the current screen.
 |-------|------|---------|-------------|
 | `max_width` | integer | 0 | Scale returned bounds to match screenshot space |
 | `max_height` | integer | 0 | Scale returned bounds to match screenshot space |
+| `model` | string | — | `claude`/`gemini`/`chatgpt`. Provider-tuned default bounds-scaling size when `max_width`/`max_height` are omitted. Usually set by the connection `?model=` param. See [model-sizing.md](model-sizing.md). |
 | `window` | string \| number | — | (Windows) Title substring or hwnd. Scopes the walk to one top-level window. |
 | `region` | object | — | (Windows) `{min_x, min_y, max_x, max_y}` in screenshot space. Filter by bounds. |
 | `region_mode` | string | `"inside"` | (Windows) `"inside"` (fully inside) or `"intersect"` (any overlap). |
@@ -404,6 +406,7 @@ Get the primary display dimensions. On Android, returns screen resolution and de
 |-------|------|---------|-------------|
 | `max_width` | integer | 0 | If set, return scaled dimensions matching screenshot space |
 | `max_height` | integer | 0 | If set, return scaled dimensions matching screenshot space |
+| `model` | string | — | `claude`/`gemini`/`chatgpt`. Reports the provider-tuned dimensions when `max_width`/`max_height` are omitted, matching the model-sized screenshots. Usually set by the connection `?model=` param. See [model-sizing.md](model-sizing.md). |
 
 **Returns (no scaling):** `{ "width": 3840, "height": 2160 }`
 
@@ -465,6 +468,7 @@ Capture a specific window by title or index, without needing to focus it first (
 | `index` | integer | — | Window index from `list_windows` |
 | `max_width` | integer | — | Max width in pixels |
 | `max_height` | integer | — | Max height in pixels |
+| `model` | string | — | `claude`/`gemini`/`chatgpt`. Provider-tuned default size (computed from the window dims) when `max_width`/`max_height` are omitted. Usually set by the connection `?model=` param. See [model-sizing.md](model-sizing.md). |
 
 **Returns:** `{ "image": "<base64 webp>", "title": "...", "width": ..., "height": ... }`
 
@@ -503,5 +507,6 @@ Capture a region of the screen for detailed inspection. Use small regions (e.g. 
 | `output_max_height` | integer | — | Max output height (only scales down) |
 | `max_width` | integer | 0 | Screenshot space width for coordinate scaling |
 | `max_height` | integer | 0 | Screenshot space height for coordinate scaling |
+| `model` | string | — | `claude`/`gemini`/`chatgpt`. Provider-tuned default coordinate-scaling size when `max_width`/`max_height` are omitted. Usually set by the connection `?model=` param. See [model-sizing.md](model-sizing.md). |
 
 **Returns:** `{ "image": "<base64 webp>" }`
