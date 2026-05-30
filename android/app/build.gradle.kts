@@ -55,4 +55,7 @@ dependencies {
     // OkHttp for WebSocket and SSE
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
+
+    // JVM unit tests
+    testImplementation("junit:junit:4.13.2")
 }

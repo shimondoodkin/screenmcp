@@ -267,23 +267,45 @@ class WebSocketClient(
         }
     }
 
+    /**
+     * Effective (max_width, max_height) for scaling. Precedence:
+     * explicit params > model-based provider default (from the real screen size) > legacy.
+     * Both the screenshot output sizing and the coordinate scaling resolve through this so
+     * the image the model sees and its click coordinates share one space.
+     */
+    private fun resolveScaleDims(params: JSONObject?, dm: android.util.DisplayMetrics): Pair<Double, Double> {
+        val hasW = params?.has("max_width") == true
+        val hasH = params?.has("max_height") == true
+        if (hasW || hasH) {
+            val mw = if (hasW) params!!.optDouble("max_width", DEFAULT_SCALE_WIDTH) else DEFAULT_SCALE_WIDTH
+            val mh = if (hasH) params!!.optDouble("max_height", DEFAULT_SCALE_HEIGHT) else DEFAULT_SCALE_HEIGHT
+            return Pair(mw, mh)
+        }
+        val model = params?.optString("model", "") ?: ""
+        if (model.isNotEmpty()) {
+            ProviderSizing.defaultSize(model, dm.widthPixels, dm.heightPixels)?.let {
+                return Pair(it.first.toDouble(), it.second.toDouble())
+            }
+        }
+        return Pair(DEFAULT_SCALE_WIDTH, DEFAULT_SCALE_HEIGHT)
+    }
+
     /** Scale coordinates from screenshot space to actual screen space using max_width/max_height params. */
     private fun scaleX(x: Double, params: JSONObject?, dm: android.util.DisplayMetrics): Float {
-        val mw = params?.optDouble("max_width", DEFAULT_SCALE_WIDTH) ?: DEFAULT_SCALE_WIDTH
+        val (mw, _) = resolveScaleDims(params, dm)
         if (mw > 0.0) return (x * dm.widthPixels / mw).toFloat()
         return x.toFloat()
     }
 
     private fun scaleY(y: Double, params: JSONObject?, dm: android.util.DisplayMetrics): Float {
-        val mh = params?.optDouble("max_height", DEFAULT_SCALE_HEIGHT) ?: DEFAULT_SCALE_HEIGHT
+        val (_, mh) = resolveScaleDims(params, dm)
         if (mh > 0.0) return (y * dm.heightPixels / mh).toFloat()
         return y.toFloat()
     }
 
     /** Get output scale factors (screen→screenshot space). Returns (sx, sy), both 1.0 if no scaling. */
     private fun getOutputScale(params: JSONObject?, dm: android.util.DisplayMetrics): Pair<Double, Double> {
-        val mw = params?.optDouble("max_width", DEFAULT_SCALE_WIDTH) ?: DEFAULT_SCALE_WIDTH
-        val mh = params?.optDouble("max_height", DEFAULT_SCALE_HEIGHT) ?: DEFAULT_SCALE_HEIGHT
+        val (mw, mh) = resolveScaleDims(params, dm)
         if (mw <= 0.0 && mh <= 0.0) return Pair(1.0, 1.0)
         val sx = if (mw > 0.0) mw / dm.widthPixels else mh / dm.heightPixels
         val sy = if (mh > 0.0) mh / dm.heightPixels else sx
@@ -340,8 +362,9 @@ class WebSocketClient(
                     return
                 }
                 val quality = params?.optInt("quality", 100) ?: 100
-                val maxWidth = if (params?.has("max_width") == true) params.optInt("max_width") else DEFAULT_SCALE_WIDTH.toInt()
-                val maxHeight = if (params?.has("max_height") == true) params.optInt("max_height") else DEFAULT_SCALE_HEIGHT.toInt()
+                val (mwD, mhD) = resolveScaleDims(params, dm)
+                val maxWidth = mwD.toInt()
+                val maxHeight = mhD.toInt()
 
                 service.takeScreenshot(object : AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
@@ -596,8 +619,16 @@ class WebSocketClient(
             "get_screen_size" -> {
                 val ow = dm.widthPixels
                 val oh = dm.heightPixels
-                val mw = params?.optDouble("max_width", DEFAULT_SCALE_WIDTH) ?: DEFAULT_SCALE_WIDTH
-                val mh = params?.optDouble("max_height", DEFAULT_SCALE_HEIGHT) ?: DEFAULT_SCALE_HEIGHT
+                // Model-based default (no explicit size) keeps the reported size consistent
+                // with the model-sized screenshots.
+                val modelDims = if (params?.has("max_width") != true && params?.has("max_height") != true) {
+                    val model = params?.optString("model", "") ?: ""
+                    if (model.isNotEmpty()) ProviderSizing.defaultSize(model, ow, oh) else null
+                } else null
+                val mw = modelDims?.first?.toDouble()
+                    ?: (params?.optDouble("max_width", DEFAULT_SCALE_WIDTH) ?: DEFAULT_SCALE_WIDTH)
+                val mh = modelDims?.second?.toDouble()
+                    ?: (params?.optDouble("max_height", DEFAULT_SCALE_HEIGHT) ?: DEFAULT_SCALE_HEIGHT)
                 val result = JSONObject()
                 if (mw > 0.0 || mh > 0.0) {
                     val r = when {
