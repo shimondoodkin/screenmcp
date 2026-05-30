@@ -72,6 +72,7 @@ class SseService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var reconnectDelay = INITIAL_RECONNECT_DELAY_MS
     private var shouldReconnect = true
+    @Volatile private var lastEventMs = 0L
 
     private val httpClient = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS) // no read timeout for SSE
@@ -208,21 +209,28 @@ class SseService : Service() {
             }
 
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+                val now = System.currentTimeMillis()
+                val gapMs = if (lastEventMs > 0) now - lastEventMs else -1L
+                lastEventMs = now
                 Log.i(TAG, "SSE event: type=$type data=$data")
-                AppLog.add("SSE", "Event: type=$type")
+                val gapStr = if (gapMs >= 0) " (gap ${gapMs}ms since last event)" else ""
+                AppLog.add("SSE", "Event: type=$type$gapStr")
                 handleSseEvent(data)
             }
 
             override fun onClosed(eventSource: EventSource) {
-                Log.i(TAG, "SSE closed")
-                AppLog.add("SSE", "Closed")
+                val wsUp = ScreenMcpService.instance?.isWorkerConnected() == true
+                Log.i(TAG, "SSE closed (wsUp=$wsUp)")
+                AppLog.add("SSE", if (wsUp) "Closed (SSE dropped while WS still up)" else "Closed")
                 handler.post { updateNotification("SSE disconnected") }
                 scheduleReconnect()
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                Log.e(TAG, "SSE failure: ${t?.message}, response=${response?.code}")
-                AppLog.add("SSE", "Failed: ${t?.message}, HTTP ${response?.code}")
+                val wsUp = ScreenMcpService.instance?.isWorkerConnected() == true
+                Log.e(TAG, "SSE failure: ${t?.message}, response=${response?.code}, wsUp=$wsUp")
+                val tail = if (wsUp) " (SSE dropped while WS still up)" else ""
+                AppLog.add("SSE", "Failed: ${t?.message}, HTTP ${response?.code}$tail")
                 handler.post { updateNotification("SSE connection failed") }
                 scheduleReconnect()
             }

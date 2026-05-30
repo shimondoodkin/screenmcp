@@ -179,6 +179,7 @@ pub struct TrayApp {
     local_port: u16,
     last_status: ConnectionStatus,
     is_registered: Arc<AtomicBool>,
+    first_frame: bool,
 
     // Async registration result: Ok(true)=registered, Ok(false)=unregistered, Err=error
     registration_result: Arc<Mutex<RegistrationResult>>,
@@ -348,6 +349,7 @@ impl TrayApp {
             local_port,
             last_status: ConnectionStatus::Disconnected,
             is_registered: Arc::new(AtomicBool::new(false)),
+            first_frame: true,
             registration_result: Arc::new(Mutex::new(None)),
             show_login,
             show_test: Arc::new(AtomicBool::new(false)),
@@ -579,8 +581,29 @@ impl TrayApp {
 
 impl eframe::App for TrayApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Drive GTK's GLib main context so tray-icon's StatusNotifier /
+        // AppIndicator D-Bus traffic flows. Without this the icon never
+        // registers with the panel and menu events never fire — eframe
+        // (winit) does not pump GTK events on its own.
+        while gtk::events_pending() {
+            gtk::main_iteration_do(false);
+        }
+
+        // Force-hide the placeholder main viewport. with_visible(false) is
+        // a hint many WMs / Wayland compositors ignore; reinforce it once
+        // the window actually exists, and shove it offscreen as a fallback
+        // in case the compositor refuses to unmap it either.
+        if self.first_frame {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
+                egui::pos2(-30000.0, -30000.0),
+            ));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.first_frame = false;
+        }
+
         // Poll periodically for tray events, status changes, auth events
-        ctx.request_repaint_after(Duration::from_millis(200));
+        ctx.request_repaint_after(Duration::from_millis(100));
 
         // Handle events
         self.handle_menu_events();
@@ -687,10 +710,19 @@ pub fn run_tray(
     local_port: u16,
     auth_event_rx: mpsc::Receiver<LocalServerEvent>,
 ) {
+    // tray-icon 0.19 (and its gtk-rs dep) require GTK to be initialized
+    // on the main thread before any tray Menu / TrayIcon is constructed.
+    // eframe (winit) does not init GTK, so we must do it explicitly here.
+    if let Err(e) = gtk::init() {
+        error!("gtk::init failed: {e} — tray icon will not appear");
+    }
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_visible(false)
+            .with_decorations(false)
             .with_inner_size([1.0, 1.0])
+            .with_position([-30000.0, -30000.0])
             .with_taskbar(false),
         ..Default::default()
     };

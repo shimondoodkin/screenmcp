@@ -52,6 +52,7 @@ class ScreenMcpService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         Log.i(TAG, "Accessibility service connected")
+        AppLog.add("Svc", "AccessibilityService onServiceConnected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -61,6 +62,7 @@ class ScreenMcpService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        AppLog.add("Svc", "AccessibilityService onDestroy")
         super.onDestroy()
         disconnectWorker()
         instance = null

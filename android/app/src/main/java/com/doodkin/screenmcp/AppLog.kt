@@ -20,6 +20,7 @@ object AppLog {
             if (entries.size > 200) entries.removeAt(0)
             version++
         }
+        FileLogger.log(tag, msg)
     }
 
     fun getEntries(): List<String> = synchronized(entries) { entries.toList() }

@@ -30,6 +30,7 @@ class ConnectionService : Service() {
     }
 
     private var currentStatus = "Disconnected"
+    private var skipCount = 0
 
     /** Log buffer for timing/debug messages from WebSocketClient */
     private val _logEntries = mutableListOf<String>()
@@ -42,6 +43,7 @@ class ConnectionService : Service() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+        AppLog.add("Conn", "ConnectionService onCreate")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -81,11 +83,13 @@ class ConnectionService : Service() {
         if (token != null) {
             // Skip if already connected to the same worker
             if (wsUrl != null && service.isWorkerConnectedTo(wsUrl)) {
-                Log.i(TAG, "Already connected to $wsUrl, skipping")
-                AppLog.add("Conn", "Already connected to $wsUrl, skipping")
+                skipCount++
+                Log.i(TAG, "Already connected to $wsUrl, skipping (skip #$skipCount since last connect)")
+                AppLog.add("Conn", "Already connected to $wsUrl, skipping (skip #$skipCount since last connect)")
                 return START_STICKY
             }
 
+            skipCount = 0
             service.disconnectWorker()
 
             if (wsUrl != null) {
@@ -103,6 +107,7 @@ class ConnectionService : Service() {
     }
 
     override fun onDestroy() {
+        AppLog.add("Conn", "ConnectionService onDestroy")
         ScreenMcpService.instance?.onConnectionStatusChange = null
         ScreenMcpService.instance?.onLog = null
         instance = null

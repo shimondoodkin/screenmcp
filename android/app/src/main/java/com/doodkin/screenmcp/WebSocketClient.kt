@@ -56,6 +56,9 @@ class WebSocketClient(
     /** Monotonic generation counter — stale callbacks compare against this to bail out */
     @Volatile private var connectionGeneration = 0L
 
+    /** Wall-clock ms of the most recent successful auth_ok, 0 if never */
+    @Volatile private var lastAuthOkMs = 0L
+
     /**
      * Connect via discovery API: call /api/discover to get a worker URL, then WS connect.
      */
@@ -112,8 +115,21 @@ class WebSocketClient(
     /** Timestamped log: writes to logcat AND calls onLog callback for UI display */
     private fun tlog(msg: String) {
         val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+        val gen = connectionGeneration
         Log.i(TAG, msg)
-        onLog?.invoke("[$ts] $msg")
+        onLog?.invoke("[$ts] [gen=$gen] $msg")
+    }
+
+    private fun closeCodeName(code: Int): String = when (code) {
+        1000 -> "normal"
+        1001 -> "going_away"
+        1002 -> "protocol_error"
+        1003 -> "unsupported_data"
+        1006 -> "abnormal"
+        1008 -> "policy_violation"
+        1011 -> "server_error"
+        in 4000..4999 -> "app_$code"
+        else -> "code_$code"
     }
 
     private fun discoverAndConnect() {
@@ -211,7 +227,8 @@ class WebSocketClient(
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                tlog("WS closed: $code $reason")
+                val ageMs = if (lastAuthOkMs > 0) System.currentTimeMillis() - lastAuthOkMs else -1L
+                tlog("WS closed: $code (${closeCodeName(code)}) reason='$reason' ageSinceAuth=${ageMs}ms")
                 isConnected.set(false)
                 isConnecting.set(false)
                 if (myGeneration != connectionGeneration) return
@@ -220,7 +237,8 @@ class WebSocketClient(
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                tlog("WS failure: ${t.message}")
+                val ageMs = if (lastAuthOkMs > 0) System.currentTimeMillis() - lastAuthOkMs else -1L
+                tlog("WS failure: ${t.message} httpCode=${response?.code} ageSinceAuth=${ageMs}ms")
                 isConnected.set(false)
                 isConnecting.set(false)
                 if (myGeneration != connectionGeneration) return
@@ -239,6 +257,7 @@ class WebSocketClient(
                 "auth_ok" -> {
                     val totalMs = if (connectStartMs > 0) System.currentTimeMillis() - connectStartMs else 0
                     tlog("Authenticated (total connect: ${totalMs}ms)")
+                    lastAuthOkMs = System.currentTimeMillis()
                     isConnected.set(true)
                     isConnecting.set(false)
                     reconnectAttempt = 0
@@ -251,6 +270,7 @@ class WebSocketClient(
                     handler.post { onStatusChange("Auth failed") }
                 }
                 "ping" -> {
+                    tlog("ping received, sending pong")
                     ws.send(JSONObject().put("type", "pong").toString())
                 }
                 "error" -> {

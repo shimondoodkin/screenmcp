@@ -1,6 +1,6 @@
 [package]
 name = "screenmcp-linux"
-version = "0.3.3"
+version = "0.3.7"
 edition = "2021"
 description = "ScreenMCP Linux client - desktop control via system tray"
 
@@ -10,6 +10,7 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tray-icon = "0.19"
+gtk = "0.18"
 eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 regex = "1"
 screenshots = "0.8"

@@ -27,6 +27,9 @@ windows/target/
 mac/ScreenMCP.app/
 mac/ScreenMCP.dmg
 
+# Linux build artifacts
+linux/*.deb
+
 # IDE
 .idea/
 *.iml

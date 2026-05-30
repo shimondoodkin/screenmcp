@@ -17,9 +17,11 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
 import okhttp3.MediaType.Companion.toMediaType
@@ -93,6 +95,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        FileLogger.init(this)
+
         screenshotManager = ScreenshotManager(cacheDir)
 
         tvStatus = findViewById(R.id.tvStatus)
@@ -115,6 +119,7 @@ class MainActivity : AppCompatActivity() {
         setupGlobalActionButtons()
         setupCameraButtons()
         setupUiTreeButton()
+        setupFileLogging()
 
         if (isOpenSourceMode()) {
             // In open source mode, hide registration section
@@ -678,6 +683,59 @@ class MainActivity : AppCompatActivity() {
                 val tree = service.getUiTree()
                 runOnUiThread { tvUiTree.text = tree; log("UI tree (${tree.lines().size} nodes)") }
             }, 3000)
+        }
+    }
+
+    private fun setupFileLogging() {
+        val cb = findViewById<CheckBox>(R.id.cbFileLogging)
+        val tvPath = findViewById<TextView>(R.id.tvLogPath)
+        val btnOpen = findViewById<Button>(R.id.btnOpenLogsFolder)
+        val btnClear = findViewById<Button>(R.id.btnClearLogs)
+
+        fun refreshPath() {
+            val on = FileLogger.isEnabled()
+            tvPath.visibility = if (on) View.VISIBLE else View.GONE
+            tvPath.text = "Path: " + FileLogger.getLogDirPath()
+        }
+
+        cb.isChecked = FileLogger.isEnabled()
+        refreshPath()
+
+        cb.setOnCheckedChangeListener { _, checked ->
+            FileLogger.setEnabled(this, checked)
+            refreshPath()
+            log(if (checked) "File logging enabled" else "File logging disabled")
+        }
+
+        btnOpen.setOnClickListener {
+            val dir = FileLogger.getLogDir()
+            if (dir == null) {
+                Toast.makeText(this, "Logs folder unavailable", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            try {
+                val uri = FileProvider.getUriForFile(
+                    this,
+                    "$packageName.fileprovider",
+                    dir
+                )
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "resource/folder")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                if (intent.resolveActivity(packageManager) != null) {
+                    startActivity(intent)
+                } else {
+                    Toast.makeText(this, "Logs at: ${dir.absolutePath}", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "Logs at: ${dir.absolutePath}", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        btnClear.setOnClickListener {
+            FileLogger.clear()
+            Toast.makeText(this, "Log files cleared", Toast.LENGTH_SHORT).show()
         }
     }
 
