@@ -3,7 +3,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ScreenMCPClient, DeviceConnection } from '@screenmcp/sdk';
 import { Config } from './lib/config.js';
+import { resolveModel, applyModelDefault } from './model.js';
 import { z } from 'zod';
+
+// Documented model param for the screenshot-family tool schemas (input commands accept
+// it silently via server-side injection).
+const modelParam = z.enum(['claude', 'gemini', 'chatgpt']).optional()
+  .describe('Consumer model; sets a provider-tuned default screenshot size when max_width/max_height are omitted. Normally supplied by the connection ?model= param.');
 
 // Per-device SDK connections (pooled like cloud MCP server)
 const deviceConnections = new Map<string, DeviceConnection>();
@@ -27,6 +33,7 @@ const phoneTools = [
       quality: z.number().min(1).max(100).optional().describe('Image quality 1-100 (default: 100 = lossless)'),
       max_width: z.number().optional().describe('Max width for scaling'),
       max_height: z.number().optional().describe('Max height for scaling'),
+      model: modelParam,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       const res = await phone.sendCommand('screenshot', params);
@@ -39,6 +46,7 @@ const phoneTools = [
     inputSchema: {
       device_id: deviceIdParam,
       ...scalingParams,
+      model: modelParam,
       window: z.union([z.string(), z.number()]).optional()
         .describe('Title substring (string) or hwnd (number). Scopes to one top-level window. Windows only.'),
       region: z.object({
@@ -416,6 +424,7 @@ const phoneTools = [
       index: z.number().int().optional().describe('Window index from list_windows'),
       max_width: z.number().int().optional().describe('Max width in pixels'),
       max_height: z.number().int().optional().describe('Max height in pixels'),
+      model: modelParam,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('screenshot_window', params)).result;
@@ -434,6 +443,7 @@ const phoneTools = [
       output_max_width: z.number().int().optional().describe('Max output width in pixels'),
       output_max_height: z.number().int().optional().describe('Max output height in pixels'),
       ...scalingParams,
+      model: modelParam,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('screenshot_region', params)).result;
@@ -481,6 +491,10 @@ export function createMcpHandler(
       res.end(JSON.stringify({ error: 'Invalid token' }));
       return;
     }
+
+    // Per-connection consumer model from ?model= on the MCP URL
+    const reqUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const model = resolveModel(reqUrl.searchParams.get('model'));
 
     // Create MCP server per request (stateless, same as web/)
     const server = new McpServer({
@@ -543,7 +557,8 @@ export function createMcpHandler(
             const deviceId = resolveDeviceId(deviceNumber);
 
             const p = await getPhone(deviceId);
-            const { device_id: _, ...phoneParams } = params;
+            const { device_id: _, ...rest } = params;
+            const phoneParams = applyModelDefault(tool.name, rest, model);
             const result = await tool.handler(p, phoneParams);
             return {
               content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],

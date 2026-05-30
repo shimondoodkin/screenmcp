@@ -4,7 +4,12 @@ exports.createMcpHandler = createMcpHandler;
 const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
 const streamableHttp_js_1 = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 const sdk_1 = require("@screenmcp/sdk");
+const model_js_1 = require("./model.js");
 const zod_1 = require("zod");
+// Documented model param for the screenshot-family tool schemas (input commands accept
+// it silently via server-side injection).
+const modelParam = zod_1.z.enum(['claude', 'gemini', 'chatgpt']).optional()
+    .describe('Consumer model; sets a provider-tuned default screenshot size when max_width/max_height are omitted. Normally supplied by the connection ?model= param.');
 // Per-device SDK connections (pooled like cloud MCP server)
 const deviceConnections = new Map();
 // Common device_id parameter added to every phone tool
@@ -24,6 +29,7 @@ const phoneTools = [
             quality: zod_1.z.number().min(1).max(100).optional().describe('Image quality 1-100 (default: 100 = lossless)'),
             max_width: zod_1.z.number().optional().describe('Max width for scaling'),
             max_height: zod_1.z.number().optional().describe('Max height for scaling'),
+            model: modelParam,
         },
         handler: async (phone, params) => {
             const res = await phone.sendCommand('screenshot', params);
@@ -36,6 +42,7 @@ const phoneTools = [
         inputSchema: {
             device_id: deviceIdParam,
             ...scalingParams,
+            model: modelParam,
             window: zod_1.z.union([zod_1.z.string(), zod_1.z.number()]).optional()
                 .describe('Title substring (string) or hwnd (number). Scopes to one top-level window. Windows only.'),
             region: zod_1.z.object({
@@ -413,6 +420,7 @@ const phoneTools = [
             index: zod_1.z.number().int().optional().describe('Window index from list_windows'),
             max_width: zod_1.z.number().int().optional().describe('Max width in pixels'),
             max_height: zod_1.z.number().int().optional().describe('Max height in pixels'),
+            model: modelParam,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('screenshot_window', params)).result;
@@ -431,6 +439,7 @@ const phoneTools = [
             output_max_width: zod_1.z.number().int().optional().describe('Max output width in pixels'),
             output_max_height: zod_1.z.number().int().optional().describe('Max output height in pixels'),
             ...scalingParams,
+            model: modelParam,
         },
         handler: async (phone, params) => {
             return (await phone.sendCommand('screenshot_region', params)).result;
@@ -473,6 +482,9 @@ function createMcpHandler(config, verifyToken) {
             res.end(JSON.stringify({ error: 'Invalid token' }));
             return;
         }
+        // Per-connection consumer model from ?model= on the MCP URL
+        const reqUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+        const model = (0, model_js_1.resolveModel)(reqUrl.searchParams.get('model'));
         // Create MCP server per request (stateless, same as web/)
         const server = new mcp_js_1.McpServer({
             name: 'ScreenMCP',
@@ -520,7 +532,8 @@ function createMcpHandler(config, verifyToken) {
                     const deviceNumber = params.device_id;
                     const deviceId = resolveDeviceId(deviceNumber);
                     const p = await getPhone(deviceId);
-                    const { device_id: _, ...phoneParams } = params;
+                    const { device_id: _, ...rest } = params;
+                    const phoneParams = (0, model_js_1.applyModelDefault)(tool.name, rest, model);
                     const result = await tool.handler(p, phoneParams);
                     return {
                         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
