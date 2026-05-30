@@ -16,6 +16,7 @@ const model_js_1 = require("./model.js");
 });
 (0, node_test_1.test)('COORD_TOOLS covers screenshot family and pointer commands', () => {
     for (const name of ['screenshot', 'screenshot_region', 'screenshot_window', 'ui_tree',
+        'get_screen_size',
         'click', 'long_click', 'drag', 'scroll', 'double_click',
         'right_click', 'middle_click', 'mouse_move', 'mouse_scroll']) {
         strict_1.default.ok(model_js_1.COORD_TOOLS.has(name), `${name} should be in COORD_TOOLS`);

@@ -2,6 +2,7 @@ export type ModelProvider = 'claude' | 'gemini' | 'chatgpt';
 
 export const COORD_TOOLS = new Set<string>([
   'screenshot', 'screenshot_region', 'screenshot_window', 'ui_tree',
+  'get_screen_size',
   'click', 'long_click', 'drag', 'scroll', 'double_click',
   'right_click', 'middle_click', 'mouse_move', 'mouse_scroll',
 ]);
