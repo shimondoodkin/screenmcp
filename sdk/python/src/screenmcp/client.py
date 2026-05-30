@@ -276,8 +276,13 @@ class DeviceConnection:
         quality: int | None = None,
         max_width: int | None = None,
         max_height: int | None = None,
+        model: str | None = None,
     ) -> dict[str, Any]:
-        """Take a screenshot.  Returns dict with ``image`` (base64 JPEG)."""
+        """Take a screenshot.  Returns dict with ``image`` (base64 JPEG).
+
+        ``model`` ("claude"/"gemini"/"chatgpt") selects a provider-tuned default
+        size when ``max_width``/``max_height`` are omitted.
+        """
         params: dict[str, Any] = {}
         if quality is not None:
             params["quality"] = quality
@@ -285,6 +290,8 @@ class DeviceConnection:
             params["max_width"] = max_width
         if max_height is not None:
             params["max_height"] = max_height
+        if model is not None:
+            params["model"] = model
         resp = await self.send_command("screenshot", params or None)
         return resp.result
 

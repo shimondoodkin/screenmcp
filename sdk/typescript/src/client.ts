@@ -255,8 +255,11 @@ export class DeviceConnection extends EventEmitter {
   // -----------------------------------------------------------------------
 
   /** Take a screenshot. Returns the base64-encoded WebP image. */
-  async screenshot(): Promise<ScreenshotResult> {
-    const resp = await this.sendCommand("screenshot");
+  async screenshot(opts?: { quality?: number; maxWidth?: number; maxHeight?: number; model?: string }): Promise<ScreenshotResult> {
+    const params = opts
+      ? { quality: opts.quality, max_width: opts.maxWidth, max_height: opts.maxHeight, model: opts.model }
+      : undefined;
+    const resp = await this.sendCommand("screenshot", params);
     return { image: (resp.result as ScreenshotResult | undefined)?.image ?? "" };
   }
 
@@ -500,13 +503,13 @@ export class DeviceConnection extends EventEmitter {
   }
 
   /** Take a screenshot of a specific window (desktop only). */
-  async screenshotWindow(opts: { title?: string; index?: number; maxWidth?: number; maxHeight?: number }) {
-    return this.sendCommand('screenshot_window', { title: opts.title, index: opts.index, max_width: opts.maxWidth, max_height: opts.maxHeight });
+  async screenshotWindow(opts: { title?: string; index?: number; maxWidth?: number; maxHeight?: number; model?: string }) {
+    return this.sendCommand('screenshot_window', { title: opts.title, index: opts.index, max_width: opts.maxWidth, max_height: opts.maxHeight, model: opts.model });
   }
 
   /** Capture a region of the screen (desktop only). */
-  async screenshotRegion(minX: number, minY: number, maxX: number, maxY: number, opts?: { quality?: number; outputMaxWidth?: number; outputMaxHeight?: number; maxWidth?: number; maxHeight?: number }) {
-    return this.sendCommand('screenshot_region', { min_x: minX, min_y: minY, max_x: maxX, max_y: maxY, ...opts ? { quality: opts.quality, output_max_width: opts.outputMaxWidth, output_max_height: opts.outputMaxHeight, max_width: opts.maxWidth, max_height: opts.maxHeight } : {} });
+  async screenshotRegion(minX: number, minY: number, maxX: number, maxY: number, opts?: { quality?: number; outputMaxWidth?: number; outputMaxHeight?: number; maxWidth?: number; maxHeight?: number; model?: string }) {
+    return this.sendCommand('screenshot_region', { min_x: minX, min_y: minY, max_x: maxX, max_y: maxY, ...opts ? { quality: opts.quality, output_max_width: opts.outputMaxWidth, output_max_height: opts.outputMaxHeight, max_width: opts.maxWidth, max_height: opts.maxHeight, model: opts.model } : {} });
   }
 
   /** Check if the desktop client is running with elevated/admin privileges. */
