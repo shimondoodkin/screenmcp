@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "npx tsx src/server.ts",
     "build": "npx tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "node --import tsx --test src/model.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -16,6 +17,7 @@
   "devDependencies": {
     "@types/node": "^20",
     "@types/ws": "^8.18.1",
+    "tsx": "^4.22.3",
     "typescript": "^5"
   }
 }
