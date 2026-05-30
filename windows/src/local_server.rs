@@ -1,11 +1,20 @@
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use serde_json::{json, Value};
+use std::collections::HashMap;
+
+/// Coordinate-bearing commands that take a provider-tuned default size when the
+/// connection set ?model= and the caller gave no max_width/max_height.
+const MODEL_COORD_TOOLS: &[&str] = &[
+    "screenshot", "screenshot_region", "screenshot_window", "ui_tree",
+    "get_screen_size", "click", "long_click", "drag", "scroll",
+    "double_click", "right_click", "middle_click", "mouse_move", "mouse_scroll",
+];
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -502,6 +511,7 @@ fn mcp_tool_definitions() -> Vec<Value> {
 
 async fn handle_mcp_post(
     State(state): State<AppState>,
+    Query(query): Query<HashMap<String, String>>,
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
@@ -562,7 +572,23 @@ async fn handle_mcp_post(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let tool_args = params.get("arguments").cloned().unwrap_or(json!({}));
+            let mut tool_args = params.get("arguments").cloned().unwrap_or(json!({}));
+
+            // Inject the connection's model (from ?model=) so coordinate tools pick a
+            // provider-tuned default size when the caller gave no max_width/max_height.
+            if let Some(model) = query
+                .get("model")
+                .map(|s| s.as_str())
+                .filter(|m| matches!(*m, "claude" | "gemini" | "chatgpt"))
+            {
+                if MODEL_COORD_TOOLS.contains(&tool_name.as_str()) {
+                    if let Some(obj) = tool_args.as_object_mut() {
+                        if !obj.contains_key("max_width") && !obj.contains_key("max_height") {
+                            obj.insert("model".to_string(), json!(model));
+                        }
+                    }
+                }
+            }
 
             let config_clone = config.clone();
             drop(config);

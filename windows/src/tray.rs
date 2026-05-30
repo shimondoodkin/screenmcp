@@ -222,7 +222,11 @@ impl TrayApp {
         let config = Config::load();
 
         // ── Build tray menu ──
-        let about = MenuItem::new("About ScreenMCP.com", true, None);
+        let about = MenuItem::new(
+            concat!("About ScreenMCP.com ", env!("SCREENMCP_VERSION")),
+            true,
+            None,
+        );
         let status = MenuItem::new("Status: Disconnected", false, None);
         let oss_ready = config.opensource_server_enabled
             && !config.opensource_user_id.is_empty()

@@ -8,6 +8,8 @@ pub struct LocalModeState {
     pub show_key: bool,
     pub status: String,
     pub saved: bool,
+    /// Default model for the copyable MCP URL: "default" | "claude" | "gemini" | "chatgpt".
+    pub model: String,
 }
 
 impl LocalModeState {
@@ -19,6 +21,7 @@ impl LocalModeState {
             show_key: false,
             status: String::new(),
             saved: false,
+            model: "default".to_string(),
         }
     }
 
@@ -82,6 +85,27 @@ impl LocalModeState {
                 );
             });
 
+            ui.add_space(8.0);
+
+            // Model: sets a provider-tuned default screenshot size via ?model= in the URL
+            ui.horizontal(|ui| {
+                ui.label("Model:     ");
+                let label = match self.model.as_str() {
+                    "claude" => "Claude",
+                    "gemini" => "Gemini",
+                    "chatgpt" => "ChatGPT",
+                    _ => "Default",
+                };
+                egui::ComboBox::from_id_salt("local_mode_model")
+                    .selected_text(label)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.model, "default".to_string(), "Default");
+                        ui.selectable_value(&mut self.model, "claude".to_string(), "Claude");
+                        ui.selectable_value(&mut self.model, "gemini".to_string(), "Gemini");
+                        ui.selectable_value(&mut self.model, "chatgpt".to_string(), "ChatGPT");
+                    });
+            });
+
             ui.add_space(20.0);
 
             ui.vertical_centered(|ui| {
@@ -142,12 +166,17 @@ impl LocalModeState {
                             .strong(),
                     );
                     let port = self.port_str.trim();
+                    let model_q = if self.model != "default" {
+                        format!("?model={}", self.model)
+                    } else {
+                        String::new()
+                    };
                     let snippet = format!(
                         r#"{{
   "mcpServers": {{
     "screenmcp": {{
       "type": "url",
-      "url": "http://127.0.0.1:{port}/mcp",
+      "url": "http://127.0.0.1:{port}/mcp{model_q}",
       "headers": {{
         "Authorization": "Bearer {}"
       }}

@@ -1,16 +1,6 @@
-fn main() {
-    emit_version();
-
-    if std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
-        let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/icon-app.ico");
-        res.compile().expect("failed to compile windows resources");
-    }
-}
-
 /// Expose SCREENMCP_VERSION derived from the git tag.
 /// Priority: CI tag (GITHUB_REF_NAME) -> `git describe --tags` -> Cargo version.
-fn emit_version() {
+fn main() {
     let version = std::env::var("GITHUB_REF_NAME")
         .ok()
         .filter(|s| s.starts_with('v'))
