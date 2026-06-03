@@ -32,6 +32,52 @@ def to_native(x, y, native, maxw=None, maxh=None):
     return (_axis(x, native[0], sw), _axis(y, native[1], sh))
 
 
+# === PLATFORM DETECTION ===
+IS_WIN = sys.platform.startswith("win")
+IS_MAC = sys.platform == "darwin"
+IS_LINUX = sys.platform.startswith("linux")
+
+PRIMARY_MOD = "cmd" if IS_MAC else "ctrl"
+
+
+def nav_keymap():
+    if IS_MAC:
+        return {"back": ["cmd", "["], "home": ["f3"], "recents": ["cmd", "tab"]}
+    if IS_WIN:
+        return {"back": ["alt", "left"], "home": ["cmd"], "recents": ["alt", "tab"]}
+    return {"back": ["alt", "left"], "home": ["cmd"], "recents": ["alt", "tab"]}
+
+
+# Lazy backend singletons (overridable in tests).
+_mouse = None
+_keyboard = None
+_grabber = None
+
+
+def mouse():
+    global _mouse
+    if _mouse is None:
+        from pynput.mouse import Controller
+        _mouse = Controller()
+    return _mouse
+
+
+def keyboard():
+    global _keyboard
+    if _keyboard is None:
+        from pynput.keyboard import Controller
+        _keyboard = Controller()
+    return _keyboard
+
+
+def grabber():
+    global _grabber
+    if _grabber is None:
+        import mss
+        _grabber = mss.mss()
+    return _grabber
+
+
 # === JSON-RPC STDIO SERVER ===
 def _result(rpc_id, result):
     return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
