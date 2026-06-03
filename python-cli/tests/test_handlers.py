@@ -147,3 +147,35 @@ def test_list_windows_maps_bounds_to_scaled_space(monkeypatch):
     out = app.cmd_list_windows({})
     text = out["content"][0]["text"]
     assert '"x": 100' in text and '"y": 200' in text  # halved into 1456x819 space
+
+
+def test_set_and_get_clipboard(monkeypatch):
+    store = {"v": ""}
+    monkeypatch.setattr(app, "_clip_set", lambda s: store.__setitem__("v", s))
+    monkeypatch.setattr(app, "_clip_get", lambda: store["v"])
+    app.cmd_set_clipboard({"text": "hello"})
+    out = app.cmd_get_clipboard({})
+    assert "hello" in out["content"][0]["text"]
+
+
+def test_get_text_restores_original_clipboard(monkeypatch):
+    store = {"v": "ORIGINAL"}
+    monkeypatch.setattr(app, "_clip_set", lambda s: store.__setitem__("v", s))
+    monkeypatch.setattr(app, "_clip_get", lambda: store["v"])
+    # select_all + copy simulated: copy writes "SELECTED" into the clipboard
+    monkeypatch.setattr(app, "cmd_select_all", lambda a: app._ok())
+
+    def fake_copy(a):
+        store["v"] = "SELECTED"
+        return app._ok()
+
+    monkeypatch.setattr(app, "cmd_copy", fake_copy)
+    out = app.cmd_get_text({})
+    assert "SELECTED" in out["content"][0]["text"]
+    assert store["v"] == "ORIGINAL"  # restored
+
+
+def test_camera_unsupported_when_cv2_missing(monkeypatch):
+    monkeypatch.setattr(app, "_import_cv2", lambda: None)
+    out = app.cmd_camera({})
+    assert '"unsupported": true' in out["content"][0]["text"]

@@ -446,6 +446,129 @@ def cmd_recents(args):
     return _ok()
 
 
+# === CLIPBOARD / TEXT ===
+def _clip_get():
+    import pyperclip
+    return pyperclip.paste()
+
+
+def _clip_set(text):
+    import pyperclip
+    pyperclip.copy(text)
+
+
+def cmd_get_clipboard(args):
+    return _text_result({"text": _clip_get()})
+
+
+def cmd_set_clipboard(args):
+    _clip_set(args.get("text", ""))
+    return _ok()
+
+
+def cmd_select_all(args):
+    _send_combo([PRIMARY_MOD, "a"])
+    return _ok()
+
+
+def cmd_copy(args):
+    _send_combo([PRIMARY_MOD, "c"])
+    _time.sleep(0.05)
+    if args.get("return_text"):
+        return _text_result({"text": _clip_get()})
+    return _ok()
+
+
+def cmd_paste(args):
+    if "text" in args:
+        _clip_set(args["text"])
+    _send_combo([PRIMARY_MOD, "v"])
+    return _ok()
+
+
+def cmd_get_text(args):
+    original = _clip_get()
+    try:
+        cmd_select_all({})
+        cmd_copy({})
+        _time.sleep(0.05)
+        text = _clip_get()
+    finally:
+        _clip_set(original)  # restore — heuristic must not clobber clipboard
+    return _text_result({"text": text})
+
+
+# === SYSTEM ===
+import os as _os
+
+
+def cmd_is_elevated(args):
+    if IS_WIN:
+        try:
+            import ctypes
+            elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            elevated = False
+    else:
+        elevated = (hasattr(_os, "geteuid") and _os.geteuid() == 0)
+    return _text_result({"elevated": elevated})
+
+
+def cmd_elevate(args):
+    return _text_result({"status": "ok", "unsupported": True,
+                         "reason": "cannot re-launch a live stdio process elevated"})
+
+
+def _import_cv2():
+    try:
+        import cv2
+        return cv2
+    except Exception:
+        return None
+
+
+def cmd_list_cameras(args):
+    cv2 = _import_cv2()
+    if cv2 is None:
+        return _text_result({"status": "ok", "unsupported": True, "reason": "opencv-python not installed"})
+    found = []
+    for i in range(5):
+        cap = cv2.VideoCapture(i)
+        if cap is not None and cap.isOpened():
+            found.append(i)
+            cap.release()
+    return _text_result({"cameras": found})
+
+
+def cmd_camera(args):
+    cv2 = _import_cv2()
+    if cv2 is None:
+        return _text_result({"status": "ok", "unsupported": True, "reason": "opencv-python not installed"})
+    index = args.get("index", 0)
+    cap = cv2.VideoCapture(index)
+    try:
+        ok, frame = cap.read()
+        if not ok:
+            return _text_result({"status": "error", "error": f"camera {index} read failed"})
+        ok, buf = cv2.imencode(".webp", frame)
+        return _image_result(_b64.b64encode(buf.tobytes()).decode("ascii"))
+    finally:
+        cap.release()
+
+
+def cmd_play_audio(args):
+    try:
+        import simpleaudio
+    except Exception:
+        return _text_result({"status": "ok", "unsupported": True, "reason": "simpleaudio not installed"})
+    data = _b64.b64decode(args["audio"])
+    wave_obj = simpleaudio.WaveObject(data, num_channels=args.get("channels", 2),
+                                      bytes_per_sample=args.get("bytes_per_sample", 2),
+                                      sample_rate=args.get("sample_rate", 44100))
+    wave_obj.play().wait_done()
+    return _ok()
+
+
 # === JSON-RPC STDIO SERVER ===
 def _result(rpc_id, result):
     return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
