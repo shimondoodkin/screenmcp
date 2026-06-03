@@ -6,6 +6,7 @@ mod config;
 mod local_mode_window;
 mod local_server;
 mod login_window;
+mod overlay;
 mod provider_sizing;
 mod sse;
 mod test_window;
