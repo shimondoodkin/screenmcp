@@ -208,6 +208,91 @@ def cmd_hotkey(args):
     return _ok()
 
 
+# === MOUSE ===
+import time as _time
+
+
+def _move(args):
+    nw, nh = _primary_native()
+    nx, ny = to_native(args["x"], args["y"], (nw, nh),
+                       args.get("max_width"), args.get("max_height"))
+    mouse().position = (nx, ny)
+    return nx, ny
+
+
+def _button(name="left"):
+    from pynput.mouse import Button
+    return {"left": Button.left, "right": Button.right, "middle": Button.middle}[name]
+
+
+def cmd_mouse_move(args):
+    _move(args)
+    return _ok()
+
+
+def cmd_click(args):
+    _move(args)
+    mouse().click(_button("left"), 1)
+    return _ok()
+
+
+def cmd_right_click(args):
+    _move(args)
+    mouse().click(_button("right"), 1)
+    return _ok()
+
+
+def cmd_middle_click(args):
+    _move(args)
+    mouse().click(_button("middle"), 1)
+    return _ok()
+
+
+def cmd_double_click(args):
+    _move(args)
+    mouse().click(_button("left"), 2)
+    return _ok()
+
+
+def cmd_long_click(args):
+    _move(args)
+    mouse().press(_button("left"))
+    _time.sleep(args.get("duration", 1000) / 1000.0)
+    mouse().release(_button("left"))
+    return _ok()
+
+
+def cmd_drag(args):
+    nw, nh = _primary_native()
+    sx, sy = to_native(args["startX"], args["startY"], (nw, nh),
+                       args.get("max_width"), args.get("max_height"))
+    ex, ey = to_native(args["endX"], args["endY"], (nw, nh),
+                       args.get("max_width"), args.get("max_height"))
+    mouse().position = (sx, sy)
+    mouse().press(_button("left"))
+    _time.sleep(args.get("duration", 300) / 1000.0)
+    mouse().position = (ex, ey)
+    mouse().release(_button("left"))
+    return _ok()
+
+
+def cmd_scroll(args):
+    _move(args)
+    direction = args.get("direction")
+    if direction:
+        amount = args.get("amount", 3)
+        dx, dy = {"up": (0, amount), "down": (0, -amount),
+                  "left": (-amount, 0), "right": (amount, 0)}[direction]
+    else:
+        dx, dy = args.get("dx", 0), args.get("dy", 0)
+    mouse().scroll(dx, dy)
+    return _ok()
+
+
+def cmd_mouse_scroll(args):
+    return cmd_scroll(args)
+
+
 # === JSON-RPC STDIO SERVER ===
 def _result(rpc_id, result):
     return {"jsonrpc": "2.0", "id": rpc_id, "result": result}

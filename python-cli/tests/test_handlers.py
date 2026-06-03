@@ -78,3 +78,47 @@ def test_resolve_key_maps_named_keys():
     from pynput.keyboard import Key
     assert app.resolve_key("enter") == Key.enter
     assert app.resolve_key("a") == "a"
+
+
+class _RecMouse:
+    def __init__(self):
+        self.position = (0, 0)
+        self.calls = []
+
+    def click(self, button, count=1):
+        self.calls.append(("click", str(button), count))
+
+    def press(self, button):
+        self.calls.append(("press", str(button)))
+
+    def release(self, button):
+        self.calls.append(("release", str(button)))
+
+    def scroll(self, dx, dy):
+        self.calls.append(("scroll", dx, dy))
+
+
+def _patch_mouse(monkeypatch, native=(1456, 819)):
+    rec = _RecMouse()
+    monkeypatch.setattr(app, "mouse", lambda: rec)
+    monkeypatch.setattr(app, "_primary_native", lambda: native)
+    return rec
+
+
+def test_click_moves_to_scaled_point_and_clicks(monkeypatch):
+    rec = _patch_mouse(monkeypatch, native=(2912, 1638))  # 2x
+    app.cmd_click({"x": 100, "y": 200})
+    assert rec.position == (200, 400)
+    assert rec.calls[0][0] == "click"
+
+
+def test_double_click_count_two(monkeypatch):
+    rec = _patch_mouse(monkeypatch)
+    app.cmd_double_click({"x": 10, "y": 10})
+    assert rec.calls[0][2] == 2
+
+
+def test_scroll_direction_down_is_negative_dy(monkeypatch):
+    rec = _patch_mouse(monkeypatch)
+    app.cmd_scroll({"x": 10, "y": 10, "direction": "down", "amount": 3})
+    assert ("scroll", 0, -3) in rec.calls
