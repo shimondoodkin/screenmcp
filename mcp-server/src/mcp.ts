@@ -23,17 +23,29 @@ const scalingParams = {
   max_height: z.number().int().optional().describe('Screenshot height for coordinate auto-scaling (device applies default if omitted, 0 to disable)'),
 };
 
+// Optional overlay params — paint estimated-click dots and/or the cursor onto the returned image
+const overlayParams = {
+  dots: z.array(z.object({
+    x: z.number().describe('X in screenshot space (same coords as click)'),
+    y: z.number().describe('Y in screenshot space'),
+    color: z.string().optional().describe('Named color (red, lime, cyan, yellow, magenta, white, ...) or #rrggbb. Default red.'),
+  })).optional().describe('Paint dots at estimated click positions to verify before clicking.'),
+  cursor: z.boolean().optional().describe('Draw the real mouse cursor as a crosshair (desktop only; ignored on Android).'),
+  dot_radius: z.number().int().optional().describe('Dot radius in pixels (default 3).'),
+};
+
 // MCP tools for phone control — descriptions match web/ exactly
 const phoneTools = [
   {
     name: 'screenshot',
-    description: 'Take a screenshot of the phone screen. Returns base64 WebP image.',
+    description: 'Take a screenshot of the phone screen. Returns base64 WebP image. Optionally paint estimated-click dots and the cursor.',
     inputSchema: {
       device_id: deviceIdParam,
       quality: z.number().min(1).max(100).optional().describe('Image quality 1-100 (default: 100 = lossless)'),
       max_width: z.number().optional().describe('Max width for scaling'),
       max_height: z.number().optional().describe('Max height for scaling'),
       model: modelParam,
+      ...overlayParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       const res = await phone.sendCommand('screenshot', params);
@@ -432,7 +444,7 @@ const phoneTools = [
   },
   {
     name: 'screenshot_region',
-    description: 'Capture a region of the screen. Returns base64 WebP image of the specified rectangular area (desktop only).',
+    description: 'Capture a region of the screen. Returns base64 WebP image of the specified rectangular area (desktop only). Optionally paint estimated-click dots and the cursor.',
     inputSchema: {
       device_id: deviceIdParam,
       min_x: z.number().describe('Left edge X coordinate'),
@@ -444,6 +456,7 @@ const phoneTools = [
       output_max_height: z.number().int().optional().describe('Max output height in pixels'),
       ...scalingParams,
       model: modelParam,
+      ...overlayParams,
     },
     handler: async (phone: DeviceConnection, params: Record<string, unknown>) => {
       return (await phone.sendCommand('screenshot_region', params)).result;
