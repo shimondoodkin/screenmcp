@@ -48,6 +48,18 @@ Controller/SDK → MCP Server → Worker (relay) → Device (Android/Windows/Mac
 |------|---------|
 | `linux/src/commands.rs` | Add match case. Implement or return `{"status":"ok","unsupported":true}` |
 
+### 4b. Python CLI — Standalone Local stdio MCP
+
+| File | Purpose |
+|------|---------|
+| `python-cli/screenmcp_cli.py` | Add a `cmd_<name>(args)` handler in the relevant `# === SECTION ===`, then add an entry to the `TOOLS` registry (name, description, inputSchema, handler) |
+
+**Pattern**: Single self-contained file. Handlers return MCP `content` blocks via
+`_text_result(...)` / `_image_result(...)` / `_ok(...)`. Coordinate params scale
+via `to_native(...)`. Platform-specific behavior is guarded by `IS_WIN`/`IS_MAC`/
+`IS_LINUX`. `ui_tree` is intentionally not implemented here. Update the completeness
+set in `python-cli/tests/test_registry.py`.
+
 ### 5. Worker (Rust WebSocket Relay) — NO CHANGES NEEDED
 
 The worker is a generic message relay. It does not inspect command names or params. New commands flow through automatically.
@@ -135,6 +147,7 @@ Each test is a try/catch (or match in Rust) that calls the new SDK method and re
 [ ] Windows: commands.rs — add match + handler
 [ ] Mac: commands.rs — add match (implement or unsupported stub)
 [ ] Linux: commands.rs — add match (implement or unsupported stub)
+[ ] Python CLI: screenmcp_cli.py — add handler + TOOLS entry; update test_registry.py
 [ ] MCP Server (TS): mcp.ts — add tool definition
 [ ] MCP Server (Rust): tools.rs — add ToolDef
 [ ] SDK TypeScript: client.ts — add method to DeviceConnection
