@@ -206,6 +206,6 @@ def test_screenshot_with_model_resizes_to_provider_space(monkeypatch):
     captured = {}
     real_encode = app._encode_webp
     monkeypatch.setattr(app, "_encode_webp",
-                        lambda shot, target=None: captured.setdefault("target", target) or real_encode(shot, target))
+                        lambda shot, target=None, overlay=None: captured.setdefault("target", target) or real_encode(shot, target, overlay))
     app.cmd_screenshot({"model": "gemini"})  # 2912x1638 -> gemini 1920x1080
     assert captured["target"] == (1920, 1080)
