@@ -1,0 +1,17 @@
+[project]
+name = "screenmcp-cli"
+version = "0.1.0"
+description = "Standalone local stdio MCP server for desktop control (ScreenMCP)."
+requires-python = ">=3.9"
+dependencies = ["mss", "pynput", "Pillow", "pyperclip", "pygetwindow; sys_platform == 'win32'"]
+
+[project.optional-dependencies]
+camera = ["opencv-python"]
+audio = ["simpleaudio"]
+dev = ["pytest"]
+
+[project.scripts]
+screenmcp-cli = "screenmcp_cli:run"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
