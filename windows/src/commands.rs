@@ -254,6 +254,23 @@ fn handle_screenshot_region(params: Option<&Value>, config: &Config) -> Result<V
         } else { cropped }
     } else { cropped };
 
+    // Paint optional dot/cursor overlays. Map screenshot-space coords into the
+    // cropped+scaled output: subtract region origin, apply output-per-screenshot scale.
+    let mut img = img;
+    let (iw, ih) = (img.width(), img.height());
+    let out_per_ss_x = (iw as f64 / crop_w as f64) * scale_x;
+    let out_per_ss_y = (ih as f64 / crop_h as f64) * scale_y;
+    let cursor_xy = cursor_native_pos().map(|(nx, ny)| (nx / scale_x, ny / scale_y));
+    crate::overlay::apply_overlays(&mut img, Some(p), cursor_xy, move |x, y| {
+        let px = ((x - min_x) * out_per_ss_x).round() as i64;
+        let py = ((y - min_y) * out_per_ss_y).round() as i64;
+        if px >= 0 && py >= 0 && (px as u32) < iw && (py as u32) < ih {
+            Some((px, py))
+        } else {
+            None
+        }
+    });
+
     let quality = p.get("quality").and_then(|v| v.as_u64()).unwrap_or(100) as u8;
     let _ = quality;
     let mut buf = Cursor::new(Vec::new());
