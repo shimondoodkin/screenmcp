@@ -78,6 +78,76 @@ def grabber():
     return _grabber
 
 
+# === VISION ===
+import base64 as _b64
+from io import BytesIO
+
+
+def _primary_native():
+    """Native (width, height) of the primary monitor."""
+    mon = grabber().monitors[1]
+    return (mon["width"], mon["height"])
+
+
+def _encode_webp(shot, target=None):
+    """shot: mss screenshot. target: optional (w,h) to resize the encoded image to."""
+    from PIL import Image
+    img = Image.frombytes("RGB", shot.size, shot.rgb)
+    if target and target[0] and target[1]:
+        img = img.resize(target)
+    buf = BytesIO()
+    img.save(buf, format="WEBP")
+    return _b64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _image_result(b64):
+    return {"content": [{"type": "image", "data": b64, "mimeType": "image/webp"}]}
+
+
+def _text_result(obj):
+    return {"content": [{"type": "text", "text": json.dumps(obj, indent=2)}]}
+
+
+def cmd_get_screen_size(args):
+    nw, nh = _primary_native()
+    sw, sh = scaled_space(args.get("max_width"), args.get("max_height"))
+    return _text_result({"width": sw or nw, "height": sh or nh,
+                         "original_width": nw, "original_height": nh})
+
+
+def cmd_screenshot(args):
+    sw, sh = scaled_space(args.get("max_width"), args.get("max_height"))
+    mon = grabber().monitors[1]
+    shot = grabber().grab(mon)
+    target = None if (sw == 0 or sh == 0) else (sw, sh)
+    return _image_result(_encode_webp(shot, target))
+
+
+def cmd_screenshot_region(args):
+    nw, nh = _primary_native()
+    x1, y1 = to_native(args["min_x"], args["min_y"], (nw, nh),
+                       args.get("max_width"), args.get("max_height"))
+    x2, y2 = to_native(args["max_x"], args["max_y"], (nw, nh),
+                       args.get("max_width"), args.get("max_height"))
+    region = {"left": x1, "top": y1, "width": max(1, x2 - x1), "height": max(1, y2 - y1)}
+    shot = grabber().grab(region)
+    return _image_result(_encode_webp(shot))  # native resolution, no resize
+
+
+def cmd_active_window(args):
+    info = active_window_info()  # provided by the WINDOW MANAGEMENT section
+    return _text_result(info)
+
+
+def cmd_screenshot_window(args):
+    win = find_window(args.get("title"), args.get("index"))  # WINDOW MANAGEMENT section
+    if win is None:
+        return _text_result({"status": "error", "error": "window not found"})
+    region = {"left": win["x"], "top": win["y"], "width": win["width"], "height": win["height"]}
+    shot = grabber().grab(region)
+    return _image_result(_encode_webp(shot))
+
+
 # === JSON-RPC STDIO SERVER ===
 def _result(rpc_id, result):
     return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
