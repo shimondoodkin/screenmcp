@@ -273,6 +273,27 @@ impl DeviceConnection {
         Ok(result)
     }
 
+    /// Take a screenshot with estimated-click `dots` and/or the `cursor` painted on,
+    /// to verify a click target before clicking. `dots` is a JSON array of
+    /// `{x, y, color?}` markers in screenshot space; `dot_radius` defaults to 3.
+    pub async fn screenshot_overlay(
+        &mut self,
+        dots: Option<serde_json::Value>,
+        cursor: bool,
+        dot_radius: Option<u32>,
+    ) -> Result<ScreenshotResult> {
+        let mut params = serde_json::json!({});
+        if let Some(d) = dots { params["dots"] = d; }
+        if cursor { params["cursor"] = serde_json::json!(true); }
+        if let Some(r) = dot_radius { params["dot_radius"] = serde_json::json!(r); }
+        let resp = self.send_command("screenshot", Some(params)).await?;
+        let result: ScreenshotResult = resp
+            .result
+            .map(|v| serde_json::from_value(v).unwrap_or(ScreenshotResult { image: String::new() }))
+            .unwrap_or(ScreenshotResult { image: String::new() });
+        Ok(result)
+    }
+
     /// Tap at the given screen coordinates.
     pub async fn click(&mut self, x: i32, y: i32) -> Result<()> {
         self.send_command("click", Some(serde_json::json!({ "x": x, "y": y })))
@@ -562,6 +583,26 @@ impl DeviceConnection {
     /// Capture a region of the screen (desktop only).
     pub async fn screenshot_region(&mut self, min_x: f64, min_y: f64, max_x: f64, max_y: f64) -> Result<serde_json::Value> {
         let resp = self.send_command("screenshot_region", Some(serde_json::json!({"min_x": min_x, "min_y": min_y, "max_x": max_x, "max_y": max_y}))).await?;
+        Ok(resp.result.unwrap_or(serde_json::json!({})))
+    }
+
+    /// Capture a region with estimated-click `dots` and/or the `cursor` painted on.
+    /// `dots` is a JSON array of `{x, y, color?}` markers in screenshot space.
+    pub async fn screenshot_region_overlay(
+        &mut self,
+        min_x: f64,
+        min_y: f64,
+        max_x: f64,
+        max_y: f64,
+        dots: Option<serde_json::Value>,
+        cursor: bool,
+        dot_radius: Option<u32>,
+    ) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({"min_x": min_x, "min_y": min_y, "max_x": max_x, "max_y": max_y});
+        if let Some(d) = dots { params["dots"] = d; }
+        if cursor { params["cursor"] = serde_json::json!(true); }
+        if let Some(r) = dot_radius { params["dot_radius"] = serde_json::json!(r); }
+        let resp = self.send_command("screenshot_region", Some(params)).await?;
         Ok(resp.result.unwrap_or(serde_json::json!({})))
     }
 

@@ -277,11 +277,18 @@ class DeviceConnection:
         max_width: int | None = None,
         max_height: int | None = None,
         model: str | None = None,
+        dots: list[dict[str, Any]] | None = None,
+        cursor: bool = False,
+        dot_radius: int | None = None,
     ) -> dict[str, Any]:
         """Take a screenshot.  Returns dict with ``image`` (base64 JPEG).
 
         ``model`` ("claude"/"gemini"/"chatgpt") selects a provider-tuned default
         size when ``max_width``/``max_height`` are omitted.
+
+        ``dots`` paints estimated-click markers (each ``{"x", "y", "color"?}`` in
+        screenshot space) and ``cursor`` overlays the real cursor (desktop only),
+        so you can verify a click target before clicking.
         """
         params: dict[str, Any] = {}
         if quality is not None:
@@ -292,6 +299,12 @@ class DeviceConnection:
             params["max_height"] = max_height
         if model is not None:
             params["model"] = model
+        if dots:
+            params["dots"] = dots
+        if cursor:
+            params["cursor"] = cursor
+        if dot_radius is not None:
+            params["dot_radius"] = dot_radius
         resp = await self.send_command("screenshot", params or None)
         return resp.result
 
@@ -606,14 +619,21 @@ class DeviceConnection:
         if max_height: params["max_height"] = max_height
         return await self.send_command("screenshot_window", params)
 
-    async def screenshot_region(self, min_x: float, min_y: float, max_x: float, max_y: float, quality: int = 0, output_max_width: int = 0, output_max_height: int = 0, max_width: int = 0, max_height: int = 0):
-        """Capture a region of the screen (desktop only)."""
-        params = {"min_x": min_x, "min_y": min_y, "max_x": max_x, "max_y": max_y}
+    async def screenshot_region(self, min_x: float, min_y: float, max_x: float, max_y: float, quality: int = 0, output_max_width: int = 0, output_max_height: int = 0, max_width: int = 0, max_height: int = 0, dots: list[dict[str, Any]] | None = None, cursor: bool = False, dot_radius: int | None = None):
+        """Capture a region of the screen (desktop only).
+
+        ``dots`` paints estimated-click markers (screenshot-space coords) and
+        ``cursor`` overlays the real cursor, to verify a target before clicking.
+        """
+        params: dict[str, Any] = {"min_x": min_x, "min_y": min_y, "max_x": max_x, "max_y": max_y}
         if quality: params["quality"] = quality
         if output_max_width: params["output_max_width"] = output_max_width
         if output_max_height: params["output_max_height"] = output_max_height
         if max_width: params["max_width"] = max_width
         if max_height: params["max_height"] = max_height
+        if dots: params["dots"] = dots
+        if cursor: params["cursor"] = cursor
+        if dot_radius is not None: params["dot_radius"] = dot_radius
         return await self.send_command("screenshot_region", params)
 
     async def is_elevated(self):

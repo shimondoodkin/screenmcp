@@ -38,6 +38,14 @@ export interface ScreenshotResult {
   image: string;
 }
 
+/** An estimated-click marker painted onto a screenshot. Coords are in screenshot space. */
+export interface DotMarker {
+  x: number;
+  y: number;
+  /** Named color (red, lime, cyan, ...) or #rrggbb. Default red. */
+  color?: string;
+}
+
 export interface TextResult {
   /** Text content from the focused element */
   text: string;
