@@ -32,6 +32,58 @@ def to_native(x, y, native, maxw=None, maxh=None):
     return (_axis(x, native[0], sw), _axis(y, native[1], sh))
 
 
+def provider_default_size(model, w, h):
+    """Model-tuned default screenshot size from real screen w x h, or None if unknown.
+    Shared algorithm with the desktop clients — see docs/model-sizing.md."""
+    wf, hf = float(w), float(h)
+    if model == "claude":
+        max_pixels, max_edge = 1_176_000.0, 1568.0
+        s = min(1.0, max_edge / max(wf, hf), (max_pixels / (wf * hf)) ** 0.5)
+        mw, mh = int(wf * s), int(hf * s)  # floor
+        while mw * mh > max_pixels and (mw > 1 or mh > 1):
+            if mw >= mh:
+                mw -= 1
+            else:
+                mh -= 1
+        return (mw, mh)
+    if model == "gemini":
+        short_cap, long_cap = 1080.0, 1920.0
+        if w >= h:
+            s = min(1.0, long_cap / wf, short_cap / hf)
+        else:
+            s = min(1.0, long_cap / hf, short_cap / wf)
+        return (round(wf * s), round(hf * s))
+    if model == "chatgpt":
+        short = min(wf, hf)
+        s = min(1.0, 768.0 / short)
+        long = max(wf, hf)
+        if long * s > 2048.0:
+            s = 2048.0 / long
+        return (_round16(wf * s), _round16(hf * s))
+    return None
+
+
+def _round16(x):
+    return max(16, round(x / 16.0) * 16)
+
+
+def resolve_space(args, native):
+    """Effective (width, height) screenshot space for a coordinate command.
+    Model applies only when neither max_width nor max_height is given; an explicit
+    override or unknown model falls back to scaled_space (default 1456x819)."""
+    maxw, maxh = args.get("max_width"), args.get("max_height")
+    if maxw is None and maxh is None and args.get("model"):
+        sized = provider_default_size(args["model"], native[0], native[1])
+        if sized:
+            return sized
+    return scaled_space(maxw, maxh)
+
+
+def to_native_space(x, y, native, space):
+    """Map a coordinate from a resolved screenshot space to native screen pixels."""
+    return (_axis(x, native[0], space[0]), _axis(y, native[1], space[1]))
+
+
 # === PLATFORM DETECTION ===
 IS_WIN = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"
