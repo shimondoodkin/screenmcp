@@ -404,6 +404,10 @@ class WebSocketClient(
                             hwBuffer.close()
 
                             softBitmap = service.scaleBitmap(softBitmap, maxWidth, maxHeight)
+                            // Output bitmap == screenshot space for full capture: identity map.
+                            softBitmap = service.paintDots(
+                                softBitmap, params?.optJSONArray("dots"),
+                                params?.optInt("dot_radius", 3) ?: 3, 0.0, 0.0, 1.0, 1.0)
                             val bytes = service.compressToWebP(softBitmap, quality)
                             softBitmap.recycle()
 
@@ -806,6 +810,15 @@ class WebSocketClient(
                                     if (outMaxW > 0) outMaxW else null,
                                     if (outMaxH > 0) outMaxH else null)
                             }
+
+                            // Map screenshot-space dots into the cropped+scaled output:
+                            // subtract region origin, apply screenshot→native (sx/sy) and
+                            // native→output (outDim/cropNative) scales.
+                            val outPerSsX = sx * cropped.width.toDouble() / cropW
+                            val outPerSsY = sy * cropped.height.toDouble() / cropH
+                            cropped = service.paintDots(
+                                cropped, params?.optJSONArray("dots"),
+                                params?.optInt("dot_radius", 3) ?: 3, minX, minY, outPerSsX, outPerSsY)
 
                             val bytes = service.compressToWebP(cropped, quality)
                             cropped.recycle()

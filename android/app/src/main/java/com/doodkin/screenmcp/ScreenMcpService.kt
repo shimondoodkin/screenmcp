@@ -522,6 +522,62 @@ class ScreenMcpService : AccessibilityService() {
         return baos.toByteArray()
     }
 
+    // --- Overlay: estimated-click dots ---
+
+    private fun parseColor(s: String?): Int {
+        if (s.isNullOrEmpty()) return android.graphics.Color.RED
+        if (s.startsWith("#") && s.length == 7) {
+            return try { android.graphics.Color.parseColor(s) } catch (e: Exception) { android.graphics.Color.RED }
+        }
+        return when (s.lowercase()) {
+            "red" -> android.graphics.Color.RED
+            "lime", "green" -> android.graphics.Color.GREEN
+            "blue" -> android.graphics.Color.BLUE
+            "cyan" -> android.graphics.Color.CYAN
+            "yellow" -> android.graphics.Color.YELLOW
+            "magenta" -> android.graphics.Color.MAGENTA
+            "orange" -> android.graphics.Color.parseColor("#FF8800")
+            "white" -> android.graphics.Color.WHITE
+            "black" -> android.graphics.Color.BLACK
+            else -> android.graphics.Color.RED
+        }
+    }
+
+    /**
+     * Paint estimated-click dots onto a copy of [src] and recycle [src].
+     * Dot coords are in screenshot space; [offX]/[offY] and [scaleX]/[scaleY] map
+     * them into output-bitmap pixels (identity for full screenshots; region origin +
+     * output scale for screenshot_region). Returns [src] unchanged if no dots.
+     */
+    fun paintDots(
+        src: Bitmap,
+        dots: org.json.JSONArray?,
+        radius: Int,
+        offX: Double,
+        offY: Double,
+        scaleX: Double,
+        scaleY: Double,
+    ): Bitmap {
+        if (dots == null || dots.length() == 0) return src
+        val out = src.copy(Bitmap.Config.ARGB_8888, true)
+        src.recycle()
+        val canvas = android.graphics.Canvas(out)
+        val r = radius.coerceIn(1, 100).toFloat()
+        for (i in 0 until dots.length()) {
+            val d = dots.optJSONObject(i) ?: continue
+            val px = ((d.optDouble("x", 0.0) - offX) * scaleX).toFloat()
+            val py = ((d.optDouble("y", 0.0) - offY) * scaleY).toFloat()
+            if (px < 0f || py < 0f || px >= out.width || py >= out.height) continue
+            val fill = android.graphics.Paint().apply { isAntiAlias = true; color = parseColor(if (d.isNull("color")) null else d.optString("color", null)) }
+            val ringW = android.graphics.Paint().apply { isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeWidth = 1f; color = android.graphics.Color.WHITE }
+            val ringB = android.graphics.Paint().apply { isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeWidth = 1f; color = android.graphics.Color.BLACK }
+            canvas.drawCircle(px, py, r, fill)
+            canvas.drawCircle(px, py, r + 1f, ringW)
+            canvas.drawCircle(px, py, r + 2f, ringB)
+        }
+        return out
+    }
+
     // --- Audio Playback ---
 
     fun playAudio(audioDataBase64: String, volume: Float, callback: (Boolean, String?) -> Unit) {
