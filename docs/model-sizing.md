@@ -45,3 +45,10 @@ screenshot — and the matching click-coordinate space — to that model's visio
 
 Rationale and empirical validation of these caps:
 `image-to-components/docs/research/2026-05-12-vision-validation-report.md`.
+
+## Transports without a connection URL
+
+The standalone stdio CLI (`python-cli/`) has no connection URL, so it takes `model`
+as a **per-command argument** on each coordinate-bearing tool instead of `?model=`.
+The sizing algorithm and canonical table are identical (it ports
+`provider_default_size` verbatim).

@@ -179,3 +179,33 @@ def test_camera_unsupported_when_cv2_missing(monkeypatch):
     monkeypatch.setattr(app, "_import_cv2", lambda: None)
     out = app.cmd_camera({})
     assert '"unsupported": true' in out["content"][0]["text"]
+
+
+def test_get_screen_size_with_model_uses_provider_space(monkeypatch):
+    monkeypatch.setattr(app, "_primary_native", lambda: (2560, 1440))
+    out = app.cmd_get_screen_size({"model": "claude"})
+    text = out["content"][0]["text"]
+    assert '"width": 1445' in text and '"height": 813' in text
+    assert '"original_width": 2560' in text
+
+
+def test_click_with_model_scales_into_provider_space(monkeypatch):
+    rec = _patch_mouse(monkeypatch, native=(2560, 1440))  # claude space 1445x813
+    app.cmd_click({"x": 1445, "y": 813, "model": "claude"})
+    assert rec.position == (2560, 1440)  # full-space corner maps to native corner
+
+
+def test_explicit_maxwh_overrides_model(monkeypatch):
+    rec = _patch_mouse(monkeypatch, native=(2560, 1440))
+    app.cmd_click({"x": 100, "y": 100, "model": "claude", "max_width": 1280, "max_height": 720})
+    assert rec.position == (200, 200)  # 2x of the explicit 1280x720 space, model ignored
+
+
+def test_screenshot_with_model_resizes_to_provider_space(monkeypatch):
+    monkeypatch.setattr(app, "grabber", lambda: _FakeGrabber())  # native 2912x1638
+    captured = {}
+    real_encode = app._encode_webp
+    monkeypatch.setattr(app, "_encode_webp",
+                        lambda shot, target=None: captured.setdefault("target", target) or real_encode(shot, target))
+    app.cmd_screenshot({"model": "gemini"})  # 2912x1638 -> gemini 1920x1080
+    assert captured["target"] == (1920, 1080)

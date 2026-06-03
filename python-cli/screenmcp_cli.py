@@ -162,13 +162,14 @@ def _text_result(obj):
 
 def cmd_get_screen_size(args):
     nw, nh = _primary_native()
-    sw, sh = scaled_space(args.get("max_width"), args.get("max_height"))
+    sw, sh = resolve_space(args, (nw, nh))
     return _text_result({"width": sw or nw, "height": sh or nh,
                          "original_width": nw, "original_height": nh})
 
 
 def cmd_screenshot(args):
-    sw, sh = scaled_space(args.get("max_width"), args.get("max_height"))
+    native = _primary_native()
+    sw, sh = resolve_space(args, native)
     mon = grabber().monitors[1]
     shot = grabber().grab(mon)
     target = None if (sw == 0 or sh == 0) else (sw, sh)
@@ -176,11 +177,10 @@ def cmd_screenshot(args):
 
 
 def cmd_screenshot_region(args):
-    nw, nh = _primary_native()
-    x1, y1 = to_native(args["min_x"], args["min_y"], (nw, nh),
-                       args.get("max_width"), args.get("max_height"))
-    x2, y2 = to_native(args["max_x"], args["max_y"], (nw, nh),
-                       args.get("max_width"), args.get("max_height"))
+    native = _primary_native()
+    space = resolve_space(args, native)
+    x1, y1 = to_native_space(args["min_x"], args["min_y"], native, space)
+    x2, y2 = to_native_space(args["max_x"], args["max_y"], native, space)
     region = {"left": x1, "top": y1, "width": max(1, x2 - x1), "height": max(1, y2 - y1)}
     shot = grabber().grab(region)
     return _image_result(_encode_webp(shot))  # native resolution, no resize
@@ -265,9 +265,9 @@ import time as _time
 
 
 def _move(args):
-    nw, nh = _primary_native()
-    nx, ny = to_native(args["x"], args["y"], (nw, nh),
-                       args.get("max_width"), args.get("max_height"))
+    native = _primary_native()
+    space = resolve_space(args, native)
+    nx, ny = to_native_space(args["x"], args["y"], native, space)
     mouse().position = (nx, ny)
     return nx, ny
 
@@ -315,11 +315,10 @@ def cmd_long_click(args):
 
 
 def cmd_drag(args):
-    nw, nh = _primary_native()
-    sx, sy = to_native(args["startX"], args["startY"], (nw, nh),
-                       args.get("max_width"), args.get("max_height"))
-    ex, ey = to_native(args["endX"], args["endY"], (nw, nh),
-                       args.get("max_width"), args.get("max_height"))
+    native = _primary_native()
+    space = resolve_space(args, native)
+    sx, sy = to_native_space(args["startX"], args["startY"], native, space)
+    ex, ey = to_native_space(args["endX"], args["endY"], native, space)
     mouse().position = (sx, sy)
     mouse().press(_button("left"))
     _time.sleep(args.get("duration", 300) / 1000.0)
@@ -627,7 +626,11 @@ def _schema(props=None, required=None):
 
 
 _XY = {"x": {"type": "number"}, "y": {"type": "number"}}
-_MAXWH = {"max_width": {"type": "number"}, "max_height": {"type": "number"}}
+_MODEL = {"model": {"type": "string",
+                    "description": "claude|gemini|chatgpt — auto-sizes the screenshot and "
+                                   "coordinate space to that model's vision limits when no "
+                                   "explicit max_width/max_height is given."}}
+_MAXWH = {"max_width": {"type": "number"}, "max_height": {"type": "number"}, **_MODEL}
 
 TOOLS.update({
     "screenshot": {"description": "Take a screenshot (default 1456x819, WebP).",

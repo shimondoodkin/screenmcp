@@ -38,6 +38,20 @@ Screenshots default to 1456x819. Click/drag/scroll coordinates are in that space
 and auto-scale to your real screen. Override per call with `max_width`/`max_height`
 (0 = native pixels).
 
+### Model-aware sizing
+
+Coordinate-bearing tools (`screenshot`, `screenshot_region`, `get_screen_size`,
+`click`, `drag`, `scroll`, `mouse_move`, and the other clicks) accept an optional
+`model` arg: `claude` | `gemini` | `chatgpt`. When given with no explicit
+`max_width`/`max_height`, the screenshot **and** the click-coordinate space are sized
+to that model's vision limits (so the image the model sees and where its clicks land
+share one space). Unknown/absent model → the 1456x819 default; explicit
+`max_width`/`max_height` always wins. Same algorithm and canonical sizes as the
+desktop clients — see [`docs/model-sizing.md`](../docs/model-sizing.md).
+
+The HTTP servers take `model` from the connection URL (`?model=claude`); the stdio
+CLI has no URL, so it's a **per-command argument** instead.
+
 ## macOS permissions
 
 The first screenshot triggers a **Screen Recording** prompt; the first click/keypress

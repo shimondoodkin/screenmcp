@@ -30,3 +30,11 @@ def test_every_tool_has_description_schema_and_callable_handler():
 def test_tools_list_method_returns_all():
     listed = app._list_tools()
     assert len(listed) == len(app.TOOLS)
+
+
+def test_coordinate_tools_advertise_model_param():
+    for name in ("screenshot", "screenshot_region", "get_screen_size", "click",
+                 "drag", "scroll", "mouse_move"):
+        props = app.TOOLS[name]["inputSchema"]["properties"]
+        assert "model" in props, f"{name} missing model param"
+
