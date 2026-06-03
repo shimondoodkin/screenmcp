@@ -122,3 +122,28 @@ def test_scroll_direction_down_is_negative_dy(monkeypatch):
     rec = _patch_mouse(monkeypatch)
     app.cmd_scroll({"x": 10, "y": 10, "direction": "down", "amount": 3})
     assert ("scroll", 0, -3) in rec.calls
+
+
+def test_nav_back_uses_keymap(monkeypatch):
+    rec = _RecKeyboard()
+    monkeypatch.setattr(app, "keyboard", lambda: rec)
+    monkeypatch.setattr(app, "nav_keymap",
+                        lambda: {"back": ["alt", "left"], "home": ["a"], "recents": ["b"]})
+    app.cmd_back({})
+    assert [e[0] for e in rec.events] == ["press", "press", "release", "release"]
+
+
+def test_focus_window_not_found_returns_error(monkeypatch):
+    monkeypatch.setattr(app, "_win_list", lambda: [])
+    out = app.cmd_focus_window({"title": "nope"})
+    assert "error" in out["content"][0]["text"]
+
+
+def test_list_windows_maps_bounds_to_scaled_space(monkeypatch):
+    monkeypatch.setattr(app, "_primary_native", lambda: (2912, 1638))  # 2x
+    monkeypatch.setattr(app, "_win_list", lambda: [
+        {"title": "A", "x": 200, "y": 400, "width": 1000, "height": 500, "index": 0, "state": "normal"}
+    ])
+    out = app.cmd_list_windows({})
+    text = out["content"][0]["text"]
+    assert '"x": 100' in text and '"y": 200' in text  # halved into 1456x819 space

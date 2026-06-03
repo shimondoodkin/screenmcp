@@ -293,6 +293,159 @@ def cmd_mouse_scroll(args):
     return cmd_scroll(args)
 
 
+# === WINDOW MANAGEMENT ===
+def _win_list():
+    """Return list of native-pixel window dicts: {title,x,y,width,height,index,state}."""
+    if IS_WIN:
+        return _win_list_windows()
+    if IS_MAC:
+        return _win_list_mac()
+    if IS_LINUX:
+        return _win_list_linux()
+    return []
+
+
+def _win_list_windows():
+    import pygetwindow as gw
+    out = []
+    for i, w in enumerate(gw.getAllWindows()):
+        if not w.title:
+            continue
+        state = "minimized" if w.isMinimized else ("maximized" if w.isMaximized else "normal")
+        out.append({"title": w.title, "x": w.left, "y": w.top,
+                    "width": w.width, "height": w.height, "index": i, "state": state})
+    return out
+
+
+def _win_list_mac():
+    try:
+        from Quartz import (CGWindowListCopyWindowInfo, kCGWindowListOptionOnScreenOnly,
+                            kCGNullWindowID)
+    except Exception:
+        return []
+    info = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID)
+    out = []
+    for i, w in enumerate(info or []):
+        name = w.get("kCGWindowName") or w.get("kCGWindowOwnerName") or ""
+        b = w.get("kCGWindowBounds") or {}
+        if not name:
+            continue
+        out.append({"title": name, "x": int(b.get("X", 0)), "y": int(b.get("Y", 0)),
+                    "width": int(b.get("Width", 0)), "height": int(b.get("Height", 0)),
+                    "index": i, "state": "normal"})
+    return out
+
+
+def _win_list_linux():
+    import subprocess
+    try:
+        raw = subprocess.check_output(["wmctrl", "-lG"], text=True)
+    except Exception:
+        return []
+    out = []
+    for i, line in enumerate(raw.splitlines()):
+        parts = line.split(None, 7)
+        if len(parts) < 8:
+            continue
+        _, _, x, y, w, h, _, title = parts
+        out.append({"title": title, "x": int(x), "y": int(y),
+                    "width": int(w), "height": int(h), "index": i, "state": "normal"})
+    return out
+
+
+def _scale_bounds_to_space(win):
+    nw, nh = _primary_native()
+    fx, fy = (DEFAULT_W / nw if nw else 1), (DEFAULT_H / nh if nh else 1)
+    return {**win,
+            "x": int(round(win["x"] * fx)), "y": int(round(win["y"] * fy)),
+            "width": int(round(win["width"] * fx)), "height": int(round(win["height"] * fy))}
+
+
+def find_window(title=None, index=None):
+    wins = _win_list()
+    if index is not None and 0 <= index < len(wins):
+        return wins[index]
+    if title:
+        for w in wins:
+            if title.lower() in w["title"].lower():
+                return w
+    return None
+
+
+def active_window_info():
+    if IS_WIN:
+        import pygetwindow as gw
+        w = gw.getActiveWindow()
+        if not w:
+            return {"status": "error", "error": "no active window"}
+        return {"title": w.title, "x": w.left, "y": w.top, "width": w.width, "height": w.height}
+    if IS_MAC:
+        wins = _win_list_mac()
+        return wins[0] if wins else {"status": "error", "error": "no active window"}
+    if IS_LINUX:
+        import subprocess
+        try:
+            name = subprocess.check_output(
+                ["xdotool", "getactivewindow", "getwindowname"], text=True).strip()
+            return {"title": name}
+        except Exception:
+            return {"status": "ok", "unsupported": True, "reason": "xdotool not available"}
+    return {"status": "ok", "unsupported": True, "reason": "unsupported platform"}
+
+
+def cmd_list_windows(args):
+    return _text_result({"windows": [_scale_bounds_to_space(w) for w in _win_list()]})
+
+
+def cmd_focus_window(args):
+    win = find_window(args.get("title"), args.get("index"))
+    if win is None:
+        return _text_result({"status": "error", "error": "window not found"})
+    if IS_WIN:
+        import pygetwindow as gw
+        target = gw.getWindowsWithTitle(win["title"])
+        if target:
+            try:
+                target[0].activate()
+            except Exception:
+                target[0].minimize()
+                target[0].restore()
+    elif IS_MAC:
+        import subprocess
+        subprocess.run(["osascript", "-e",
+                        f'tell application "System Events" to set frontmost of '
+                        f'(first process whose name contains "{win["title"]}") to true'],
+                       check=False)
+    elif IS_LINUX:
+        import subprocess
+        subprocess.run(["wmctrl", "-a", win["title"]], check=False)
+    return _ok({"focused": win["title"]})
+
+
+# === NAVIGATION ===
+def _send_combo(keys):
+    resolved = [resolve_key(k) for k in keys]
+    for k in resolved:
+        keyboard().press(k)
+    for k in reversed(resolved):
+        keyboard().release(k)
+
+
+def cmd_back(args):
+    _send_combo(nav_keymap()["back"])
+    return _ok()
+
+
+def cmd_home(args):
+    _send_combo(nav_keymap()["home"])
+    return _ok()
+
+
+def cmd_recents(args):
+    _send_combo(nav_keymap()["recents"])
+    return _ok()
+
+
 # === JSON-RPC STDIO SERVER ===
 def _result(rpc_id, result):
     return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
