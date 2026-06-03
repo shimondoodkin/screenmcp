@@ -38,3 +38,10 @@ def test_coordinate_tools_advertise_model_param():
         props = app.TOOLS[name]["inputSchema"]["properties"]
         assert "model" in props, f"{name} missing model param"
 
+
+def test_screenshot_tools_advertise_dot_overlay_params():
+    for name in ("screenshot", "screenshot_region"):
+        props = app.TOOLS[name]["inputSchema"]["properties"]
+        assert "dots" in props, f"{name} missing dots param"
+        assert "dot_radius" in props, f"{name} missing dot_radius param"
+

@@ -141,15 +141,68 @@ def _primary_native():
     return (mon["width"], mon["height"])
 
 
-def _encode_webp(shot, target=None):
-    """shot: mss screenshot. target: optional (w,h) to resize the encoded image to."""
+def _encode_webp(shot, target=None, overlay=None):
+    """shot: mss screenshot. target: optional (w,h) to resize the encoded image to.
+    overlay: optional dict {dots, radius, map} painted onto the image before encode."""
     from PIL import Image
     img = Image.frombytes("RGB", shot.size, shot.rgb)
     if target and target[0] and target[1]:
         img = img.resize(target)
+    if overlay:
+        img = _draw_overlays(img, overlay)
     buf = BytesIO()
     img.save(buf, format="WEBP")
     return _b64.b64encode(buf.getvalue()).decode("ascii")
+
+
+_NAMED_COLORS = {
+    "red": (255, 0, 0), "lime": (0, 255, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
+    "cyan": (0, 255, 255), "yellow": (255, 255, 0), "magenta": (255, 0, 255),
+    "orange": (255, 136, 0), "white": (255, 255, 255), "black": (0, 0, 0),
+}
+
+
+def _parse_color(s):
+    """Named color or #rrggbb -> (r,g,b). Defaults to red."""
+    if not s:
+        return (255, 0, 0)
+    if s.startswith("#") and len(s) == 7:
+        try:
+            return tuple(int(s[i:i + 2], 16) for i in (1, 3, 5))
+        except ValueError:
+            return (255, 0, 0)
+    return _NAMED_COLORS.get(s.lower(), (255, 0, 0))
+
+
+def _overlay_from_args(args, map_xy):
+    """Build an overlay dict from command args, or None if no dots requested.
+    map_xy: (x, y) screenshot-space -> (px, py) image pixels, or None to clip."""
+    dots = args.get("dots")
+    if not dots:
+        return None
+    return {"dots": dots, "radius": args.get("dot_radius", 3), "map": map_xy}
+
+
+def _draw_overlays(img, overlay):
+    """Paint estimated-click dots (filled circle + white/black contrast rings)."""
+    from PIL import ImageDraw
+    dots = overlay.get("dots") or []
+    if not dots:
+        return img
+    radius = max(1, min(100, int(overlay.get("radius", 3))))
+    mp = overlay["map"]
+    img = img.convert("RGB")
+    draw = ImageDraw.Draw(img)
+    for d in dots:
+        pt = mp(float(d["x"]), float(d["y"]))
+        if pt is None:
+            continue
+        px, py = pt
+        col = _parse_color(d.get("color"))
+        draw.ellipse([px - radius, py - radius, px + radius, py + radius], fill=col)
+        draw.ellipse([px - radius - 1, py - radius - 1, px + radius + 1, py + radius + 1], outline=(255, 255, 255))
+        draw.ellipse([px - radius - 2, py - radius - 2, px + radius + 2, py + radius + 2], outline=(0, 0, 0))
+    return img
 
 
 def _image_result(b64):
@@ -173,7 +226,15 @@ def cmd_screenshot(args):
     mon = grabber().monitors[1]
     shot = grabber().grab(mon)
     target = None if (sw == 0 or sh == 0) else (sw, sh)
-    return _image_result(_encode_webp(shot, target))
+    # Output image == screenshot space, so dots map at identity (clipped to bounds).
+    out_w, out_h = (sw, sh) if target else native
+
+    def _map(x, y):
+        px, py = round(x), round(y)
+        return (px, py) if 0 <= px < out_w and 0 <= py < out_h else None
+
+    overlay = _overlay_from_args(args, _map)
+    return _image_result(_encode_webp(shot, target, overlay))
 
 
 def cmd_screenshot_region(args):
@@ -183,7 +244,16 @@ def cmd_screenshot_region(args):
     x2, y2 = to_native_space(args["max_x"], args["max_y"], native, space)
     region = {"left": x1, "top": y1, "width": max(1, x2 - x1), "height": max(1, y2 - y1)}
     shot = grabber().grab(region)
-    return _image_result(_encode_webp(shot))  # native resolution, no resize
+    # Output is the native crop (no resize): map screenshot-space dot -> native, minus origin.
+    rw, rh = region["width"], region["height"]
+
+    def _map(x, y):
+        nx, ny = to_native_space(x, y, native, space)
+        px, py = round(nx - x1), round(ny - y1)
+        return (px, py) if 0 <= px < rw and 0 <= py < rh else None
+
+    overlay = _overlay_from_args(args, _map)
+    return _image_result(_encode_webp(shot, None, overlay))  # native resolution, no resize
 
 
 def cmd_active_window(args):
@@ -631,14 +701,23 @@ _MODEL = {"model": {"type": "string",
                                    "coordinate space to that model's vision limits when no "
                                    "explicit max_width/max_height is given."}}
 _MAXWH = {"max_width": {"type": "number"}, "max_height": {"type": "number"}, **_MODEL}
+_DOTS = {
+    "dots": {"type": "array",
+             "description": "Paint dots at estimated click positions (screenshot space) to verify before clicking.",
+             "items": {"type": "object",
+                       "properties": {"x": {"type": "number"}, "y": {"type": "number"},
+                                      "color": {"type": "string", "description": "Named color or #rrggbb (default red)"}},
+                       "required": ["x", "y"]}},
+    "dot_radius": {"type": "integer", "description": "Dot radius in pixels (default 3)."},
+}
 
 TOOLS.update({
     "screenshot": {"description": "Take a screenshot (default 1456x819, WebP).",
-                   "inputSchema": _schema(_MAXWH), "handler": cmd_screenshot},
+                   "inputSchema": _schema({**_MAXWH, **_DOTS}), "handler": cmd_screenshot},
     "screenshot_region": {"description": "Capture a region at native resolution.",
                           "inputSchema": _schema({**_MAXWH, "min_x": {"type": "number"},
                                                   "min_y": {"type": "number"}, "max_x": {"type": "number"},
-                                                  "max_y": {"type": "number"}},
+                                                  "max_y": {"type": "number"}, **_DOTS},
                                                  ["min_x", "min_y", "max_x", "max_y"]),
                           "handler": cmd_screenshot_region},
     "screenshot_window": {"description": "Capture a specific window by title or index.",
