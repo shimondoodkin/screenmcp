@@ -148,6 +148,66 @@ def cmd_screenshot_window(args):
     return _image_result(_encode_webp(shot))
 
 
+# === KEYBOARD ===
+def resolve_key(name):
+    """Map a key name to a pynput key object, or return a 1-char string as-is."""
+    from pynput.keyboard import Key
+    name = str(name).lower()
+    special = {
+        "shift": Key.shift, "ctrl": Key.ctrl, "control": Key.ctrl,
+        "alt": Key.alt, "meta": Key.cmd, "win": Key.cmd, "cmd": Key.cmd,
+        "super": Key.cmd, "tab": Key.tab, "enter": Key.enter, "return": Key.enter,
+        "escape": Key.esc, "esc": Key.esc, "space": Key.space,
+        "backspace": Key.backspace, "delete": Key.delete, "del": Key.delete,
+        "home": Key.home, "end": Key.end, "pageup": Key.page_up,
+        "pagedown": Key.page_down, "up": Key.up, "down": Key.down,
+        "left": Key.left, "right": Key.right,
+    }
+    if name in special:
+        return special[name]
+    if len(name) > 1 and name[0] == "f" and name[1:].isdigit():
+        return getattr(Key, name)  # f1..f12
+    return name  # single character
+
+
+def _ok(extra=None):
+    obj = {"status": "ok"}
+    if extra:
+        obj.update(extra)
+    return _text_result(obj)
+
+
+def cmd_type(args):
+    keyboard().type(args.get("text", ""))
+    return _ok()
+
+
+def cmd_press_key(args):
+    k = resolve_key(args["key"])
+    keyboard().press(k)
+    keyboard().release(k)
+    return _ok()
+
+
+def cmd_hold_key(args):
+    keyboard().press(resolve_key(args["key"]))
+    return _ok()
+
+
+def cmd_release_key(args):
+    keyboard().release(resolve_key(args["key"]))
+    return _ok()
+
+
+def cmd_hotkey(args):
+    keys = [resolve_key(k) for k in args["keys"]]
+    for k in keys:
+        keyboard().press(k)
+    for k in reversed(keys):
+        keyboard().release(k)
+    return _ok()
+
+
 # === JSON-RPC STDIO SERVER ===
 def _result(rpc_id, result):
     return {"jsonrpc": "2.0", "id": rpc_id, "result": result}

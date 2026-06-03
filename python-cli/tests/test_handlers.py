@@ -42,3 +42,39 @@ def test_screenshot_returns_webp_image_block(monkeypatch):
     assert block["type"] == "image"
     assert block["mimeType"] == "image/webp"
     assert len(block["data"]) > 0
+
+
+class _RecKeyboard:
+    def __init__(self):
+        self.events = []
+        self.typed = []
+
+    def press(self, k):
+        self.events.append(("press", k))
+
+    def release(self, k):
+        self.events.append(("release", k))
+
+    def type(self, s):
+        self.typed.append(s)
+
+
+def test_type_sends_text(monkeypatch):
+    rec = _RecKeyboard()
+    monkeypatch.setattr(app, "keyboard", lambda: rec)
+    app.cmd_type({"text": "hi"})
+    assert rec.typed == ["hi"]
+
+
+def test_hotkey_presses_then_releases_in_reverse(monkeypatch):
+    rec = _RecKeyboard()
+    monkeypatch.setattr(app, "keyboard", lambda: rec)
+    app.cmd_hotkey({"keys": ["ctrl", "c"]})
+    kinds = [e[0] for e in rec.events]
+    assert kinds == ["press", "press", "release", "release"]
+
+
+def test_resolve_key_maps_named_keys():
+    from pynput.keyboard import Key
+    assert app.resolve_key("enter") == Key.enter
+    assert app.resolve_key("a") == "a"
