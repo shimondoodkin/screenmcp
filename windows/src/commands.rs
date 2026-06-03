@@ -140,6 +140,21 @@ fn handle_screenshot(
         img
     };
 
+    // Paint optional dot/cursor overlays. Output image == screenshot space for
+    // full-screen capture, so dots map at identity (clipped to image bounds).
+    let mut img = img;
+    let (bw, bh) = (img.width(), img.height());
+    let cursor_xy = cursor_native_pos()
+        .map(|(nx, ny)| (nx * bw as f64 / width as f64, ny * bh as f64 / height as f64));
+    crate::overlay::apply_overlays(&mut img, params, cursor_xy, move |x, y| {
+        let (px, py) = (x.round() as i64, y.round() as i64);
+        if px >= 0 && py >= 0 && (px as u32) < bw && (py as u32) < bh {
+            Some((px, py))
+        } else {
+            None
+        }
+    });
+
     // Encode as WebP (smaller than PNG, matches Android client format)
     let quality = params
         .and_then(|p| p.get("quality"))
@@ -360,6 +375,15 @@ fn get_screen_dimensions() -> Result<(u32, u32), String> {
     let screens = screenshots::Screen::all().map_err(|e| format!("failed to list screens: {e}"))?;
     let screen = screens.first().ok_or("no screens found")?;
     Ok((screen.display_info.width, screen.display_info.height))
+}
+
+/// Current cursor position in native screen pixels, or None on failure.
+fn cursor_native_pos() -> Option<(f64, f64)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut pt = POINT { x: 0, y: 0 };
+    unsafe { GetCursorPos(&mut pt).ok()?; }
+    Some((pt.x as f64, pt.y as f64))
 }
 
 /// Effective (max_width, max_height) for scaling. Precedence:
