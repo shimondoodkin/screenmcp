@@ -108,6 +108,11 @@ Minimal:
 { "cmd": "screenshot" }
 ```
 
+With estimated-click dots + cursor (paint markers to verify a target before clicking):
+```json
+{ "cmd": "screenshot", "params": { "dots": [ { "x": 100, "y": 100, "color": "lime" } ], "cursor": true, "dot_radius": 3 } }
+```
+
 Response:
 ```json
 { "id": 1, "status": "ok", "result": { "image": "<base64 webp>" } }

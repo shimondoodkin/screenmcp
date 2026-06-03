@@ -28,6 +28,7 @@ The worker relays all commands — it does not interpret them. The matrix below 
 | `ui_tree` | yes | yes | yes | yes | yes | yes | yes |
 
 - `ui_tree` extended params (`window`, `region`, `region_mode`, `types`, `text_match`, `regex`, `max_depth`, `format`, `fields`) are Windows-only. Other platforms accept and ignore them.
+- `screenshot` / `screenshot_region` estimated-click overlay params: `dots` (paint markers) are supported on **all** clients (Android, Windows, macOS, Linux, Python CLI). `cursor` (draw the real cursor) is supported on **Windows / macOS / Linux only** — Android has no cursor and ignores it; the Python CLI does not draw the cursor. `dot_radius` defaults to 3.
 
 ### Touch & Gestures
 

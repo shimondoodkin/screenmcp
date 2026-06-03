@@ -51,9 +51,18 @@ Take a screenshot of the device screen. Returns base64 WebP image.
 | `max_width` | integer | — | Max width in pixels (aspect ratio preserved) |
 | `max_height` | integer | — | Max height in pixels (aspect ratio preserved) |
 | `model` | string | — | `claude`/`gemini`/`chatgpt`. Provider-tuned default size when `max_width`/`max_height` are omitted. Usually set by the connection `?model=` param, not per call. See [model-sizing.md](model-sizing.md). |
+| `dots` | array | — | Paint estimated-click markers onto the returned image to verify a target before clicking. Each item `{ "x", "y", "color"? }` in **screenshot space** (same coords as `click`). `color` is a named color (`red`, `lime`, `cyan`, `yellow`, `magenta`, `white`, …) or `#rrggbb`; default `red`. Each dot is a filled circle with a white+black contrast ring. |
+| `cursor` | boolean | `false` | Draw the real mouse cursor as a crosshair. **Desktop only** — ignored on Android. |
+| `dot_radius` | integer | `3` | Dot radius in pixels (screenshot space). |
 
 **Returns:** `{ "image": "<base64 webp>" }`
 **Errors:** `"phone is locked"` if keyguard active.
+
+**Example (verify a click target):**
+
+```json
+{"cmd":"screenshot","params":{"dots":[{"x":420,"y":300,"color":"lime"}],"cursor":true}}
+```
 
 ### ui_tree
 
@@ -508,5 +517,8 @@ Capture a region of the screen for detailed inspection. Use small regions (e.g. 
 | `max_width` | integer | 0 | Screenshot space width for coordinate scaling |
 | `max_height` | integer | 0 | Screenshot space height for coordinate scaling |
 | `model` | string | — | `claude`/`gemini`/`chatgpt`. Provider-tuned default coordinate-scaling size when `max_width`/`max_height` are omitted. Usually set by the connection `?model=` param. See [model-sizing.md](model-sizing.md). |
+| `dots` | array | — | Paint estimated-click markers, same as [screenshot](#screenshot). Coords are in **screenshot space** (full-screen coords); dots outside the captured region are clipped. |
+| `cursor` | boolean | `false` | Draw the real mouse cursor as a crosshair. **Desktop only.** |
+| `dot_radius` | integer | `3` | Dot radius in pixels. |
 
 **Returns:** `{ "image": "<base64 webp>" }`
