@@ -139,6 +139,18 @@ async function runTests() {
     fail("screenshot", (e as Error).message);
   }
 
+  // screenshot with dot overlay (param round-trip)
+  try {
+    const result = await phone.screenshot({ dots: [{ x: 10, y: 10, color: "lime" }], dotRadius: 3 });
+    if (result.image) {
+      pass("screenshot (dots param round-trip)");
+    } else {
+      fail("screenshot dots", "No image returned");
+    }
+  } catch (e) {
+    fail("screenshot dots", (e as Error).message);
+  }
+
   // click
   try {
     await phone.click(540, 960);

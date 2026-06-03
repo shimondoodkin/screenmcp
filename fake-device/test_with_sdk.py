@@ -200,6 +200,16 @@ async def test_with_python_sdk(
     except Exception as e:
         results.fail("screenshot", str(e))
 
+    # ── Test: screenshot with dot overlay (param round-trip) ──────────
+    try:
+        result = await phone.screenshot(dots=[{"x": 10, "y": 10, "color": "lime"}], dot_radius=3)
+        if result.get("image", ""):
+            results.ok("screenshot (dots param round-trip)")
+        else:
+            results.fail("screenshot dots", "No image data returned")
+    except Exception as e:
+        results.fail("screenshot dots", str(e))
+
     # ── Test: click ───────────────────────────────────────────────────
     try:
         result = await phone.click(540, 960)

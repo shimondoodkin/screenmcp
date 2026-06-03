@@ -137,6 +137,21 @@ async fn main() {
         Err(e) => results.fail("screenshot", &e.to_string()),
     }
 
+    // screenshot with dot overlay (param round-trip)
+    match phone
+        .screenshot_overlay(Some(serde_json::json!([{"x": 10, "y": 10, "color": "lime"}])), false, Some(3))
+        .await
+    {
+        Ok(r) => {
+            if r.image.is_empty() {
+                results.fail("screenshot dots", "No image data");
+            } else {
+                results.pass("screenshot (dots param round-trip)");
+            }
+        }
+        Err(e) => results.fail("screenshot dots", &e.to_string()),
+    }
+
     // click
     match phone.click(540, 960).await {
         Ok(()) => results.pass("click(540, 960)"),
