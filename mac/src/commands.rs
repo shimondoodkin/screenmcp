@@ -84,6 +84,15 @@ pub fn execute_command(
     }
 }
 
+/// Current cursor position in native screen pixels via CoreGraphics, or None.
+fn cursor_native_pos() -> Option<(f64, f64)> {
+    use core_graphics::event::CGEvent;
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    let src = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
+    let p = CGEvent::new(src).ok()?.location();
+    Some((p.x, p.y))
+}
+
 fn handle_screenshot(
     params: Option<&Value>,
     config: &Config,
@@ -142,6 +151,21 @@ fn handle_screenshot(
     } else {
         img
     };
+
+    // Paint optional dot/cursor overlays. Output image == screenshot space for
+    // full-screen capture, so dots map at identity (clipped to image bounds).
+    let mut img = img;
+    let (bw, bh) = (img.width(), img.height());
+    let cursor_xy = cursor_native_pos()
+        .map(|(nx, ny)| (nx * bw as f64 / width as f64, ny * bh as f64 / height as f64));
+    crate::overlay::apply_overlays(&mut img, params, cursor_xy, move |x, y| {
+        let (px, py) = (x.round() as i64, y.round() as i64);
+        if px >= 0 && py >= 0 && (px as u32) < bw && (py as u32) < bh {
+            Some((px, py))
+        } else {
+            None
+        }
+    });
 
     // Encode as WebP (smaller than PNG, matches Android client format)
     let quality = params
@@ -241,6 +265,23 @@ fn handle_screenshot_region(params: Option<&Value>, config: &Config) -> Result<V
                 .to_rgba8()
         } else { cropped }
     } else { cropped };
+
+    // Paint optional dot/cursor overlays. Map screenshot-space coords into the
+    // cropped+scaled output: subtract region origin, apply output-per-screenshot scale.
+    let mut img = img;
+    let (iw, ih) = (img.width(), img.height());
+    let out_per_ss_x = (iw as f64 / crop_w as f64) * scale_x;
+    let out_per_ss_y = (ih as f64 / crop_h as f64) * scale_y;
+    let cursor_xy = cursor_native_pos().map(|(nx, ny)| (nx / scale_x, ny / scale_y));
+    crate::overlay::apply_overlays(&mut img, Some(p), cursor_xy, move |x, y| {
+        let px = ((x - min_x) * out_per_ss_x).round() as i64;
+        let py = ((y - min_y) * out_per_ss_y).round() as i64;
+        if px >= 0 && py >= 0 && (px as u32) < iw && (py as u32) < ih {
+            Some((px, py))
+        } else {
+            None
+        }
+    });
 
     let quality = p.get("quality").and_then(|v| v.as_u64()).unwrap_or(100) as u8;
     let _ = quality;
