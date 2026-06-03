@@ -12,6 +12,26 @@ DEFAULT_H = 819
 TOOLS = {}
 
 
+# === COORDINATE SCALING ===
+def scaled_space(maxw, maxh):
+    """Resolve the screenshot-space dimensions. None -> default; 0 kept as 0 (native)."""
+    w = DEFAULT_W if maxw is None else maxw
+    h = DEFAULT_H if maxh is None else maxh
+    return (w, h)
+
+
+def _axis(coord, native_dim, scaled_dim):
+    if scaled_dim == 0:           # 0 => native passthrough, no scaling
+        return int(round(coord))
+    return int(round(coord * native_dim / scaled_dim))
+
+
+def to_native(x, y, native, maxw=None, maxh=None):
+    """Map a coordinate from screenshot space to native screen pixels."""
+    sw, sh = scaled_space(maxw, maxh)
+    return (_axis(x, native[0], sw), _axis(y, native[1], sh))
+
+
 # === JSON-RPC STDIO SERVER ===
 def _result(rpc_id, result):
     return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
